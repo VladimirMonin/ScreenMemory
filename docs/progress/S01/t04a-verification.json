@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "stage": "S01",
+  "task": "S01-T04a",
+  "source_checkpoint": "ff35ba5e1e01a6833d50341cfdd6acb6401ab08b",
+  "stage_result": "IN_PROGRESS",
+  "scope": "implemented-contract-subset",
+  "checks": [
+    { "id": "S01-VER-01/02/03", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/test-verify.ps1", "raw_exit": 0, "outcome": "PASS" },
+    { "id": "CONTRACTS", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify-contracts.ps1 -OutputRoot @PRIVATE", "raw_exit": 0, "outcome": "PASS", "evidence": ".pi/t04a-integrity-contracts-final/result.json" },
+    { "id": "OFFLINE-SUBSET", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify.ps1 -OutputRoot @PRIVATE", "raw_exit": 0, "outcome": "PASS", "evidence": ".pi/t04a-integrity-verify-final/result.json" },
+    { "id": "S01-VER-01-EXPECTED-RED", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify.ps1 -FixtureCase exit7 -OutputRoot @PRIVATE", "raw_exit": 1, "child_raw_exit": 7, "outcome": "EXPECTED_FAIL", "evidence": ".pi/t04a-integrity-exit7-final/result.json" },
+    { "id": "SOURCE-DIFF", "command": "git diff --check", "raw_exit": 0, "outcome": "PASS" },
+    { "id": "STAGING", "command": "git diff --cached --name-only", "raw_exit": 0, "outcome": "PASS", "staged_paths": [] }
+  ],
+  "integrity_regression": {
+    "test_ids": ["S01-VER-01", "S01-VER-02", "S01-VER-03", "T04A-PLAN-HASH", "T04A-SOURCE-INTEGRITY", "T04A-FIXED-ARGV"],
+    "expected_red": ["copied plan mismatch", "copied plan missing", "copied child source modify", "copied child source create", "copied child source delete", "copied child source mutation + native exit7"],
+    "actual_red": "each isolated wrapper raw exit 1, expected failing guard step; synthetic child raw exit 0 for successful mutations, native exit 7 for failed child; post guard still FAIL",
+    "real_positive_gates": ["PLAN-HASH-PRE", "SOURCE-INTEGRITY-PRE", "PLAN-HASH-POST", "SOURCE-INTEGRITY-POST"],
+    "fixed_command_example": { "check_id": "RUST-FMT", "command": "cargo", "args": ["fmt", "--all", "--", "--check"] },
+    "launcher_alias": "node @PNPM_CLI; @PRIVATE denotes ignored private path",
+    "private_test_stdout": ".pi/t04a-integrity-testlog-final",
+    "no_mutation": "pre/post tracked and nonignored untracked source bytes and name sets PASS for both real positive suites"
+  },
+  "source_plan_sha256": {
+    "ScreenMemory_Full_Development_Plan_v3.md": "c238bcf79f8ceb907060599649b823c72cffa1d3b39f6f14f66664b7537398a6",
+    "ScreenMemory_S01_Foundation_Architecture.md": "5497a8f9fdd2e63cab0f06e31b92655471543a049379adb55209b3c1170c978c",
+    "ScreenMemory_S02_Capture_Library.md": "23c66146f4ed761963d79c4a4efe9c4740b8c05c7bbef4bdf76910aefcb4c4ef",
+    "ScreenMemory_S03_Import_Images_Export.md": "4d5a35030693df674f6c70a9a00ca7ef6bc8711ede5258894b4d46c32a12845b",
+    "ScreenMemory_S04_Processing_LMStudio.md": "c463c1336a7c8276aa695d3310822a3c51afecd8e2adbc781ff901a34f118c25",
+    "ScreenMemory_S05_Description_Editing.md": "603ae93d0c7317cf5585a54eae44edb713b25c1f65daa3b347914c31b4b223bd",
+    "ScreenMemory_S06_Index_Search.md": "e7c8015aa1b1b1bf128495ff8620185ebddf6d4b6b996dc92fe28cb9b070d2e1",
+    "ScreenMemory_S07_GUI_CLI_MCP.md": "50711350f855130ca03c33c2dae66811ea474ab56ea618b7f1fa830e9dfbe210",
+    "ScreenMemory_S08_Release_Operations.md": "926b628ae3484dca2d72b91ba65c02c006b31791457774bba5724b7802d0a3bf"
+  },
+  "unchanged_sha256": {
+    "schemas/application-methods-v1.schema.json": "4b3ca221af521cb7d699fb993f84aef4dde401b30b1a52ec651212113a68d299",
+    "schemas/application-v1.schema.json": "18957c28a158f742d95d23b624970953f4d89b8f21205525079009f33480a490",
+    "schemas/bridge-v1.schema.json": "40cf45936622f8a56949c90e03121e9f44b28ea481d46fcd852294d651433df3",
+    "schemas/foundation-errors.schema.json": "a305c35239eaeac96892bf2cbac034ab06b28740a822af25ca8f3ce990edcf86",
+    "packages/protocol/src/generated/application-methods-v1.ts": "fffefbfdda9424c48103db63009d939362ed79b2dc3a09a75cbfd46db07b2ef8",
+    "packages/protocol/src/generated/application-v1.ts": "fadb09996fffc2a73f644f7368a2e71a82b4ee28db1134dc5f70a1e8e9b6d193",
+    "packages/protocol/src/generated/bridge-v1.ts": "bd680aa44a49916bad568a75024593cc3a9bddf00137fe73a8b26de85f7afba2",
+    "packages/protocol/src/generated/foundation-errors.ts": "1a37aa676ca7e059431f8c8b34af2a67e613fac36177a3fd13cc284433ed3ea4",
+    "Cargo.lock": "d7427ccc5c0980539aa01950f4540a991175962756955c8b1d4491001fcd9170",
+    "pnpm-lock.yaml": "f0a85d8d78bab7956ffe545a613d447352b949d70eb476e37eb2d6229efe822c"
+  },
+  "not_run": ["full-foundation-offline", "frontend", "bridge", "host", "logging", "fake-clocks", "T02-isolation-menu", "Windows-live", "models", "native-codecs-sqlite", "packaging", "independent-review"],
+  "staged_paths": [],
+  "raw_logs": "ignored .pi only; no automatic upload"
+}

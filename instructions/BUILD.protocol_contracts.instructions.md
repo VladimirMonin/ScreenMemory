@@ -44,6 +44,9 @@ Pinned Node 24.13.0 и pnpm 10.32.1; `pnpm install --frozen-lockfile
 generate_schemas -- --check schemas`. Дополнительно `python
 tests/contracts/check_boundaries.py`; `python tests/contracts/check_schemas.py`
 требует явно `jsonschema==4.26.0`, не ставит пакеты автоматически.
-Не запускать donor/app/SDK ради проверки DTO. Сохраняй raw exit codes и
+Не запускать donor/app/SDK ради проверки DTO. После S01-T04a единый offline
+subset запускается `scripts/verify.ps1`, отдельный bounded regeneration gate —
+`scripts/verify-contracts.ps1`; их prerequisites, output и статус см.
+[BUILD.verification](BUILD.verification.instructions.md). Сохраняй raw exit codes и
 проверяй девять source-plan hashes отдельно; transport/host — будущие срезы,
 Rust schema/fixtures и TS consumer не подтверждают их исполнение.

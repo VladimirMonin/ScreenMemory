@@ -27,6 +27,7 @@
 | [DOCS.commit_messages](instructions/DOCS.commit_messages.instructions.md) | Группировка изменений, staging, проверки и создание commit |
 | [CORE.code_intelligence](instructions/CORE.code_intelligence.instructions.md) | Поиск реализации, символов, связей, структурных паттернов и оценка влияния |
 | [BUILD.protocol_contracts](instructions/BUILD.protocol_contracts.instructions.md) | Изменение Rust DTO/ports, схем, fixtures и проверка совместимости протокола |
+| [BUILD.verification](instructions/BUILD.verification.instructions.md) | Offline verify, Windows runner, шаги и synthetic verification fixtures |
 
 - **Каждую новую инструкцию обязательно добавляй сюда рабочей ссылкой с условием чтения.**
   При переименовании, разделении или удалении обновляй ссылки и маршруты.

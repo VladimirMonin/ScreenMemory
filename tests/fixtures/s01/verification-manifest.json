@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "S01-VER-01",
+      "file": "native-child.ps1",
+      "purpose": "Synthetic subprocess success, exit7, stderr and bounded timeout; never accesses user data",
+      "generation": "handwritten fixed PowerShell 5.1 fixture, no external seed",
+      "sha256": "267ef97e10b89f1fef8aa5246482a4b4264ab75d9e2bc544c1e4a566cfc58d78",
+      "allowed_checks": ["scripts/test-verify.ps1", "scripts/verify.ps1 -FixtureCase"]
+    }
+  ]
+}
