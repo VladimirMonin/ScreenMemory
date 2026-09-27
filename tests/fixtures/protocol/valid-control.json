@@ -1,0 +1,8 @@
+{
+  "protocol": {"major": 1, "minor": 0},
+  "request_id": "01900000-0000-7000-8000-000000000102",
+  "library_id": "01900000-0000-7000-8000-000000000001",
+  "method": "system.set_ai_policy",
+  "timeout_ms": 3000,
+  "params": {"expected_revision": "9007199254740993", "enabled": false}
+}

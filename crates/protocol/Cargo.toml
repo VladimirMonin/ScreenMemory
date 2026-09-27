@@ -1,0 +1,15 @@
+[package]
+name = "sm-protocol"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+sm-domain = { path = "../domain" }
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+time = { version = "=0.3.47", features = ["parsing", "formatting"] }
+
+[dev-dependencies]

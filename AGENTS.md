@@ -8,7 +8,8 @@
 1. Прочитай [навигатор и план старта](docs/README.md), релевантные разделы
    [master v3](docs/ScreenMemory_Full_Development_Plan_v3.md) и план текущего этапа.
 2. Проверь фактическое дерево, Git/worktree и чужие изменения до первой записи.
-   На момент создания правил есть только девять планов; кода, тестов и Git ещё нет.
+   Исходные девять планов неизменны; фактические manifests/исходники и статус срезов
+   сверяй с `docs/progress/S01/`, а не с историческим отсутствием кода/Git.
    Не выдавай спецификацию или mock за реализованное и проверенное приложение.
 3. Master владеет scope V1 и общими инвариантами; S01–S08 — детализацией своих этапов;
    код, manifests и evidence после их появления — фактическим состоянием.
@@ -25,6 +26,7 @@
 | [DOCS.instructions_style](instructions/DOCS.instructions_style.instructions.md) | Создание, обновление, переименование или разделение инструкций и AGENTS.md |
 | [DOCS.commit_messages](instructions/DOCS.commit_messages.instructions.md) | Группировка изменений, staging, проверки и создание commit |
 | [CORE.code_intelligence](instructions/CORE.code_intelligence.instructions.md) | Поиск реализации, символов, связей, структурных паттернов и оценка влияния |
+| [BUILD.protocol_contracts](instructions/BUILD.protocol_contracts.instructions.md) | Изменение Rust DTO/ports, схем, fixtures и проверка совместимости протокола |
 
 - **Каждую новую инструкцию обязательно добавляй сюда рабочей ссылкой с условием чтения.**
   При переименовании, разделении или удалении обновляй ссылки и маршруты.
@@ -65,8 +67,8 @@ Windows x64 — первая платформа; полная V1 включае�
 
 Работай небольшими срезами: контракт → проверка → реализация → failure/cancel/race
 cases → review → evidence → commit. Не включай чужие правки или несвязанный рефакторинг.
-Проверки выбирай по реальным manifests; пока есть только документы, проверяй их,
-а не запускай будущие Cargo/pnpm/scripts из плана. Сохраняй raw exit codes;
+Проверки выбирай по реальным manifests; плановые Cargo/pnpm/scripts, которых ещё нет,
+не выдавай за исполненные. Сохраняй raw exit codes;
 `NOT_RUN`/`BLOCKED` не равны `PASS`, code commit не равен принятому этапу.
 
 Делегирование — только при разрешении пользователя/применимых инструкций;

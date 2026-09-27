@@ -1,0 +1,18 @@
+{
+  "invalid": [
+    {"id": "middle-lf", "safe_message": "unsafe\nline"},
+    {"id": "initial-lf", "safe_message": "\nunsafe"},
+    {"id": "final-lf", "safe_message": "unsafe\n"},
+    {"id": "middle-cr", "safe_message": "unsafe\rline"},
+    {"id": "final-cr", "safe_message": "unsafe\r"},
+    {"id": "middle-nul", "safe_message": "unsafe\u0000line"},
+    {"id": "initial-del", "safe_message": "\u007funsafe"},
+    {"id": "middle-c1", "safe_message": "unsafe\u0085line"},
+    {"id": "final-c1", "safe_message": "unsafe\u009f"}
+  ],
+  "valid": [
+    {"id": "ascii", "safe_message": "Invalid request."},
+    {"id": "unicode", "safe_message": "Версии клиента несовместимы — 日本語 😀"},
+    {"id": "unicode-spaces", "safe_message": "Café message"}
+  ]
+}

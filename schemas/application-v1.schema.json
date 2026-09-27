@@ -1,0 +1,539 @@
+{
+  "$defs": {
+    "AiPolicyView": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "revision",
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "AppError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "safe_message": {
+          "$ref": "#/$defs/SafeMessage"
+        }
+      },
+      "required": [
+        "code",
+        "safe_message",
+        "retryable"
+      ],
+      "type": "object"
+    },
+    "ApplicationResult": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "status",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/HostStatus"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "doctor",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/DoctorReport"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "probe_runtime",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/RuntimeProbeReport"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "ai_policy",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/AiPolicyView"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "probe_consent",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/ProbeConsentReceipt"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "shutdown",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/ShutdownReceipt"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "BridgeState": {
+      "enum": [
+        "stopped",
+        "starting",
+        "ready",
+        "degraded",
+        "unavailable"
+      ],
+      "type": "string"
+    },
+    "BuildId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "type": "string"
+    },
+    "CheckId": {
+      "maxLength": 96,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "type": "string"
+    },
+    "CheckOutcome": {
+      "enum": [
+        "PASSED",
+        "FAILED",
+        "BLOCKED",
+        "NOT_RUN",
+        "UNSUPPORTED"
+      ],
+      "type": "string"
+    },
+    "CheckResult": {
+      "additionalProperties": false,
+      "properties": {
+        "check_id": {
+          "$ref": "#/$defs/CheckId"
+        },
+        "duration_ms": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "evidence_id": {
+          "$ref": "#/$defs/EvidenceId"
+        },
+        "outcome": {
+          "$ref": "#/$defs/CheckOutcome"
+        },
+        "safe_code": {
+          "$ref": "#/$defs/ErrorCode"
+        }
+      },
+      "required": [
+        "check_id",
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "ConsentId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "DoctorReport": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/CheckResult"
+          },
+          "type": "array"
+        },
+        "host": {
+          "$ref": "#/$defs/HostStatus"
+        },
+        "report_id": {
+          "$ref": "#/$defs/ReportId"
+        }
+      },
+      "required": [
+        "report_id",
+        "host",
+        "checks"
+      ],
+      "type": "object"
+    },
+    "ErrorCode": {
+      "description": "Fixed public registry. Never expose provider exception strings in `safe_message`.",
+      "enum": [
+        "METHOD_NOT_SUPPORTED",
+        "INVALID_REQUEST",
+        "FRAME_TOO_LARGE",
+        "PROTOCOL_TRUNCATED_FRAME",
+        "PERMISSION_DENIED",
+        "LIBRARY_MISMATCH",
+        "PROTOCOL_MISMATCH",
+        "HOST_ALREADY_RUNNING",
+        "SCHEMA_INCOMPATIBLE",
+        "CREDENTIAL_STORE_UNAVAILABLE",
+        "RUNTIME_UNAVAILABLE",
+        "MODEL_NOT_INSTALLED",
+        "AI_DISABLED",
+        "MODEL_CONFIG_UNSUPPORTED",
+        "BRIDGE_UNAVAILABLE",
+        "WAIT_TIMEOUT"
+      ],
+      "type": "string"
+    },
+    "EvidenceId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "HostInstanceId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "HostState": {
+      "enum": [
+        "starting",
+        "ready",
+        "degraded",
+        "stopping"
+      ],
+      "type": "string"
+    },
+    "HostStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "ai_enabled": {
+          "type": "boolean"
+        },
+        "available_methods": {
+          "items": {
+            "$ref": "#/$defs/MethodName"
+          },
+          "type": "array"
+        },
+        "bridge_state": {
+          "$ref": "#/$defs/BridgeState"
+        },
+        "build_id": {
+          "$ref": "#/$defs/BuildId"
+        },
+        "host_instance_id": {
+          "$ref": "#/$defs/HostInstanceId"
+        },
+        "library_id": {
+          "$ref": "#/$defs/LibraryId"
+        },
+        "protocol": {
+          "$ref": "#/$defs/ProtocolVersion"
+        },
+        "schema_version": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/HostState"
+        }
+      },
+      "required": [
+        "host_instance_id",
+        "library_id",
+        "build_id",
+        "protocol",
+        "state",
+        "schema_version",
+        "ai_enabled",
+        "bridge_state",
+        "available_methods"
+      ],
+      "type": "object"
+    },
+    "LibraryId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "MethodName": {
+      "maxLength": 96,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "type": "string"
+    },
+    "ProbeConsentReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "consent_id": {
+          "$ref": "#/$defs/ConsentId"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/UtcTime"
+        },
+        "policy_revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "consent_id",
+        "expires_at",
+        "policy_revision"
+      ],
+      "type": "object"
+    },
+    "ProtocolVersion": {
+      "additionalProperties": false,
+      "properties": {
+        "major": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "minor": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "major",
+        "minor"
+      ],
+      "type": "object"
+    },
+    "ReportId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "RequestEnvelope": {
+      "additionalProperties": false,
+      "description": "Decoded after the authorized handshake; `params` never carries a trusted context.",
+      "properties": {
+        "library_id": {
+          "$ref": "#/$defs/LibraryId"
+        },
+        "method": {
+          "$ref": "#/$defs/MethodName"
+        },
+        "params": true,
+        "protocol": {
+          "$ref": "#/$defs/ProtocolVersion"
+        },
+        "request_id": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "timeout_ms": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "protocol",
+        "request_id",
+        "library_id",
+        "method",
+        "timeout_ms",
+        "params"
+      ],
+      "type": "object"
+    },
+    "RequestId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "Response": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "result",
+              "type": "string"
+            },
+            "request_id": {
+              "$ref": "#/$defs/RequestId"
+            },
+            "result": {
+              "$ref": "#/$defs/ApplicationResult"
+            }
+          },
+          "required": [
+            "kind",
+            "request_id",
+            "result"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/AppError"
+            },
+            "kind": {
+              "const": "error",
+              "type": "string"
+            },
+            "request_id": {
+              "$ref": "#/$defs/RequestId"
+            }
+          },
+          "required": [
+            "kind",
+            "request_id",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Revision": {
+      "maxLength": 20,
+      "minLength": 1,
+      "pattern": "^(?:0|[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]{1}|1844674407370955161[0-4]|18446744073709551615)$",
+      "type": "string"
+    },
+    "RuntimeProbeReport": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/CheckResult"
+          },
+          "type": "array"
+        },
+        "compatibility_evidence_id": {
+          "$ref": "#/$defs/EvidenceId"
+        },
+        "probe_id": {
+          "$ref": "#/$defs/ReportId"
+        }
+      },
+      "required": [
+        "probe_id",
+        "checks",
+        "compatibility_evidence_id"
+      ],
+      "type": "object"
+    },
+    "SafeMessage": {
+      "maxLength": 512,
+      "minLength": 1,
+      "not": {
+        "pattern": "[\\u0000-\\u001F\\u007F-\\u009F]"
+      },
+      "type": "string"
+    },
+    "ShutdownReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "host_instance_id": {
+          "$ref": "#/$defs/HostInstanceId"
+        },
+        "state": {
+          "$ref": "#/$defs/HostState"
+        }
+      },
+      "required": [
+        "host_instance_id",
+        "state"
+      ],
+      "type": "object"
+    },
+    "UtcTime": {
+      "format": "date-time",
+      "pattern": "Z$",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/RequestEnvelope"
+    },
+    {
+      "$ref": "#/$defs/Response"
+    }
+  ],
+  "title": "ApplicationFrame"
+}

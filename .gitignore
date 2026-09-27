@@ -1,0 +1,9 @@
+# Local toolchains, donor references, synthetic build data and IDE indexes
+.pi/
+.serena/
+target/
+node_modules/
+**/dist/
+**/.env
+**/.env.*
+*.local
