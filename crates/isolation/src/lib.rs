@@ -1,0 +1,268 @@
+//! Pre-host Windows namespace and read-only root identity boundary.
+//! Resolving a root is NOT a host lease, migration preflight or permission to write SQLite.
+#[cfg(not(all(windows, target_pointer_width = "64")))]
+compile_error!("sm-isolation requires Windows x64 for the audited native adapter");
+
+use sm_application::observability::{
+    Component, EventId, Level, Operation, Outcome, SafeCode, SafeEvent, SafeEventSink,
+};
+use std::os::windows::ffi::OsStrExt;
+use std::path::{Component as PathComponent, Path};
+mod windows;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Environment {
+    Product,
+    Dev,
+    Test,
+}
+
+/// One owner for identifiers; none are imported from the Inspector shell.
+impl Environment {
+    pub const fn installed_directory(self) -> &'static str {
+        match self {
+            Self::Product => "ScreenMemory",
+            Self::Dev => "ScreenMemory.Dev",
+            Self::Test => "ScreenMemory.Test",
+        }
+    }
+    pub const fn app_id(self) -> &'static str {
+        match self {
+            Self::Product => "io.screenmemory.app",
+            Self::Dev => "io.screenmemory.dev",
+            Self::Test => "io.screenmemory.test",
+        }
+    }
+    pub const fn secret_namespace(self) -> &'static str {
+        match self {
+            Self::Product => "ScreenMemory.V1",
+            Self::Dev => "ScreenMemory.Dev.V1",
+            Self::Test => "ScreenMemory.Test.V1",
+        }
+    }
+    pub const fn window_class(self) -> &'static str {
+        match self {
+            Self::Product => "ScreenMemory.Window.V1",
+            Self::Dev => "ScreenMemory.Dev.Window.V1",
+            Self::Test => "ScreenMemory.Test.Window.V1",
+        }
+    }
+    pub const fn endpoint_prefix(self) -> &'static str {
+        match self {
+            Self::Product => "screenmemory.v1",
+            Self::Dev => "screenmemory.dev.v1",
+            Self::Test => "screenmemory.test.v1",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RootError {
+    Invalid,
+    Missing,
+    Inaccessible,
+    Unsupported,
+    Reparse,
+    Overlap,
+}
+
+/// Caller-supplied trusted installed configuration, NOT loaded from home/CWD/PATH.
+/// All roots must exist; no directory creation/adoption or fallback occurs here.
+pub struct InstalledRoots<'a> {
+    pub environment: Environment,
+    pub data: &'a Path,
+    pub config: &'a Path,
+    pub cache: &'a Path,
+    pub webview: &'a Path,
+    pub forbidden_donor_roots: &'a [&'a Path],
+}
+
+/// Explicit test root; four independent, pre-existing child directories are required.
+pub enum RootSource<'a> {
+    Installed(InstalledRoots<'a>),
+    Test {
+        root: &'a Path,
+        forbidden_donor_roots: &'a [&'a Path],
+    },
+}
+
+/// Private native handles intentionally held for the lifetime of this identity.
+/// Never serialize/debug these values or place paths/IDs in SafeEvent/DTO/status.
+pub struct RootIdentity {
+    native: windows::Directory,
+}
+impl RootIdentity {
+    pub fn canonical_path(&self) -> &Path {
+        &self.native.path
+    }
+    pub fn volume_serial(&self) -> u32 {
+        self.native.volume
+    }
+    pub fn file_identity(&self) -> u64 {
+        self.native.file
+    }
+}
+
+pub struct NamespaceLayout {
+    pub environment: Environment,
+    pub data: RootIdentity,
+    pub config: RootIdentity,
+    pub cache: RootIdentity,
+    pub webview: RootIdentity,
+}
+impl NamespaceLayout {
+    pub fn app_id(&self) -> &'static str {
+        self.environment.app_id()
+    }
+    pub fn secret_namespace(&self) -> &'static str {
+        self.environment.secret_namespace()
+    }
+}
+
+fn invalid_syntax(path: &Path) -> bool {
+    if !path.is_absolute() || path.as_os_str().encode_wide().any(|unit| unit == 0) {
+        return true;
+    }
+    let mut parts = path.components();
+    if !matches!(parts.next(), Some(PathComponent::Prefix(_)))
+        || !matches!(parts.next(), Some(PathComponent::RootDir))
+    {
+        return true;
+    }
+    // Reject extended/device, UNC, ADS, traversal and trailing path tricks BEFORE any I/O.
+    let text = path.as_os_str().to_string_lossy();
+    if !text.as_bytes().get(1).is_some_and(|c| *c == b':')
+        || text.starts_with("\\\\")
+        || text.starts_with("//")
+    {
+        return true;
+    }
+    if text.chars().skip(2).any(|c| c == ':') {
+        return true;
+    }
+    parts.any(|p| !matches!(p, PathComponent::Normal(_)))
+}
+
+fn open(path: &Path) -> Result<RootIdentity, RootError> {
+    if invalid_syntax(path) {
+        return Err(RootError::Invalid);
+    }
+    windows::Directory::open(path).map(|native| RootIdentity { native })
+}
+fn overlaps(a: &RootIdentity, b: &RootIdentity) -> bool {
+    if a.native.volume != b.native.volume {
+        return false;
+    }
+    if a.native.file == b.native.file {
+        return true;
+    }
+    // Compare opened ancestor directory identities, never path string casing.
+    a.native
+        .ancestors
+        .contains(&(b.native.volume, b.native.file))
+        || b.native
+            .ancestors
+            .contains(&(a.native.volume, a.native.file))
+}
+
+pub struct LibraryRootResolver;
+impl LibraryRootResolver {
+    pub fn resolve(source: RootSource<'_>) -> Result<NamespaceLayout, RootError> {
+        let (env, data, config, cache, webview, donor, installed) = match source {
+            RootSource::Installed(c) => (
+                c.environment,
+                c.data.to_path_buf(),
+                c.config.to_path_buf(),
+                c.cache.to_path_buf(),
+                c.webview.to_path_buf(),
+                c.forbidden_donor_roots,
+                true,
+            ),
+            RootSource::Test {
+                root,
+                forbidden_donor_roots,
+            } => {
+                if invalid_syntax(root) {
+                    return Err(RootError::Invalid);
+                }
+                (
+                    Environment::Test,
+                    root.join("data"),
+                    root.join("config"),
+                    root.join("cache"),
+                    root.join("webview"),
+                    forbidden_donor_roots,
+                    false,
+                )
+            }
+        };
+        if installed {
+            // The trusted installed configuration is explicit, but cannot silently
+            // point product/dev/test at a shared directory tree.
+            for (path, leaf) in [
+                (&data, "data"),
+                (&config, "config"),
+                (&cache, "cache"),
+                (&webview, "webview"),
+            ] {
+                if !path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.eq_ignore_ascii_case(leaf))
+                    || !path
+                        .parent()
+                        .and_then(Path::file_name)
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.eq_ignore_ascii_case(env.installed_directory()))
+                {
+                    return Err(RootError::Invalid);
+                }
+            }
+        }
+        let roots = [open(&data)?, open(&config)?, open(&cache)?, open(&webview)?];
+        for i in 0..roots.len() {
+            for j in 0..i {
+                if overlaps(&roots[i], &roots[j]) {
+                    return Err(RootError::Overlap);
+                }
+            }
+        }
+        for path in donor {
+            let forbidden = open(path)?; // absent/unsafe declared donor roots fail closed
+            if roots.iter().any(|root| overlaps(root, &forbidden)) {
+                return Err(RootError::Overlap);
+            }
+        }
+        let [data, config, cache, webview] = roots;
+        Ok(NamespaceLayout {
+            environment: env,
+            data,
+            config,
+            cache,
+            webview,
+        })
+    }
+
+    /// Emit only typed diagnostics; no path, OS exception or canary enters the event.
+    pub fn resolve_logged(
+        source: RootSource<'_>,
+        sink: &dyn SafeEventSink,
+    ) -> Result<NamespaceLayout, RootError> {
+        let result = Self::resolve(source);
+        if let Err(error) = result {
+            let mut event = SafeEvent::new(
+                Level::Error,
+                Component::Storage,
+                EventId::ProbeBlocked,
+                Operation::Probe,
+            );
+            event.outcome = Some(Outcome::Failed);
+            event.safe_code = Some(match error {
+                RootError::Inaccessible => SafeCode::PermissionDenied,
+                _ => SafeCode::ProbeBlocked,
+            });
+            let _ = sink.emit(event);
+        }
+        result
+    }
+}

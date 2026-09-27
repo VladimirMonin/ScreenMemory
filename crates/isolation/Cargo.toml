@@ -1,0 +1,12 @@
+[package]
+name = "sm-isolation"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+sm-application = { path = "../application" }
+
+[dev-dependencies]
+sm-observability = { path = "../observability" }

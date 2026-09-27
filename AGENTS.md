@@ -29,6 +29,7 @@
 | [BUILD.protocol_contracts](instructions/BUILD.protocol_contracts.instructions.md) | Изменение Rust DTO/ports, схем, fixtures и проверка совместимости протокола |
 | [BUILD.verification](instructions/BUILD.verification.instructions.md) | Offline verify, Windows runner, шаги и synthetic verification fixtures |
 | [INFRA.observability](instructions/INFRA.observability.instructions.md) | SafeEvent, bounded logger, sinks, rotation и S01-LOG проверки |
+| [INFRA.root_isolation](instructions/INFRA.root_isolation.instructions.md) | Identity продукта, explicit root, Windows native root resolver и pre-host isolation |
 
 - **Каждую новую инструкцию обязательно добавляй сюда рабочей ссылкой с условием чтения.**
   При переименовании, разделении или удалении обновляй ссылки и маршруты.

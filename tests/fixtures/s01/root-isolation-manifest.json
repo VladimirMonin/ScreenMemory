@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "fixture_scope": ".pi/temporary/t02b-<unique>/ synthetic directories only",
+  "sentinels": ["SYNTHETIC-UNCHANGED", "JUNCTION-SYNTHETIC", "synthetic file, never adopted"],
+  "required_tests": [
+    "t02b_01_distinct_namespaces_and_sentinel",
+    "t02b_02_unicode_space_and_identity_alias",
+    "t02b_03_overlap_and_invalid_fail_closed",
+    "t02b_04_native_junction_is_rejected_without_admin",
+    "t02b_05_logged_errors_do_not_contain_canary_paths",
+    "t02b_06_explicit_test_root_only",
+    "t02b_07_permission_error_mapping_without_acl_changes",
+    "t02b_08_symlink_probe_distinct_from_junction",
+    "t02b_09_file_leaf_and_unknown_donor_rejected"
+  ],
+  "actual_acl_denial_probe": "NOT_RUN: no user ACL changes or access to non-owned paths"
+}

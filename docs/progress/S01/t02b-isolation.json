@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "stage": "S01",
+  "slice": "S01-T02b-isolation",
+  "base_commit": "47cb7f02911fd5f9eb03f59befbd2460cba2e70e",
+  "status": "CANDIDATE_REVIEW_PENDING",
+  "accepted_commit": null,
+  "source_plans_changed": false,
+  "scope": "read-only pre-host namespace/layout and Windows x64 NTFS root identity; no HostLease or SQLite writes",
+  "fixture_manifest": "../../../tests/fixtures/s01/root-isolation-manifest.json",
+  "native_test_ids": ["t02b_01_distinct_namespaces_and_sentinel", "t02b_02_unicode_space_and_identity_alias", "t02b_03_overlap_and_invalid_fail_closed", "t02b_04_native_junction_is_rejected_without_admin", "t02b_05_logged_errors_do_not_contain_canary_paths", "t02b_06_explicit_test_root_only", "t02b_07_permission_error_mapping_without_acl_changes", "t02b_08_symlink_probe_distinct_from_junction", "t02b_09_file_leaf_and_unknown_donor_rejected"],
+  "junction_preflight": {"command": "cmd.exe /d /c mklink /J <owned-junction> <owned-target>; cmd.exe /d /c rmdir <owned-junction>", "create_exit": 0, "remove_exit": 0, "sentinel": "preserved", "privilege_change": false},
+  "commands": [
+    {"command": "cargo generate-lockfile --offline (project-local pinned Rust/CARGO_HOME)", "exit_code": 0, "note": "no new external crate; final lock only adds sm-isolation; restored unrelated offline lock resolution drift"},
+    {"command": "cargo fmt --all (pinned project-local Rust)", "exit_code": 0},
+    {"command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify.ps1", "exit_code": 0, "artifact": ".pi/verify-74ecb907f8fd46198bdfc5d2fd32d347/result.json"},
+    {"command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify-contracts.ps1", "exit_code": 0, "artifact": ".pi/contracts-5f25c78724b44858a8405726f62225ab/result.json"},
+    {"command": "cargo test --locked -p sm-isolation --test root_isolation t02b_08 -- --nocapture (process-local pinned MSVC environment)", "exit_code": 0, "result": "real symlink creation and rejection PASS; no privilege change"}
+  ],
+  "checks": ["native 8 integration + 1 ABI/error unit tests PASS", "typed ConsoleSink bytes exclude canary path", "unprivileged native junction create/reject/remove and sentinel PASS", "real case/Unicode/dot alias volume-file identity and donor overlaps PASS", "nonexistent/invalid/file leaf and unknown donor fail closed", "workspace five crates boundary + nine-test manifest PASS", "both runners PLAN-HASH-PRE/POST and SOURCE-INTEGRITY-PRE/POST PASS", "staged files none"],
+  "sdk_abi": {"platform": "Windows x64", "toolchain": "portable Rust 1.98.1 MSVC; VS2022 MSVC 14.44.35207; installed Windows SDK 10.0.26100.0", "bindings": "direct system kernel32 SDK ABI, no new external binding crate/fetch", "header_checks": ["fileapi.h CreateFileW/GetDriveTypeW/GetFileInformationByHandle/GetFinalPathNameByHandleW/GetVolumeInformationW", "handleapi.h CloseHandle"], "layout": "BY_HANDLE_FILE_INFORMATION 52 bytes align 4; HANDLE 8 bytes (unit test)", "errors": "last_os_error immediately after failed native call; RAII CloseHandle once; UTF-16 units, bounded retry, NUL reject"},
+  "deferred": ["independent reviewer and parent acceptance", "host lease/migration/SQLite writer", "atomic hostile concurrent path mutation hardening", "actual inaccessible owned ACL path probe NOT_RUN (no ACL changes authorized); OS error 5 mapping unit PASS", "donor runtime/menu baseline, shell/CSP/WebView startup, host/client/bridge, live/model, complete T02/T05 and full S01 gates NOT_RUN"],
+  "notes": "Serena Active language servers:[] known; Codebase Memory + ast-grep + targeted source fallback. No stage/commit/push. Earlier expected red code/style attempts corrected before final green evidence."
+}

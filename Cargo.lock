@@ -273,6 +273,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sm-isolation"
+version = "0.1.0"
+dependencies = [
+ "sm-application",
+ "sm-observability",
+]
+
+[[package]]
 name = "sm-observability"
 version = "0.1.0"
 dependencies = [
