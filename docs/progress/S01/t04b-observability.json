@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "stage": "S01",
+  "slice": "S01-T04b-safe-boundary",
+  "status": "IN_PROGRESS",
+  "baseline": "1a509d25d2ff6f60a4a9b8cfe8a37f7991ccb4a4",
+  "accepted_sha": null,
+  "test_ids": ["S01-LOG-01-typed-boundary-partial", "S01-LOG-02", "S01-VER-01", "S01-DEP-01"],
+  "checks": [
+    {"command": "scripts/verify.ps1 -OutputRoot .pi/t04b-boundary-verify-final-3", "raw_exit": 0, "result": ".pi/t04b-boundary-verify-final-3/result.json", "sha256": "b157a0af0e43cb2ea3f3aa028b776c6d88adf8aac7d05519a1f2d273ea26420a"},
+    {"command": "scripts/verify-contracts.ps1 -OutputRoot .pi/t04b-boundary-contracts-final-2", "raw_exit": 0, "result": ".pi/t04b-boundary-contracts-final-2/result.json", "sha256": "f7888b67306b744009da1489ac306f219466d4bf5dd5dcbe0236ba7e57a3cb09"},
+    {"command": "cargo test --locked -p sm-observability --test safe_logging -- --nocapture", "raw_exit": 0, "result": ".pi/t04b-boundary-targeted-final/targeted.log", "sha256": "c686bc991d4f53cc8e90faf47f31e74183e55b6c82101426177e1748d9df6028", "tests": "7 passed"},
+    {"command": "sm_observability unit executable --ignored --exact boundary_tests::private_boundary_mutation_must_fail", "raw_exit": 101, "expected": "RED: canary leaked through sink bytes", "result": ".pi/t04b-boundary-targeted-final/mutation.log", "sha256": "bd33b569fc6433830021bbff0249f7529511ca5df8300cc831b842d69b9df08a"},
+    {"command": "scripts/test-verify.ps1", "raw_exit": 0, "result": ".pi/t04b-boundary-targeted-env-3/test-verify.log", "sha256": "198ef4c1ac247305c7fd7a64da214eefa2a158a91c4ec90af65d5aa639729ecd"}
+  ],
+  "public_api_guard": "2 cargo compile-fail doctests PASS; independent rustc external consumer raw write => E0624 private method, arbitrary details => E0609 no field; both expected exit1",
+  "source_plan_guards": "PLAN-HASH-PRE/POST and SOURCE-INTEGRITY-PRE/POST PASS in both final runners; immutable nine source plans unchanged",
+  "limitations": ["SDK/error-to-event producer absent: end-to-end S01-LOG-01 deferred until host/bridge", "Host/GUI/bridge and doctor integration NOT_IMPLEMENTED", "Windows symlink privilege conditional; privileged junction proof pending", "Foundation-offline full and S01 acceptance NOT_RUN", "Independent reviewer pending"],
+  "no_staged_files": true
+}

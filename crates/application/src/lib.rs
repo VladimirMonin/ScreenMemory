@@ -1,4 +1,6 @@
 //! Application seams only: host-created authority and ports; no concrete adapters.
+pub mod observability;
+
 use async_trait::async_trait;
 use sm_domain::{CorrelationId, PrincipalId, RequestId};
 use sm_protocol::{

@@ -257,6 +257,7 @@ name = "sm-application"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "serde",
  "sm-domain",
  "sm-protocol",
  "tokio-util",
@@ -269,6 +270,15 @@ dependencies = [
  "schemars",
  "serde",
  "uuid",
+]
+
+[[package]]
+name = "sm-observability"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sm-application",
 ]
 
 [[package]]

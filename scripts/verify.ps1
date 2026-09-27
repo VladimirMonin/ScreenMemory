@@ -91,5 +91,5 @@ try {
         } catch { Add-VerificationGuardStep $state 'SOURCE-INTEGRITY-POST' 'SOURCE_INVENTORY_ERROR' }
     }
 }
-if ($state) { exit (Complete-Verification $state @('FRONTEND','BRIDGE','HOST','SAFE_LOGGING','FAKE_CLOCK','T02-ISOLATION-MENU','LIVE-RUNTIME','WINDOWS-PACKAGE')) }
+if ($state) { exit (Complete-Verification $state @('FRONTEND','BRIDGE','HOST','HOST-LOG-INTEGRATION','T02-ISOLATION-MENU','LIVE-RUNTIME','WINDOWS-PACKAGE')) }
 exit 1

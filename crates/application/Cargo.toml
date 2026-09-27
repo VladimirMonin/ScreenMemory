@@ -10,3 +10,4 @@ sm-domain = { path = "../domain" }
 sm-protocol = { path = "../protocol" }
 async-trait.workspace = true
 tokio-util.workspace = true
+serde.workspace = true

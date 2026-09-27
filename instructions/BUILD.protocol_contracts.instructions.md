@@ -1,5 +1,5 @@
 ---
-applyTo: "Cargo.toml,Cargo.lock,rust-toolchain.toml,crates/domain/**,crates/protocol/**,crates/application/**,schemas/**,tests/fixtures/protocol/**,tests/contracts/**,package.json,.npmrc,pnpm-lock.yaml,pnpm-workspace.yaml,packages/protocol/**"
+applyTo: "Cargo.toml,Cargo.lock,rust-toolchain.toml,crates/domain/**,crates/protocol/**,crates/application/**,crates/observability/**,schemas/**,tests/fixtures/protocol/**,tests/contracts/**,package.json,.npmrc,pnpm-lock.yaml,pnpm-workspace.yaml,packages/protocol/**"
 name: "BUILD.ProtocolContracts"
 description: "Читай при изменении Rust DTO/ports, JSON Schema, общих fixtures, TS protocol consumer, генерации или pnpm contract scripts."
 ---
@@ -8,7 +8,8 @@ description: "Читай при изменении Rust DTO/ports, JSON Schema, 
 
 Rust `sm-domain` → `sm-protocol` → `sm-application` — единственный owner типов
 первого foundation API. `sm-domain` не зависит от IO/OS, protocol от host/SDK,
-application объявляет порты без адаптеров. Версии application и private bridge
+application объявляет порты без адаптеров. `sm-observability` — downstream
+инфраструктурный потребитель application SafeEvent; wire DTO он не меняет. Версии application и private bridge
 отдельны, сейчас обе 1.0. Scope и `RequestContext` создаёт только будущая
 аутентифицированная host-граница; wire `client_kind` не даёт полномочий.
 Контракт и отложенные части перечислены в [ADR-002](../docs/adr/002-foundation-protocol.md).

@@ -1,10 +1,10 @@
 ---
-applyTo: "scripts/verify.ps1,scripts/verify-contracts.ps1,scripts/verification-common.ps1,scripts/test-verify.ps1,tests/fixtures/s01/**,docs/progress/S01/t04a-verification.*,AGENTS.md"
+applyTo: "scripts/verify.ps1,scripts/verify-contracts.ps1,scripts/verification-common.ps1,scripts/test-verify.ps1,tests/fixtures/s01/**,docs/progress/S01/t04a-verification.*,docs/progress/S01/t04b-observability.*,AGENTS.md"
 name: "BUILD.Verification"
 description: "Читай при изменении offline verify, фиксированного набора шагов, Windows PowerShell runner, evidence и synthetic verification fixtures."
 ---
 
-# BUILD — Offline verification S01-T04a
+# BUILD — Offline verification S01-T04a/T04b
 
 Из корня checkout на Windows PowerShell 5.1: `powershell.exe -NoProfile
 -NonInteractive -File scripts/verify.ps1`; отдельный контрактный запуск:
@@ -36,9 +36,10 @@ env, сохраняет cargo outputs под `.pi/`. Если prerequisite/versi
 изменивший workspace owner обновляет обязательный suite и каталог.
 
 Сегодня `PASS` означает только **implemented contract subset**: Rust fmt/clippy/
-test/schema; pnpm typecheck/lint/test/contracts:check; Python boundary/schema
-fixtures и source bytes. `FRONTEND`, `BRIDGE`, `HOST`, logging/fake clocks и
-остальные будущие gates остаются `NOT_IMPLEMENTED`/`NOT_RUN`;
+test (включая S01-LOG-01/02 test-support и logger)/schema; pnpm
+typecheck/lint/test/contracts:check; Python boundary/schema fixtures и source bytes.
+`FRONTEND`, `BRIDGE`, `HOST`, `HOST-LOG-INTEGRATION` и остальные будущие gates
+остаются `NOT_IMPLEMENTED`/`NOT_RUN`;
 S01 всегда `IN_PROGRESS` до отдельной приёмки владельцем. Нет live/runtime,
 donor build, GUI, model download, `pnpm install` или bootstrap.
 `verify-contracts.ps1` генерирует Rust/TS в новые приватные каталоги и сравнивает
