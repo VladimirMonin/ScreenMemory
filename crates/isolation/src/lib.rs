@@ -1,4 +1,4 @@
-//! Pre-host Windows namespace and read-only root identity boundary.
+//! Pre-host Windows namespace and retained root ownership boundary.
 //! Resolving a root is NOT a host lease, migration preflight or permission to write SQLite.
 #[cfg(not(all(windows, target_pointer_width = "64")))]
 compile_error!("sm-isolation requires Windows x64 for the audited native adapter");
@@ -100,6 +100,29 @@ impl RootIdentity {
     }
     pub fn file_identity(&self) -> u64 {
         self.native.file
+    }
+}
+
+/// A lease consumes the complete layout: the owner cannot drop the rename-pinned
+/// ancestors while the OS lock is held. Not Clone, not a status DTO.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LeaseError {
+    Busy,
+    UnsafeEntry,
+}
+
+pub struct HostLease {
+    // Native lock drops before layout/ancestor pins (Rust field drop order).
+    _lock: windows::NativeLease,
+    _layout: NamespaceLayout,
+}
+impl HostLease {
+    pub fn acquire(layout: NamespaceLayout) -> Result<Self, LeaseError> {
+        let lock = windows::NativeLease::acquire(&layout.data.native)?;
+        Ok(Self {
+            _lock: lock,
+            _layout: layout,
+        })
     }
 }
 

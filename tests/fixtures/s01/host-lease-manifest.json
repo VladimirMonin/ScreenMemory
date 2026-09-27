@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "purpose": "S01-T05a synthetic Windows x64 root ownership proof; not donor/runtime/SQLite",
+  "fixture_scope": ".pi/temporary/t05a-<process>-<unique>/ owned temporary directories only",
+  "test_source": "crates/isolation/tests/host_lease.rs",
+  "test_source_sha256": "72d9e7b82e1b22bf9b56e21bb92103646a39c8c260daed976912b05fdd451ada",
+  "synthetic_payloads": [
+    {
+      "purpose": "outside-root sentinel, must remain unchanged",
+      "utf8": "SYNTHETIC-UNCHANGED",
+      "sha256": "c0525297ada6c649732e23238c3bd5bcb147f775166c2a61e73b3fbe803bf39d"
+    },
+    {
+      "purpose": "stale-content canary (not interpreted as owner)",
+      "utf8": "stale PID 987654321\nCANARY-SECRET",
+      "sha256": "60baacf7286a1152286d06b4b0936c040dc76c0bb8cffb65c071fbde0a7166b0"
+    }
+  ],
+  "cases": [
+    {"id": "t05a_01_fifty_simultaneous_processes_and_crash", "checks": "50 ready-barrier child processes; exactly one owner and 49 busy, independent second root, OS child-handle kill of owned winner, bounded reacquire and release"},
+    {"id": "t05a_04_partial_spawn_failure_reaps_owned_children", "checks": "three real owned test processes; fourth CreateProcess missing executable raw OS 2 preserved; duplicated owned handles prove all earlier children completed after guard kill/wait, bounded panic fallback"},
+    {"id": "t05a_05_observer_panic_reaps_owned_children", "checks": "third real spawned child triggers observer assertion unwind after admission to Workers; owned handles confirm all three have completed after panic cleanup"},
+    {"id": "t05a_02_alias_independent_roots_and_stale_contents", "checks": "case/dot alias conflict by physical identity; other root independent; held host.lock cannot unlink/rename; stale PID/random bytes unchanged, reopen"},
+    {"id": "t05a_03_unsafe_entries_and_pinned_rename_junction_attempts", "checks": "directory/symlink/hardlink rejected, unpinned nonempty root+data positive rename+junction, pinned leaf+ancestor 1000 rename attempts and concurrent junction attempt before lock creation rejected, sentinel unchanged and no outside host.lock"},
+    {"id": "t05a_worker", "checks": "headless test binary child only when synthetic harness supplies explicit env; bounded wait and parent-owned process cleanup"},
+    {"id": "t02b_06_explicit_test_root_only", "checks": "negative Test roots exercise native and syntax guards rather than installed-label fast refusal"}
+  ],
+  "access_probe_private": ".pi/temporary/t05a-access-results.json",
+  "access_probe_sha256": "fa8eec06262a278708db8489873a6bc2ead653f9d8e688292cf9147105e53451",
+  "access_probe_script_sha256": "b2ee9efbe840009fb5a92d12a2dcf7925d4ceccc38d0ebf35618798880722cfc",
+  "acl_denial": "NOT_RUN: no global ACL/user changes"
+}

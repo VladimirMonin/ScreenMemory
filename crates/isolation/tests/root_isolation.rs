@@ -343,11 +343,39 @@ fn t02b_06_explicit_test_root_only() {
     })
     .unwrap();
     assert_eq!(layout.environment, Environment::Test);
+    for bad in [
+        Path::new("."),
+        Path::new(r"\\server\share\test"),
+        Path::new(r"\\?\C:\device"),
+        Path::new(r"C:\test:stream"),
+        Path::new(r"C:\temporary\..\test"),
+        Path::new("C:\\temporary\\test\u{0000}hidden"),
+    ] {
+        assert!(matches!(
+            Resolver::resolve(RootSource::Test {
+                root: bad,
+                forbidden_donor_roots: &[]
+            }),
+            Err(RootError::Invalid)
+        ));
+    }
+    let missing = f.0.join("missing-test-root");
     assert!(matches!(
         Resolver::resolve(RootSource::Test {
-            root: Path::new("."),
+            root: &missing,
             forbidden_donor_roots: &[]
         }),
-        Err(RootError::Invalid)
+        Err(RootError::Missing)
     ));
+    let linked = f.dir("test-link-target");
+    let link = f.0.join("test-link");
+    std::os::windows::fs::symlink_dir(&linked, &link).unwrap();
+    assert!(matches!(
+        Resolver::resolve(RootSource::Test {
+            root: &link,
+            forbidden_donor_roots: &[]
+        }),
+        Err(RootError::Reparse)
+    ));
+    fs::remove_dir(&link).unwrap();
 }

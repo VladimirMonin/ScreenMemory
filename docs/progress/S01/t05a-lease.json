@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "stage": "S01",
+  "slice": "S01-T05a-lease",
+  "status": "CANDIDATE_REVIEW_PENDING",
+  "base_commit_and_t02b_accepted": "6b437fedc905a3dd6fe77412c355167232398fc5",
+  "accepted_commit": null,
+  "source_plans_changed": false,
+  "fixture_manifest": "../../../tests/fixtures/s01/host-lease-manifest.json",
+  "test_ids": ["t05a_01_fifty_simultaneous_processes_and_crash", "t05a_02_alias_independent_roots_and_stale_contents", "t05a_03_unsafe_entries_and_pinned_rename_junction_attempts", "t05a_04_partial_spawn_failure_reaps_owned_children", "t05a_05_observer_panic_reaps_owned_children", "t05a_worker", "t02b_06_explicit_test_root_only"],
+  "access_matrix": {
+    "scope": "12 actual synthetic NTFS native leaf/ancestor x access/share combinations; all CreateFileW open_error=0 and child writes inside permitted root succeed",
+    "rows": [
+      {"access": "FILE_READ_ATTRIBUTES (0x80)", "share": ["READ|WRITE (3)", "READ (1)"], "leaf_rename": "succeeded, Win32 0", "ancestor_rename": "succeeded, Win32 0"},
+      {"access": "FILE_LIST_DIRECTORY|FILE_READ_ATTRIBUTES (0x81)", "share": ["READ|WRITE (3)", "READ (1)"], "leaf_rename": "refused, Win32 32", "ancestor_rename": "refused, Win32 32"},
+      {"access": "GENERIC_READ (0x80000000)", "share": ["READ|WRITE (3)", "READ (1)"], "leaf_rename": "refused, Win32 32", "ancestor_rename": "refused, Win32 32"}
+    ],
+    "unpinned_positive": "nonempty root/data rename succeeds, junction mklink exit0, reparse attribute confirmed, rmdir exit0; external sentinel unchanged and no escaped host.lock",
+    "probe_exit": 0,
+    "private_result": ".pi/temporary/t05a-access-results.json",
+    "private_result_sha256": "fa8eec06262a278708db8489873a6bc2ead653f9d8e688292cf9147105e53451",
+    "private_script": ".pi/temporary/t05a-access-probe.ps1",
+    "private_script_sha256": "b2ee9efbe840009fb5a92d12a2dcf7925d4ceccc38d0ebf35618798880722cfc"
+  },
+  "initial_red": {"mechanism": "metadata-only FILE_READ_ATTRIBUTES root pins", "repro": "t05a_03 pinned data rename unexpectedly succeeded before HostLease", "verify_exit": 1, "rust_test_native_exit": 101, "artifact": ".pi/verify-e59e6c869ef7487083da50a1817cab5e/result.json", "sha256": "0b31276b378c6154ac79d94fc88637b5506573dc6a8e2f59276e345198e7225c"},
+  "race_summary": {"contenders": 50, "owner": 1, "busy": 49, "crash": "only harness-owned winner Child killed; expected non-success, other child exit0", "reacquire_deadline_seconds": 5, "pinned_prelock_rename_attempts": 1000, "concurrent_junction": "rejected; same unpinned junction command succeeds exit0", "outside_lock_created": false, "outside_sentinel_unchanged": true},
+  "checks_provenance": "historical initial T05a runs before child-cleanup correction; not evidence of t05a_04/05 or current corrected-source outer exits",
+  "checks": [
+    {"command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify.ps1", "raw_exit": 0, "result": ".pi/verify-c9cde65c1a664c4a99bf4cddd385ce5e/result.json", "native_rust_test": 0, "host_lease_step": 0, "plan_hash_pre_post": "PASS", "source_integrity_pre_post": "PASS"},
+    {"command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify-contracts.ps1", "raw_exit": 0, "result": ".pi/contracts-d5cb2ec9f6b245e6a30eb5e18d60332e/result.json"},
+    {"command": "powershell.exe -NoProfile -NonInteractive -File scripts/test-verify.ps1", "raw_exit": 0, "result": "positive suites + fixed argv, expected negative exits"},
+    {"command": "python -c fixture manifest test/source/probe/payload SHA-256 validation", "raw_exit": 0, "result": "3 artifact hashes + 2 payload hashes match"}
+  ],
+  "sdk_abi": "Windows SDK 10.0.26100.0 winnt.h/winbase.h/fileapi.h/minwinbase.h constants, CreateFileW/LockFileEx/MoveFileW signatures; x64 FileInfo 52 align4, OVERLAPPED 32 align8, HANDLE 8; UTF16 and bounded buffers; error captured immediately; RAII CloseHandle",
+  "corrected_regression": {"reason": "parallel synthetic fixtures shared Windows clock tick: create_dir returned raw OS 183; added process-local AtomicU64 uniqueness without weakening assertions", "failed_verify": ".pi/verify-b66582a4d78b4ed59d71c0c732b00cde/result.json", "verify_exit": 1, "native_rust_test_exit": 101, "corrected_verify_exit": 0},
+  "child_cleanup_correction": {
+    "scope": "test harness only: Workers owns each Child immediately; private missing-executable injection at spawn 4 after three real child starts; private duplicated OS handles confirm process completion after guard kill/wait, including observer assertion unwind",
+    "injected_failure": "Windows CreateProcess NotFound raw_os_error=2 (expected inside passing regression, not runner failure)",
+    "historical_pre_cleanup": {
+      "source_state": "before t05a_04/05 correction; not evidence for corrected source",
+      "outer_exit": null,
+      "outer_exit_provenance": "not_recorded: shell printed literal %ERRORLEVEL%; native/inner exit is not numeric wrapper outer exit",
+      "runs": [
+        {"command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify.ps1", "result": ".pi/verify-41a63f87e37b416b9674d4da7b529ae2/result.json", "sha256": "768b5ef7672bd639a7a0c5184c005a1d1ededcc987e7c29456de7e0d1419c78b", "host_lease_started_at_utc": "2026-09-27T23:15:31.5654561Z", "host_lease_native_exit": 0, "host_lease_cases": "t05a_worker + t05a_01..03: 4 passed; t05a_04/05 absent"},
+        {"command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify-contracts.ps1", "result": ".pi/contracts-d5ecb5fe879f4907a5cb8d20895702dd/result.json", "sha256": "f7f7ed280d64075dbb0620f61e54ef4c723bf5368df22d729e6863157ad9eee3"},
+        {"command": "powershell.exe -NoProfile -NonInteractive -File scripts/test-verify.ps1", "result": ".pi/test-verify-f95e73a55b6541499eebf457a61a2b62/positive-verify/result.json", "sha256": "cde6910b090e6acd9d4728a218282c466f39f8b1b4f85dbfd090ffae17ef37b4"}
+      ]
+    },
+    "current_independent_review": {
+      "reviewer_run_id": "75d5d50a-72df-4183-a28d-990b1c1e0d1e",
+      "reviewer_artifact": "75d5d50a-72df-4183-a28d-990b1c1e0d1e_sm-reviewer_output.md (private managed subagent artifact)",
+      "verdict": "PASS; supervisor acceptance request timed out, not a check failure",
+      "outer_exit_provenance": "attested_by_review; numeric exits reported by independent reviewer, not measured by docs-only writer and not inferred from inner result",
+      "checks_raw_outer_exit": [
+        {"command": "cargo test --locked -p sm-isolation --test host_lease t05a_0 -- --test-threads=1 (pinned MSVC env)", "exit": 0, "cases": "t05a_01..05: 5 passed, 0 failed", "result": null, "result_note": "separate targeted log not supplied; reviewer attestation only"},
+        {"command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify.ps1", "exit": 0, "result": ".pi/verify-f236834d9a72441ab49ac77197fda4c2/result.json", "sha256": "59aa1c0b12596cbbe86b6f8d9441ee85a96e862510b444c1dd21392f9d31ce70", "host_lease_started_at_utc": "2026-09-27T23:30:08.1960851Z", "host_lease_native_exit": 0, "host_lease_log": ".pi/verify-f236834d9a72441ab49ac77197fda4c2/native-11.log", "host_lease_log_sha256": "a83f1dd685a21d7d05e6cc43c65bb0208bf536995bce8fa7114d1ca1c06eb5ff", "host_lease_cases": "t05a_worker + t05a_01..05: 6 passed", "rust_test_native_exit": 0, "plan_source_pre_post": "PASS"},
+        {"command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify-contracts.ps1", "exit": 0, "result": ".pi/contracts-2355c1e0801c439f8d1831c4745c3ffe/result.json", "sha256": "cd4253a6058e85d6d98b61446cc39bdc43d8caae0854842ee24f7e6c896ea53a", "plan_source_pre_post": "PASS"},
+        {"command": "powershell.exe -NoProfile -NonInteractive -File scripts/test-verify.ps1", "exit": 0, "result": ".pi/test-verify-5555a88a4c754f74aa20017f06f1eca4/positive-verify/result.json", "sha256": "e326de60b628349e7aaf5f505991692a406e455b84539c1f1b55599e7548e39f", "positive_suite": "PASS; negative controls attested by reviewer"}
+      ]
+    },
+    "fixture_source_sha256": "72d9e7b82e1b22bf9b56e21bb92103646a39c8c260daed976912b05fdd451ada",
+    "runner_stage": "IN_PROGRESS; no acceptance/commit"
+  },
+  "no_staged_files": true,
+  "deferred": ["independent evidence-link review and parent acceptance/commit (code reviews 34031a97 and 75d5d50a PASS)", "actual inaccessible ACL path denial NOT_RUN (no ACL changes authorized)", "SQLite/schema/migrations/backup/preflight and production host lifecycle NOT_IMPLEMENTED", "secure IPC/enrollment, GUI/bridge/live and full S01 NOT_RUN", "donor menu/runtime capture T02 NOT_RUN", "not a sandbox against malicious same-user/admin or subsequent hardlink abuse"]
+}

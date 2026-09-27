@@ -49,6 +49,7 @@ try {
         'RUST-FMT' = @('cargo',@('fmt','--all','--','--check'))
         'RUST-CLIPPY' = @('cargo',@('clippy','--workspace','--all-targets','--locked','--','-D','warnings'))
         'RUST-TEST' = @('cargo',@('test','--workspace','--locked'))
+        'HOST-LEASE' = @('cargo',@('test','--locked','-p','sm-isolation','--test','host_lease'))
         'PNPM-TYPECHECK' = @('node',@('@PNPM_CLI','typecheck'))
         'PNPM-LINT' = @('node',@('@PNPM_CLI','lint'))
         'PNPM-TEST' = @('node',@('@PNPM_CLI','test'))
@@ -78,7 +79,7 @@ try {
         }
         $ids = @($positive.steps | ForEach-Object { $_.check_id })
         foreach ($id in $expected.Keys) {
-            if ($id -in @('PREREQ-pnpm') -or ($suite -eq 'verify' -and $id -in @('RUST-FMT','RUST-CLIPPY','RUST-TEST','PNPM-TYPECHECK','PNPM-LINT','PNPM-TEST','CONTRACTS')) -or
+            if ($id -in @('PREREQ-pnpm') -or ($suite -eq 'verify' -and $id -in @('RUST-FMT','RUST-CLIPPY','RUST-TEST','HOST-LEASE','PNPM-TYPECHECK','PNPM-LINT','PNPM-TEST','CONTRACTS')) -or
                 ($suite -eq 'verify-contracts' -and $id -in @('SCHEMA-GENERATE','SCHEMA-CHECK','TS-GENERATE','PNPM-CONTRACTS','BOUNDARIES','SCHEMA-FIXTURES'))) {
                 if ($id -notin $ids) { throw "Missing fixed check evidence: $id" }
             }

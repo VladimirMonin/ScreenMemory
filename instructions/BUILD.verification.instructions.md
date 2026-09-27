@@ -36,9 +36,10 @@ env, сохраняет cargo outputs под `.pi/`. Если prerequisite/versi
 изменивший workspace owner обновляет обязательный suite и каталог.
 
 Сегодня `PASS` означает только **implemented contract subset**: Rust fmt/clippy/
-test (включая S01-LOG-01/02 test-support и logger)/schema; pnpm
+test (включая S01-LOG-01/02 test-support, logger и synthetic HostLease),
+отдельный `HOST-LEASE` cargo test -p sm-isolation --test host_lease/schema; pnpm
 typecheck/lint/test/contracts:check; Python boundary/schema fixtures и source bytes.
-`FRONTEND`, `BRIDGE`, `HOST`, `HOST-LOG-INTEGRATION` и остальные будущие gates
+`FRONTEND`, `BRIDGE`, полный `HOST`, `HOST-LOG-INTEGRATION` и остальные будущие gates
 остаются `NOT_IMPLEMENTED`/`NOT_RUN`;
 S01 всегда `IN_PROGRESS` до отдельной приёмки владельцем. Нет live/runtime,
 donor build, GUI, model download, `pnpm install` или bootstrap.

@@ -61,6 +61,7 @@ try {
             @('RUST-FMT',$tools.rust,@('fmt','--all','--','--check')),
             @('RUST-CLIPPY',$tools.rust,@('clippy','--workspace','--all-targets','--locked','--','-D','warnings')),
             @('RUST-TEST',$tools.rust,@('test','--workspace','--locked')),
+            @('HOST-LEASE',$tools.rust,@('test','--locked','-p','sm-isolation','--test','host_lease')),
             @('PNPM-TYPECHECK',$tools.node,@($tools.pnpm,'typecheck')),
             @('PNPM-LINT',$tools.node,@($tools.pnpm,'lint')),
             @('PNPM-TEST',$tools.node,@($tools.pnpm,'test'))
