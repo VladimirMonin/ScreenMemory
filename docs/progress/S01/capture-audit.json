@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "stage": "S01",
+  "task": "S01-T01",
+  "source_commit": "fa314915273e2cb91006fa284e5dd48fa90aff3a",
+  "kind": "static_risk_register_not_menu_test",
+  "findings": [
+    {"id": "CAP-R01", "source": "core/rust-lib/src/hotkey.rs:dispatch_action; commands.rs:run_capture_pipeline", "observation": "Screenshot callback spawns worker; pipeline calls frontmost_app::name then hide_popup then mode.capture. Popup/focus could change menu before freeze.", "next_check": "S01-T02 synthetic test-desktop menu baseline; S02 reorder intent/target/freeze"},
+    {"id": "CAP-R02", "source": "core/rust-lib/src/region_picker.rs:win_impl::capture", "observation": "Virtual-desktop BitBlt before overlay, but unchecked DC/bitmap/BitBlt results and CreateWindowExW error after resource/state setup; GetMessageW .as_bool() does not distinguish -1 from 0; no proven RAII/error cleanup.", "next_check": "S02 fault/cancel/Win32 resource tests"},
+    {"id": "CAP-R03", "source": "core/rust-lib/src/region_picker.rs:CaptureMode", "observation": "Three donor modes Region/Fullscreen/Window; ScreenMemory requires four Region/ActiveWindow/CurrentMonitor/AllMonitors and mixed-DPI validation.", "next_check": "S01-T02 bounded mixed-DPI observation if available; S02 full mode matrix"},
+    {"id": "CAP-R04", "source": "core/rust-lib/src/commands.rs:run_capture_pipeline; screenshot_preview.rs:screenshot_preview_save", "observation": "Cache pending PNG and clipboard precede preview; Save promotes Downloads then clipboard then best-effort history; not a verified canonical file+DB commit receipt; remove on discard can leave clipboard copy.", "next_check": "S02 durable acceptance/recovery tests, preserve accepted staging"},
+    {"id": "CAP-R05", "source": "core/rust-lib/src/frontmost_app.rs:name; tracking/os/windows.rs:frontmost", "observation": "Name function returns None on Windows; tracker Windows context has title/name but runs in unrelated time tracking subsystem.", "next_check": "S02 standalone context adapter; do not start tracker"}
+  ],
+  "runtime_menu_cases": {"native_dropdown": "NOT_RUN", "explorer_context_menu": "NOT_RUN", "browser_select": "NOT_RUN", "mixed_dpi": "NOT_RUN"},
+  "limitations": "No execution of original donor in personal environment, no Windows capture performed; findings are source-derived risk hypotheses, not reproducible defects or remediation proof."
+}

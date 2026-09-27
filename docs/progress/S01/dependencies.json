@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "source_commit": "fa314915273e2cb91006fa284e5dd48fa90aff3a",
+  "status": "initial_inventory_not_compliance_clearance",
+  "manifests": [
+    {"path": "Cargo.toml", "role": "4 workspace members; Rust 2021; MIT", "state": "reviewed"},
+    {"path": "core/rust-lib/Cargo.toml", "role": "shared dependencies and target-specific Win32/WinRT features", "state": "reviewed"},
+    {"path": "win/src-tauri/Cargo.toml", "role": "Windows shell and Tauri build", "state": "reviewed"},
+    {"path": "Cargo.lock", "sha256": "6578653a3a52f8f5055a9a61ae0135628051c8831968cc531e77ea309ec060d5", "state": "indexed_selected_versions_only", "package_count": 864},
+    {"path": "package.json", "role": "root scripts; pnpm onlyBuiltDependencies: esbuild", "state": "reviewed"},
+    {"path": "core/frontend/package.json", "role": "React 19, Vite 7, TS 5.8, Vitest; ranges not pin evidence", "state": "reviewed"},
+    {"path": "win/package.json", "role": "Tauri CLI entry", "state": "reviewed"},
+    {"path": "pnpm-lock.yaml", "sha256": "53ff62504e27d69ccb81a2cff225e04a7a9aad25d11c5c009321aa2a9d279bd7", "lockfile_version": "9.0", "state": "indexed_selected_versions_only"}
+  ],
+  "selected_locked_versions_not_runtime_verified": {
+    "rust": {"tauri": "2.10.3", "windows": "0.61.3 (alongside older transitive versions)", "rusqlite": "0.32.1", "libsqlite3-sys": "0.30.1", "ort": "2.0.0-rc.12", "ort-sys": "2.0.0-rc.12", "image": "0.25.10", "cpal": "0.15.3", "keyring": "3.6.3"},
+    "js": {"@tauri-apps/cli": "2.10.1", "esbuild": "0.27.7"}
+  },
+  "native_and_download_surfaces": [
+    {"source": "Cargo.toml ort + ort-sys", "effect": "ONNX Runtime native binaries may be downloaded by ort-sys build feature; default features/transitive feature resolution and exact URL/checksum need offline build audit", "allowed_now": false},
+    {"source": "Cargo.toml rusqlite bundled", "effect": "libsqlite3-sys builds bundled SQLite; does not establish FTS5/vec0 configuration for new product", "allowed_now": false},
+    {"source": "core/rust-lib/build.rs", "effect": "compresses 550 vendored FIGlet fonts into OUT_DIR; no network action in reviewed script", "allowed_now": false},
+    {"source": "package.json pnpm.onlyBuiltDependencies", "effect": "esbuild lifecycle native executable; target packages/integrity must be checked at install time", "allowed_now": false},
+    {"source": "package.json posttest / scripts/update-badges.mjs", "effect": "test hook rewrites README badge counts; do not run verification against tracked baseline", "allowed_now": false},
+    {"source": "package.json check / scripts/check.sh", "effect": "Bash-only; builds frontend; not clean Windows verification", "allowed_now": false},
+    {"source": "scripts/install-linux.sh and install-macos.sh", "effect": "installation/download scripts; not part of Windows T01 and never executed", "allowed_now": false}
+  ],
+  "bundled_assets": [
+    {"path": "core/rust-lib/models/u2netp.onnx", "sha256": "309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8", "link": "core/rust-lib/src/cutout_ml.rs:31 include_bytes!", "license": "NOT_VERIFIED: no model-specific license/provenance discovered in reviewed code; do not redistribute/copy without review", "decision": "exclude from ScreenMemory baseline"},
+    {"path": "core/rust-lib/assets/figlet-fonts/", "link": "core/rust-lib/build.rs", "notice": "THIRDPARTY-FONTS", "notice_sha256": "f627af2bc5a175b83ce35df7ac76c8a4720f68d645fb6e6ba05f3145b70c267d", "license": "Donor describes pyfiglet MIT collection with per-font attributions; individual fonts are not separately cleared here", "decision": "exclude unless actually needed; preserve notices if imported"},
+    {"path": "core/rust-lib/assets/*.wav, signature.png, tray-hat.png and win/src-tauri/icons/", "license": "asset-specific rights NOT_VERIFIED", "decision": "do not blindly copy or ship"}
+  ],
+  "license_boundary": "Donor MIT LICENSE reviewed; dependency and asset licenses not exhaustively reviewed; no legal conclusion",
+  "future_not_present": ["@lmstudio/sdk", "libwebp advanced adapter", "libavif/libaom adapter", "sqlite-vec", "private bundled Node runtime"],
+  "live_environment": "NOT_RUN; SDK/native versions above are manifests/locks only"
+}

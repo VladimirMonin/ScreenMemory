@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "stage": "S01",
+  "task": "S01-T01",
+  "source": {
+    "repository": "https://github.com/pepperonas/inspector-rust",
+    "commit": "fa314915273e2cb91006fa284e5dd48fa90aff3a",
+    "reference": "refs/remotes/upstream/plan-baseline",
+    "checkout": "detached, separate read-only donor worktree",
+    "status": "clean after removal of tool-generated untracked .serena; no source modifications",
+    "ancestry": "separate fetched reference; decision on ancestry preservation before importing code belongs to integrator",
+    "license": "MIT; upstream LICENSE copyright (c) 2026 Martin Pfeffer",
+    "license_sha256": "2905e425b74e30b827b38f5713b33f4122ff6bd7c7f7f5a265a18ba2184809fd",
+    "locks_sha256": {
+      "Cargo.lock": "6578653a3a52f8f5055a9a61ae0135628051c8831968cc531e77ea309ec060d5",
+      "pnpm-lock.yaml": "53ff62504e27d69ccb81a2cff225e04a7a9aad25d11c5c009321aa2a9d279bd7"
+    }
+  },
+  "plans": {
+    "master": {"file": "docs/ScreenMemory_Full_Development_Plan_v3.md", "sha256": "c238bcf79f8ceb907060599649b823c72cffa1d3b39f6f14f66664b7537398a6"},
+    "stage": {"file": "docs/ScreenMemory_S01_Foundation_Architecture.md", "sha256": "5497a8f9fdd2e63cab0f06e31b92655471543a049379adb55209b3c1170c978c"},
+    "downstream": "S02 previous_document_sha256 matches stage hash"
+  },
+  "verification_level": "static source/manifest inventory only; no Windows build, runtime, dependency install or model download"
+}

@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "stage": "S01",
+  "plan_version": "1.0",
+  "master_version": "3.0",
+  "task": "S01-T01",
+  "status": "IN_PROGRESS",
+  "baseline_commit": "fa314915273e2cb91006fa284e5dd48fa90aff3a",
+  "accepted_code_commit": null,
+  "report_commit": null,
+  "environment_manifest": null,
+  "gates": [
+    {"id": "G01", "outcome": "NOT_RUN", "partial_evidence": ["upstream-baseline.json", "upstream-map.md", "dependencies.json"], "missing": "Windows donor build"},
+    {"id": "G02", "outcome": "NOT_RUN", "evidence": []},
+    {"id": "G03", "outcome": "NOT_RUN", "evidence": []},
+    {"id": "G04", "outcome": "NOT_RUN", "evidence": []},
+    {"id": "G05", "outcome": "NOT_RUN", "evidence": []},
+    {"id": "G06", "outcome": "NOT_RUN", "evidence": []},
+    {"id": "G07", "outcome": "NOT_RUN", "evidence": []},
+    {"id": "G08", "outcome": "NOT_RUN", "partial_evidence": ["dependencies.json"], "missing": "clean verify/CI"},
+    {"id": "G09", "outcome": "NOT_RUN", "partial_evidence": ["capture-audit.json"], "missing": "actual menu baseline"},
+    {"id": "G10", "outcome": "NOT_RUN", "evidence": []}
+  ],
+  "checks": [
+    {"id": "S01-UP-01", "suite": "static baseline", "outcome": "PASS", "command": "git rev-parse HEAD; sha256sum plans and donor locks/LICENSE; git status --porcelain", "exit_code": 0, "expected": "fixed donor commit/license/locks and clean source", "actual": "SHA fa314915273e2cb91006fa284e5dd48fa90aff3a; MIT; hashes recorded; donor clean after generated tool cache removal", "duration_ms": null, "evidence": ["upstream-baseline.json", "dependencies.json"]},
+    {"id": "S01-BLD-02", "suite": "static initial script audit", "outcome": "PARTIAL", "command": "read package.json, scripts/check.sh, scripts/update-badges.mjs", "exit_code": null, "expected": "verification does not dirty tracked files", "actual": "posttest invokes badge rewrite; check invokes Bash and frontend build; no verify executed", "duration_ms": null, "evidence": ["dependencies.json"]}
+  ],
+  "measurements": [],
+  "artifacts": ["upstream-baseline.json", "dependencies.json", "upstream-map.md", "capture-audit.json", "../../adr/001-upstream-strategy.md"],
+  "known_limitations": ["Donor dependency graph/asset-specific licensing not fully audited", "No donor build, native menu test, model, SDK or runtime proof", "Codebase graph indexes main docs only; Serena Rust unavailable for donor"],
+  "blockers": [],
+  "review": {"status": "NOT_RUN", "evidence": null},
+  "handoff": {"next_task": "S01-T02 (recommendation only; not started)", "next_stage": "S02 only after S01 acceptance", "contracts": [], "open_native_findings": ["CAP-R01", "CAP-R02", "CAP-R03"]}
+}
