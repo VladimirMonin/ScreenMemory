@@ -1,0 +1,95 @@
+{
+    "schema_version":  1,
+    "stage":  "S01",
+    "task":  "S01-T02a",
+    "captured_at_utc":  "2026-09-27T18:40:46.7219579Z",
+    "os":  {
+               "architecture":  "64-разрядная",
+               "build":  "26200",
+               "version":  "10.0.26200"
+           },
+    "shell":  {
+                  "version":  "5.1.26100.7462",
+                  "name":  "Windows PowerShell"
+              },
+    "tools":  {
+                  "cmake_path":  {
+                                     "status":  "NOT_FOUND",
+                                     "version":  null,
+                                     "exit_code":  null
+                                 },
+                  "pnpm":  {
+                               "status":  "FOUND",
+                               "version":  "10.32.1",
+                               "exit_code":  0
+                           },
+                  "node":  {
+                               "status":  "FOUND",
+                               "version":  "v25.8.1",
+                               "exit_code":  0
+                           },
+                  "git":  {
+                              "status":  "FOUND",
+                              "version":  "git version 2.54.0.windows.1",
+                              "exit_code":  0
+                          },
+                  "cargo":  {
+                                "status":  "NOT_FOUND",
+                                "version":  null,
+                                "exit_code":  null
+                            },
+                  "rustc":  {
+                                "status":  "NOT_FOUND",
+                                "version":  null,
+                                "exit_code":  null
+                            },
+                  "rustup":  {
+                                 "status":  "NOT_FOUND",
+                                 "version":  null,
+                                 "exit_code":  null
+                             }
+              },
+    "visual_studio":  [
+                          {
+                              "complete":  true,
+                              "version":  "16.11.36631.11",
+                              "bundled_cmake":  {
+                                                    "status":  "FOUND",
+                                                    "version":  "cmake version 3.20.21032501-MSVC_2",
+                                                    "exit_code":  0
+                                                },
+                              "product":  "Microsoft.VisualStudio.Product.BuildTools",
+                              "msvc_developer_environment":  true,
+                              "msvc_toolset":  "14.29.30133"
+                          },
+                          {
+                              "complete":  true,
+                              "version":  "17.14.36811.4",
+                              "bundled_cmake":  {
+                                                    "status":  "FOUND",
+                                                    "version":  "cmake version 3.31.6-msvc6",
+                                                    "exit_code":  0
+                                                },
+                              "product":  "Microsoft.VisualStudio.Product.BuildTools",
+                              "msvc_developer_environment":  true,
+                              "msvc_toolset":  "14.44.35207"
+                          }
+                      ],
+    "windows_sdk_versions":  [
+                                 "10.0.19041.0",
+                                 "10.0.26100.0"
+                             ],
+    "webview2_evergreen_registry":  [
+
+                                    ],
+    "portable_rustc":  {
+                           "status":  "FOUND",
+                           "version":  "rustc 1.98.1 (48a229cea 2026-09-01)",
+                           "exit_code":  0
+                       },
+    "webview2_status":  "NOT_FOUND_IN_PROBED_REGISTRY_NOT_RUNTIME_TESTED",
+    "locale":  "ru-RU",
+    "gpu_driver":  "NOT_PROBED: build-only slice",
+    "display_topology":  "NOT_PROBED: no desktop interaction",
+    "runtime":  "NOT_RUN"
+}

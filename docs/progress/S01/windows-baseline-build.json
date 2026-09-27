@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "stage": "S01",
+  "slice": "S01-T02a",
+  "source_commit": "fa314915273e2cb91006fa284e5dd48fa90aff3a",
+  "parent_baseline": "43dfbe849b88046dde144fbf6ce19bf9b815092f",
+  "source_tracked_dirty": false,
+  "read_only_donor_dirty": false,
+  "build_worktree_untracked_dependency_artifacts": [".cargo-home/", ".ort-cache/"],
+  "locks_sha256_before_after": {
+    "Cargo.lock": "6578653a3a52f8f5055a9a61ae0135628051c8831968cc531e77ea309ec060d5",
+    "pnpm-lock.yaml": "53ff62504e27d69ccb81a2cff225e04a7a9aad25d11c5c009321aa2a9d279bd7"
+  },
+  "toolchain": {
+    "official_manifest": "https://static.rust-lang.org/dist/channel-rust-stable.toml",
+    "manifest_date": "2026-09-03",
+    "manifest_sha256_verified": "a7c8774a5fd8441c997d94c029776cbc5eb111e9d72ab5d256fa69866644347e",
+    "version": "rustc 1.98.1 / cargo 1.98.1 x86_64-pc-windows-msvc",
+    "official_archive_base": "https://static.rust-lang.org/dist/2026-09-03/",
+    "verified_xz_sha256": {
+      "rustc-1.98.1-x86_64-pc-windows-msvc.tar.xz": "cb5370843a9d15ce6e6cf6461b4c997722220d268d0d813c2b2b86f3ed59ac24",
+      "cargo-1.98.1-x86_64-pc-windows-msvc.tar.xz": "d6e8c738a0503b16b04db3838a38769620d553e436f632d2ebf667f793b2d44d",
+      "rust-std-1.98.1-x86_64-pc-windows-msvc.tar.xz": "42727764a01a54db7423e43db08a9c818405679af6a9a677068e8cd4b8361242"
+    },
+    "installation": "Verified archives extracted as regular files under <project>/.pi/toolchains; no installer or global PATH change; process-only VS developer environment",
+    "visual_studio_2022": "17.14.36811.4",
+    "msvc_toolset": "14.44.35207",
+    "cmake_from_vs": "3.31.6-msvc6"
+  },
+  "supply_chain": {
+    "pnpm_registry": "https://registry.npmjs.org/ (verified default)",
+    "esbuild": "0.27.7; lock sha512-IxpibTjyVnmrIQo5aqNpCgoACA/dTKLTlhMHihVHhdkxKyPO1uBBthumT0rdHmcsk9uMonIWS0m4FljWzILh3w==",
+    "esbuild_win32_x64": "0.27.7; lock sha512-56hiAJPhwQ1R4i+21FVF7V8kSD5zZTdHcVuRFMW0hn753vVfQN8xlx4uOPT4xoGH0Z/oVATuR82AiqSTDIpaHg==",
+    "ort_sys": "2.0.0-rc.12; enabled ort default download-binaries/copy-dylibs/api-24; expected upstream https://cdn.pyke.io/0/pyke:ort-rs/ms@1.24.2/x86_64-pc-windows-msvc.tar.lzma2; embedded SHA256 b685bfc8d336e0ba95c066a7a982c03aa6dedd528a492eb99ca4ccb7f3af9e7a; verified cache directory exists under <build>/.ort-cache; no model download",
+    "rust_build_scripts": "Reviewed core/rust-lib/build.rs FIGlet gzip bundle; rusqlite bundled SQLite; win/src-tauri/build.rs calls tauri_build::build(). No arbitrary install/check/posttest hooks executed.",
+    "download_constraints": "Cargo locked crates.io; pnpm frozen lock; ORT embedded pinned digest and HTTPS; no lock/source upgrades"
+  },
+  "attempts": [
+    {"id":"manifest","cwd":"<project>","command":"Invoke-WebRequest https://static.rust-lang.org/dist/channel-rust-stable.toml[.sha256] -OutFile <project>/.pi/toolchains/...; Get-FileHash -Algorithm SHA256", "raw_exit_code":0,"outcome":"PASS"},
+    {"id":"rust-download-initial","cwd":"<project>","command":"PowerShell Invoke-WebRequest of three pinned Rust 1.98.1 MSVC archives to <project>/.pi/toolchains/", "raw_exit_code":null,"outcome":"TIMEOUT after 600 seconds; rustc partial 15520082 bytes; no archive executed"},
+    {"id":"rust-download-resume","cwd":"<project>","command":"curl.exe --fail --location --show-error --silent --connect-timeout 20 --max-time 300 --retry 0 --continue-at - --output <project>/.pi/toolchains/<archive>.part <manifest-pinned-URL> (three archives; SHA256 verify then move)","raw_exit_codes":[0,0,0],"outcome":"PASS; first archive resumed; three hashes match verified official manifest"},
+    {"id":"portable-extraction-initial","cwd":"<project>","command":"python .pi/toolchains/extract_verified.py", "raw_exit_code":1,"outcome":"FAILED: helper asserted every tar entry had component, overlooked archive root directory; helper corrected without modifying archived data"},
+    {"id":"portable-extraction","cwd":"<project>","command":"python .pi/toolchains/extract_verified.py", "raw_exit_code":0,"outcome":"PASS; safe regular-file extraction with rechecked SHA256"},
+    {"id":"pnpm-install","cwd":"<build>","command":"pnpm.cmd install --frozen-lockfile --store-dir .pnpm-store", "raw_exit_code":0,"outcome":"PASS","log":"<project>/.pi/build-logs/pnpm-install.log","log_sha256":"8a79e058253702429dc1b63863b6a3d0c86ec6ed5519d3f9b079d88a7e78152c"},
+    {"id":"frontend-build","cwd":"<build>","command":"pnpm.cmd --filter inspector-rust-frontend build", "raw_exit_code":0,"outcome":"PASS","log":"<project>/.pi/build-logs/frontend-build.log","log_sha256":"fe5cc2280ec90460afcbd37770d815ec53eca2ecfe3655c84b24d7649997419f"},
+    {"id":"cargo-fetch","cwd":"<build> (via process-only VS vcvars64.bat)","command":"cargo fetch --locked --target x86_64-pc-windows-msvc; CARGO_HOME=<build>/.cargo-home; CARGO_TARGET_DIR=<build>/target", "raw_exit_code":0,"outcome":"PASS","log":"<project>/.pi/build-logs/cargo-fetch.log","log_sha256":"bb162cb959cfd2707f155f89eb9597b15a8989175b29ebf7c3b10b713a2fa3fd"},
+    {"id":"cargo-build-offline","cwd":"<build> (via process-only VS vcvars64.bat)","command":"cargo build --locked --offline -p inspector-rust-win --target x86_64-pc-windows-msvc", "raw_exit_code":0,"outcome":"PASS but ort-sys CARGO_NET_OFFLINE skip path; not evidence of native ORT download","log":"<project>/.pi/build-logs/cargo-build.log","log_sha256":"f2f6ff1a7a98ec07b67113cedb5aed651b1cd8c3ee2505c0e33b0dbf43a8a66e"},
+    {"id":"cargo-build-ort","cwd":"<build> (via process-only VS vcvars64.bat)","command":"cargo build --locked -p inspector-rust-win --target x86_64-pc-windows-msvc; ORT_CACHE_DIR=<build>/.ort-cache", "raw_exit_code":0,"outcome":"PASS; ort-sys verified native cache directory present","log":"<project>/.pi/build-logs/cargo-build-ort.log","log_sha256":"eb08853cca539d2011fcd3f035da98382abe601a600a991e2e980e4b5cb91397"},
+    {"id":"tauri-build","cwd":"<build> (via process-only VS vcvars64.bat; pnpm filter sets win package cwd)","command":"pnpm.cmd --filter inspector-rust-win tauri build --debug --no-bundle; ORT_CACHE_DIR=<build>/.ort-cache", "raw_exit_code":0,"outcome":"PASS; built application, did not launch or package MSI","log":"<project>/.pi/build-logs/tauri-debug-no-bundle.log","log_sha256":"502001ea8fb0d625e09703d1a92ec86eedc67086bf0e578b167a5b46d61f2f87"}
+  ],
+  "output_artifacts": [
+    {"path":"<build>/target/debug/inspector-rust.exe","sha256":"04e5b15e0b6adc9fbb4f13c7b65e80abcc3067cfe779ba6e6d25e52a54253330","bytes":104890368,"executed":false},
+    {"path":"<build>/target/x86_64-pc-windows-msvc/debug/inspector-rust.exe","sha256":"588798ca3788bb6d1ed165f30704b9b19ce5235382b0c1aac4e8c83ceec79eda","bytes":97139200,"executed":false},
+    {"path":"<build>/core/frontend/dist/index.html","sha256":"4d02d321c8bc2d9985f98d04aa856f25444efde373255b2a7ebc21204f205a95"}
+  ],
+  "test_ids": {"S01-UP-01":"PASS (source unchanged)","S01-BLD-01":"PARTIAL (debug no-bundle only; clean release/package not run)","S01-BLD-02":"PARTIAL (tracked clean; clean verify not run)","S01-UP-02":"NOT_RUN","S01-CAP-01":"NOT_RUN"},
+  "limitations": ["WebView2 evergreen registry probe absent; runtime not verified", "No release/MSI bundle, clean VM or runtime/menu test", "Existing nom 3.2.1 future-incompat warning and donor-core compile warnings retained; no source changes"],
+  "validation": [
+    {"command":"PowerShell Parser.ParseFile scripts/collect-environment.ps1; scripts/collect-environment.ps1 -OutputPath docs/progress/S01/environment.json; ConvertFrom-Json","raw_exit_code":0,"outcome":"PASS; two independent VS installations; portable Rust and bundled CMake exact versions"},
+    {"command":"python - (public-safe text, six touched files whitespace, JSON parse, links, all 10 gates NOT_RUN, output artifact and lock SHA256 assertions)","raw_exit_code":0,"outcome":"PASS"},
+    {"command":"git diff --check; git diff --cached --check","raw_exit_codes":[0,0],"outcome":"PASS (untracked files separately whitespace-checked by Python)"},
+    {"command":"git -C .pi/upstream-inspector status --porcelain; git -C .pi/donor-build diff --name-only; git diff --cached --name-only","raw_exit_codes":[0,0,0],"outcome":"PASS; original donor and build tracked sources clean; staging empty"},
+    {"id":"S01-ENV-LF-01","command":"powershell.exe -NoProfile -NonInteractive -File scripts/test-collect-environment.ps1","raw_exit_code":0,"child_raw_exit_codes":{"output_success":0,"write_failure":1},"outcome":"PASS; isolated .pi temporary output tested as raw UTF-8 bytes: no BOM or CR, strict UTF-8 JSON parse and one final LF; failed output path returns nonzero"},
+    {"command":"powershell.exe -NoProfile -NonInteractive -File scripts/collect-environment.ps1 -OutputPath docs/progress/S01/environment.json","raw_exit_code":0,"outcome":"PASS; refreshed environment manifest with LF-only UTF-8 no BOM, final LF; no donor rebuild"}
+  ],
+  "staged_files": 0
+}

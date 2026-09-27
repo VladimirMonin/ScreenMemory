@@ -3,14 +3,16 @@
   "stage": "S01",
   "plan_version": "1.0",
   "master_version": "3.0",
-  "task": "S01-T01",
+  "task": "S01-T01 + S01-T02a",
+  "t01_accepted_commit": "43dfbe849b88046dde144fbf6ce19bf9b815092f",
   "status": "IN_PROGRESS",
   "baseline_commit": "fa314915273e2cb91006fa284e5dd48fa90aff3a",
   "accepted_code_commit": null,
   "report_commit": null,
-  "environment_manifest": null,
+  "environment_manifest": "environment.json",
+  "build_evidence": ["windows-baseline-build.md", "windows-baseline-build.json"],
   "gates": [
-    {"id": "G01", "outcome": "NOT_RUN", "partial_evidence": ["upstream-baseline.json", "upstream-map.md", "dependencies.json"], "missing": "Windows donor build"},
+    {"id": "G01", "outcome": "NOT_RUN", "missing": "isolated shell, clean release/package and runtime evidence; T02a Windows debug build only", "partial_evidence": ["upstream-baseline.json", "upstream-map.md", "dependencies.json", "windows-baseline-build.json"]},
     {"id": "G02", "outcome": "NOT_RUN", "evidence": []},
     {"id": "G03", "outcome": "NOT_RUN", "evidence": []},
     {"id": "G04", "outcome": "NOT_RUN", "evidence": []},
@@ -23,12 +25,13 @@
   ],
   "checks": [
     {"id": "S01-UP-01", "suite": "static baseline", "outcome": "PASS", "command": "git rev-parse HEAD; sha256sum plans and donor locks/LICENSE; git status --porcelain", "exit_code": 0, "expected": "fixed donor commit/license/locks and clean source", "actual": "SHA fa314915273e2cb91006fa284e5dd48fa90aff3a; MIT; hashes recorded; donor clean after generated tool cache removal", "duration_ms": null, "evidence": ["upstream-baseline.json", "dependencies.json"]},
+    {"id": "S01-BLD-01", "suite": "Windows donor debug no-bundle baseline", "outcome": "PARTIAL", "command": "pnpm.cmd --filter inspector-rust-win tauri build --debug --no-bundle (scoped VS developer environment)", "exit_code": 0, "expected": "Clean reproducible Windows build with pinned versions and output artifact", "actual": "Debug frontend + Rust/Tauri build succeeded; no release/MSI/clean VM; artifact hashes recorded", "duration_ms": null, "evidence": ["windows-baseline-build.json", "environment.json"]},
     {"id": "S01-BLD-02", "suite": "static initial script audit", "outcome": "PARTIAL", "command": "read package.json, scripts/check.sh, scripts/update-badges.mjs", "exit_code": null, "expected": "verification does not dirty tracked files", "actual": "posttest invokes badge rewrite; check invokes Bash and frontend build; no verify executed", "duration_ms": null, "evidence": ["dependencies.json"]}
   ],
   "measurements": [],
-  "artifacts": ["upstream-baseline.json", "dependencies.json", "upstream-map.md", "capture-audit.json", "../../adr/001-upstream-strategy.md"],
-  "known_limitations": ["Donor dependency graph/asset-specific licensing not fully audited", "No donor build, native menu test, model, SDK or runtime proof", "Codebase graph indexes main docs only; Serena Rust unavailable for donor"],
+  "artifacts": ["upstream-baseline.json", "dependencies.json", "upstream-map.md", "capture-audit.json", "../../adr/001-upstream-strategy.md", "environment.json", "windows-baseline-build.md", "windows-baseline-build.json", "../../../scripts/collect-environment.ps1"],
+  "known_limitations": ["Donor dependency graph/asset-specific licensing not fully audited", "Donor debug no-bundle build only; no native menu test, model, SDK, release package or runtime proof", "Codebase graph indexes main docs only; Serena Rust unavailable for donor"],
   "blockers": [],
   "review": {"status": "NOT_RUN", "evidence": null},
-  "handoff": {"next_task": "S01-T02 (recommendation only; not started)", "next_stage": "S02 only after S01 acceptance", "contracts": [], "open_native_findings": ["CAP-R01", "CAP-R02", "CAP-R03"]}
+  "handoff": {"next_task": "S01-T02 isolation/runtime (not started; parent decision pending)", "next_stage": "S02 only after S01 acceptance", "contracts": [], "open_native_findings": ["CAP-R01", "CAP-R02", "CAP-R03"]}
 }
