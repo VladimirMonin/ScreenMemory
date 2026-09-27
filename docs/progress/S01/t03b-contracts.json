@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "slice": "S01-T03b",
+  "status": "PARTIAL",
+  "baseline_commit": "388a7d62b2f7534ee0a536b07ddccb1f1327cd31",
+  "review": "PENDING",
+  "node": {"version": "24.13.0", "source": "official nodejs.org archive", "archive_sha256": "ca2742695be8de44027d71b3f53a4bdb36009b95575fe1ae6f7f0b5ce091cb88", "verification_exit_code": 0, "local_only": true},
+  "tooling": {"pnpm": "10.32.1", "json-schema-to-typescript": "15.0.4", "ajv": "8.17.1", "ajv-formats": "3.0.1", "typescript": "5.9.3", "install_hooks": "disabled after inspection"},
+  "checks": [
+    {"id":"S01-TS-INSTALL-01","command":"pnpm install --frozen-lockfile --ignore-scripts","exit_code":0,"outcome":"PASS"},
+    {"id":"S01-TS-TYPE-01","command":"pnpm typecheck","exit_code":0,"outcome":"PASS"},
+    {"id":"S01-TS-DEP-01","command":"pnpm lint","exit_code":0,"outcome":"PASS"},
+    {"id":"S01-TS-DTO-01..05/S01-TS-MUT-01/S01-TS-GEN-02","command":"pnpm test","exit_code":0,"outcome":"PASS","test_count":7,"intentional_drift_child_exit_code":1},
+    {"id":"S01-TS-GEN-01","command":"pnpm contracts:check","exit_code":0,"outcome":"PASS"},
+    {"id":"S01-DTO-05/06","command":"cargo test --workspace --locked (process-only MSVC wrapper)","exit_code":0,"outcome":"PASS","test_count":8},
+    {"id":"S01-FMT-01","command":"cargo fmt --all -- --check (process-only MSVC wrapper)","exit_code":0,"outcome":"PASS"},
+    {"id":"S01-CLIPPY-01","command":"cargo clippy --workspace --all-targets --locked -- -D warnings (process-only MSVC wrapper)","exit_code":0,"outcome":"PASS"},
+    {"id":"S01-SCHEMA-REPRO-01","command":"cargo run --locked -p sm-protocol --example generate_schemas -- --check schemas (process-only MSVC wrapper)","exit_code":0,"outcome":"PASS"},
+    {"id":"S01-SCHEMA-01/02/03","command":"python tests/contracts/check_schemas.py (jsonschema==4.26.0)","exit_code":0,"outcome":"PASS","detail":"strict date-time UTC calendar and shared response parity; in-memory missing format/response guard mutant accepts negative fixtures"},
+    {"id":"S01-DEP-01","command":"python tests/contracts/check_boundaries.py","exit_code":0,"outcome":"PASS"},
+    {"id":"S01-PLANS-01","command":"nine-plan SHA256/YAML chain check","exit_code":0,"outcome":"PASS"},
+    {"id":"S01-DIFF-01","command":"git diff --check; git diff --cached --name-only","exit_codes":[0,0],"outcome":"PASS","staged_files":0}
+  ],
+  "artifacts_sha256": {
+    "pnpm-lock.yaml": "f0a85d8d78bab7956ffe545a613d447352b949d70eb476e37eb2d6229efe822c",
+    "packages/protocol/src/generated/application-v1.ts": "fadb09996fffc2a73f644f7368a2e71a82b4ee28db1134dc5f70a1e8e9b6d193",
+    "packages/protocol/src/generated/application-methods-v1.ts": "fffefbfdda9424c48103db63009d939362ed79b2dc3a09a75cbfd46db07b2ef8",
+    "packages/protocol/src/generated/bridge-v1.ts": "bd680aa44a49916bad568a75024593cc3a9bddf00137fe73a8b26de85f7afba2",
+    "packages/protocol/src/generated/foundation-errors.ts": "1a37aa676ca7e059431f8c8b34af2a67e613fac36177a3fd13cc284433ed3ea4",
+    "tests/fixtures/protocol/parity-cases.json": "2d652f87a23779d266703eee5e8c540c8f255ce1cae7f8ccce0052094863ca55",
+    "tests/fixtures/protocol/response-cases.json": "c956d1ff3589d076d0325cd6356e9bd7c8c7899c626a2989d7da66e022c61d12"
+  },
+  "transient_failures_resolved": ["TS CJS imports: typecheck exit 2 then 0", "new Rust test formatting: fmt --check exit 1 then 0", "initial cmd invocation emitted prompt/no Rust work; reran with MSYS_NO_PATHCONV=1 and actual Cargo output", "response correction: Python date-time plugin lookup KeyError ('date-time' not installed), exit 1; replaced with explicit checker, rerun exit 0"],
+  "response_fixture": {"path":"tests/fixtures/protocol/response-cases.json","valid":6,"invalid":17,"consumers":["Rust serde_json::from_value<Response>","Ajv validateApplicationResponse","Python Draft202012Validator + custom UTC date-time FormatChecker"],"negative_mutations":["remove date-time format/checker => non-leap February 29 accepted", "relax Response result additionalProperties => both-on-result accepted"]},
+  "not_run": ["independent review pending",  "host/client/IPC security/auth/handshake/framing", "frontend/bridge/SDK/models", "donor rebuild/menu/clean package", "S01 G01-G10 acceptance"],
+  "staged_files": 0,
+  "tracked_mutation_from_checks": false,
+  "source_plan_sha256": {"master":"c238bcf79f8ceb907060599649b823c72cffa1d3b39f6f14f66664b7537398a6","S01":"5497a8f9fdd2e63cab0f06e31b92655471543a049379adb55209b3c1170c978c","S02":"23c66146f4ed761963d79c4a4efe9c4740b8c05c7bbef4bdf76910aefcb4c4ef","S03":"4d5a35030693df674f6c70a9a00ca7ef6bc8711ede5258894b4d46c32a12845b","S04":"c463c1336a7c8276aa695d3310822a3c51afecd8e2adbc781ff901a34f118c25","S05":"603ae93d0c7317cf5585a54eae44edb713b25c1f65daa3b347914c31b4b223bd","S06":"e7c8015aa1b1b1bf128495ff8620185ebddf6d4b6b996dc92fe28cb9b070d2e1","S07":"50711350f855130ca03c33c2dae66811ea474ab56ea618b7f1fa830e9dfbe210","S08":"926b628ae3484dca2d72b91ba65c02c006b31791457774bba5724b7802d0a3bf"}
+}

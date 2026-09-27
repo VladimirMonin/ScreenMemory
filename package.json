@@ -1,0 +1,13 @@
+{
+  "name": "screenmemory-foundation",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@10.32.1",
+  "engines": { "node": "24.13.0" },
+  "scripts": {
+    "typecheck": "node packages/protocol/scripts/check-toolchain.mjs && pnpm --filter @screenmemory/protocol typecheck",
+    "lint": "node packages/protocol/scripts/check-toolchain.mjs && pnpm --filter @screenmemory/protocol lint",
+    "test": "node packages/protocol/scripts/check-toolchain.mjs && pnpm --filter @screenmemory/protocol test",
+    "contracts:check": "node packages/protocol/scripts/check-toolchain.mjs && pnpm --filter @screenmemory/protocol contracts:check"
+  }
+}

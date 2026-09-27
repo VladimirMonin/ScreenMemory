@@ -1,7 +1,7 @@
 ---
-applyTo: "Cargo.toml,Cargo.lock,rust-toolchain.toml,crates/domain/**,crates/protocol/**,crates/application/**,schemas/**,tests/fixtures/protocol/**,tests/contracts/**"
+applyTo: "Cargo.toml,Cargo.lock,rust-toolchain.toml,crates/domain/**,crates/protocol/**,crates/application/**,schemas/**,tests/fixtures/protocol/**,tests/contracts/**,package.json,.npmrc,pnpm-lock.yaml,pnpm-workspace.yaml,packages/protocol/**"
 name: "BUILD.ProtocolContracts"
-description: "Читай при изменении Rust DTO, доменных ID/revision, application ports, JSON Schema или общих protocol fixtures."
+description: "Читай при изменении Rust DTO/ports, JSON Schema, общих fixtures, TS protocol consumer, генерации или pnpm contract scripts."
 ---
 
 # BUILD — Protocol contracts
@@ -22,6 +22,20 @@ fixture. При изменении ограничений/enum перегене�
 оставаться draft 2020-12; `application-methods-v1` отдельно проверяет
 `method`+`params`, envelope сам по себе не доказывает допустимость метода.
 
+TS consumer `packages/protocol` генерирует типы закреплённым
+`json-schema-to-typescript` из четырёх схем Rust owner. `node
+packages/protocol/scripts/generate.mjs --output <new-dir>` создаёт только новую
+директорию; `pnpm contracts:check` сравнивает bytes с checked-in TS без записи.
+После явной проверки можно опубликовать generated файлы. Проверяй Ajv2020
+`strict: true` с `ajv-formats`, локальными `uint16/uint32`, без coercion,
+removeAdditional, defaults и remote refs. Типы не заменяют runtime validation:
+для application request нужны и envelope, и `(method,params)`, bridge — отдельная
+версия/схема. Ошибки валидатора не отдавай вызывающему коду вместе с payload.
+Pinned Node 24.13.0 и pnpm 10.32.1; `pnpm install --frozen-lockfile
+--ignore-scripts` после просмотра lifecycle, затем `pnpm typecheck`, `pnpm lint`,
+`pnpm test`, `pnpm contracts:check`. Один package — protocol; пока frontend/bridge
+не существуют, нельзя обещать их проверку.
+
 На Windows используй закреплённый `rust-toolchain.toml` (MSVC 1.98.1),
 локальный toolchain/cache и process-only VS developer environment, без
 глобальной установки. После появления локальных компонентов того же release:
@@ -31,5 +45,5 @@ generate_schemas -- --check schemas`. Дополнительно `python
 tests/contracts/check_boundaries.py`; `python tests/contracts/check_schemas.py`
 требует явно `jsonschema==4.26.0`, не ставит пакеты автоматически.
 Не запускать donor/app/SDK ради проверки DTO. Сохраняй raw exit codes и
-проверяй девять source-plan hashes отдельно; TS/Ajv и transport/host — будущие
-срезы, Rust schema/fixtures сами по себе не подтверждают их исполнение.
+проверяй девять source-plan hashes отдельно; transport/host — будущие срезы,
+Rust schema/fixtures и TS consumer не подтверждают их исполнение.

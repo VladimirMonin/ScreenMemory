@@ -14,6 +14,8 @@ use std::cell::Cell;
 const STATUS: &str = include_str!("../../../tests/fixtures/protocol/valid-status.json");
 const CONTROL: &str = include_str!("../../../tests/fixtures/protocol/valid-control.json");
 const SAFE_MESSAGES: &str = include_str!("../../../tests/fixtures/protocol/safe-messages.json");
+const PARITY: &str = include_str!("../../../tests/fixtures/protocol/parity-cases.json");
+const RESPONSES: &str = include_str!("../../../tests/fixtures/protocol/response-cases.json");
 fn fixture() -> Value {
     serde_json::from_str(STATUS).unwrap()
 }
@@ -168,6 +170,42 @@ fn s01_dto_04_safe_message_control_parity_fixtures() {
         );
     }
 }
+#[test]
+fn s01_dto_05_shared_ts_schema_request_parity_cases() {
+    let cases: Value = serde_json::from_str(PARITY).unwrap();
+    for (group, expected) in [("valid", true), ("invalid", false)] {
+        for case in cases[group].as_array().unwrap() {
+            let mut raw = if case["base"] == "control" {
+                serde_json::from_str::<Value>(CONTROL).unwrap()
+            } else {
+                fixture()
+            };
+            for (key, value) in case.as_object().unwrap() {
+                if key != "id" && key != "base" {
+                    raw[key] = value.clone();
+                }
+            }
+            let actual = serde_json::from_value::<RequestEnvelope>(raw.clone()).and_then(|req| {
+                serde_json::from_value::<KnownParams>(json!({
+                    "method": req.method, "params": req.params
+                }))
+            });
+            assert_eq!(actual.is_ok(), expected, "{}", case["id"]);
+        }
+    }
+}
+
+#[test]
+fn s01_dto_06_shared_response_parity_cases() {
+    let cases: Value = serde_json::from_str(RESPONSES).unwrap();
+    for (group, expected) in [("valid", true), ("invalid", false)] {
+        for case in cases[group].as_array().unwrap() {
+            let actual = serde_json::from_value::<Response>(case["frame"].clone()).is_ok();
+            assert_eq!(actual, expected, "{}", case["id"]);
+        }
+    }
+}
+
 #[test]
 fn s01_dto_03_consent_bounds_and_response_union() {
     for (value, accepted) in [(0, false), (1, true), (300, true), (301, false)] {

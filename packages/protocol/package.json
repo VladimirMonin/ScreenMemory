@@ -1,0 +1,22 @@
+{
+  "name": "@screenmemory/protocol",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": { "node": "24.13.0" },
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit && node scripts/check-boundaries.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "contracts:check": "node scripts/generate.mjs --check"
+  },
+  "dependencies": {
+    "ajv": "8.17.1",
+    "ajv-formats": "3.0.1"
+  },
+  "devDependencies": {
+    "json-schema-to-typescript": "15.0.4",
+    "typescript": "5.9.3"
+  }
+}
