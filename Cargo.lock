@@ -3093,6 +3093,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sm-capture"
+version = "0.1.0"
+dependencies = [
+ "sm-application",
+ "uuid",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "sm-cli"
 version = "0.1.0"
 dependencies = [
@@ -3183,6 +3192,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sm-application",
+ "sm-capture",
+ "sm-codec",
  "sm-credentials",
  "sm-domain",
  "sm-framing",

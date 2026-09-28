@@ -13,7 +13,8 @@ use sm_domain::{HostInstanceId, LibraryId};
 use sm_framing::{BufferBudget, Phase, Reader, Writer};
 use sm_gui::{
     load_window_config, run_self_check, runtime_available, state_for_failure, state_for_status,
-    GuiSession, GuiState, OpenReportError, ReportOpener, NOT_IMPLEMENTED,
+    GuiCaptureAnswer, GuiCaptureState, GuiSession, GuiState, OpenReportError, ReportOpener,
+    CAPTURE_MODES, NOT_IMPLEMENTED,
 };
 use sm_host::{bootstrap, BootstrapMode, BootstrapOptions, DEFAULT_DRAIN};
 use sm_isolation::{LibraryRootResolver, RootSource};
@@ -124,6 +125,7 @@ impl HostLauncher for InProcessLauncher {
         let serve_slot = self.serve.clone();
         let handle = tokio::spawn(async move {
             let host = bootstrap(BootstrapOptions {
+                capture: sm_host::CaptureOptions::Disabled,
                 root,
                 mode: BootstrapMode::Serve,
                 store,
@@ -399,6 +401,7 @@ fn prepared_roots(
     let roots = Roots::new(label);
     let library = rt.block_on(async {
         let prepared = bootstrap(BootstrapOptions {
+            capture: sm_host::CaptureOptions::Disabled,
             root: roots.path(),
             mode: BootstrapMode::Initialize,
             store: store.clone(),
@@ -973,7 +976,6 @@ fn t06d_gui_07_state_mapping_is_total_and_shows_no_invented_counts() {
         BTreeSet::from_iter(diagnostics.not_implemented.iter().cloned())
     );
     for capability in [
-        "capture",
         "library_counts",
         "gallery",
         "search",
@@ -1066,4 +1068,68 @@ fn t06d_gui_09_autostart_uses_the_configured_fixed_image_once() {
         assert_eq!(launcher.calls(), 1);
         launcher.shutdown().await;
     });
+}
+
+#[test]
+fn s02_gui_09_capture_answer_carries_identities_only_and_a_closed_mode_vocabulary() {
+    // A refusal reuses the shared CLI codes and never invents a record identity.
+    let failure = sm_cli::ClientFailure {
+        exit: sm_cli::EXIT_CAPTURE,
+        code: ErrorCode::CaptureFocusUnavailable,
+        message: "refused",
+        retryable: false,
+    };
+    let refused = GuiCaptureAnswer::refused(&failure);
+    assert_eq!(refused.state, GuiCaptureState::Refused);
+    assert_eq!(refused.safe_code, Some(ErrorCode::CaptureFocusUnavailable));
+    assert!(refused.record_id.is_none() && refused.asset_id.is_none());
+    assert!(refused.width.is_none() && refused.byte_size.is_none());
+    let value = serde_json::to_value(&refused).unwrap();
+    let keys: Vec<&String> = value.as_object().unwrap().keys().collect();
+    for forbidden in ["pixel", "data", "hwnd", "bytes", "absolute"] {
+        assert!(
+            !keys.iter().any(|key| key.contains(forbidden)),
+            "the capture answer never carries {forbidden}"
+        );
+    }
+    // A saved answer mirrors exactly the committed receipt.
+    let receipt = sm_protocol::application::CaptureReceipt {
+        operation_id: sm_domain::OperationId::new(Uuid::from_u128(0x51)),
+        record_id: sm_domain::RecordId::new(Uuid::from_u128(0x52)),
+        asset_id: sm_domain::AssetId::new(Uuid::from_u128(0x53)),
+        canonical_mime: "image/webp".to_string(),
+        canonical_sha256: "ab".repeat(32),
+        width: 1000,
+        height: 600,
+        byte_size: "48271".to_string(),
+        relative_path: "assets/2026-09/01900000-0000-7000-8000-000000000052/original.webp"
+            .to_string(),
+        warnings: vec!["geometry_fallback_getwindowrect".to_string()],
+    };
+    let answer = GuiCaptureAnswer::from_outcome(&sm_protocol::application::CaptureOutcome::Saved {
+        receipt: receipt.clone(),
+    });
+    assert_eq!(answer.state, GuiCaptureState::Saved);
+    assert_eq!(answer.operation_id, Some(receipt.operation_id));
+    assert_eq!(answer.record_id, Some(receipt.record_id));
+    assert_eq!(answer.asset_id, Some(receipt.asset_id));
+    assert_eq!(answer.width, Some(1000));
+    assert_eq!(answer.byte_size, Some("48271".to_string()));
+    assert_eq!(answer.relative_path, Some(receipt.relative_path.clone()));
+    assert!(answer.relative_path.unwrap().starts_with("assets/"));
+    assert_eq!(answer.warnings, receipt.warnings);
+    // A cancellation is its own state, never an empty saved answer.
+    let cancelled =
+        GuiCaptureAnswer::from_outcome(&sm_protocol::application::CaptureOutcome::Cancelled {
+            operation_id: receipt.operation_id,
+            reason: sm_protocol::application::CancelReason::Escape,
+        });
+    assert_eq!(cancelled.state, GuiCaptureState::Cancelled);
+    assert_eq!(
+        cancelled.reason,
+        Some(sm_protocol::application::CancelReason::Escape)
+    );
+    assert!(cancelled.record_id.is_none());
+    // The mode vocabulary the window may send is closed and has no free-form alias.
+    assert_eq!(CAPTURE_MODES, ["region", "window", "monitor", "desktop"]);
 }

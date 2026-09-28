@@ -48,13 +48,30 @@ for (const name of readdirSync(new URL('../src/', import.meta.url))) {
   for (const call of text.matchAll(/invoke(?:<[^>]*>)?\(([^)]*)\)/g)) {
     const argument = call[1].trim();
     assert(!argument.includes(','), `invoke in ${name} must take exactly one bare command name`);
-    assert(/^'[a-z_]+'$/.test(argument) || argument === 'command', `unexpected invoke argument ${argument} in ${name}`);
+    // The only accepted dynamic form is the closed capture table of model.ts; every other
+    // call is a literal handler name. No path, frame, mode string or secret is ever sent.
+    assert(
+      /^'[a-z_]+'$/.test(argument) || argument === 'command' || argument === 'captureCommand[mode]',
+      `unexpected invoke argument ${argument} in ${name}`,
+    );
   }
   const commandUnion = /type Command =([\s\S]*?);/.exec(text);
   if (commandUnion) {
     for (const named of commandUnion[1].matchAll(/'([a-z_]+)'/g)) invoked.add(named[1]);
   }
 }
+// The capture table of the renderer must map exactly the closed mode vocabulary onto the
+// registered argument-free handlers.
+const guiModel = repositoryFile('apps/gui/src/model.ts');
+const table = /export const captureCommand: Record<CaptureMode, string> = \{([^}]*)\};/.exec(guiModel);
+assert(table, 'captureCommand must stay parseable in the renderer model');
+const pairs = [...table[1].matchAll(/(\w+):\s*'([a-z_]+)'/g)].map((match) => [match[1], match[2]]);
+assert.deepEqual(pairs, [
+  ['region', 'gui_capture_region'],
+  ['window', 'gui_capture_window'],
+  ['monitor', 'gui_capture_monitor'],
+  ['desktop', 'gui_capture_desktop'],
+]);
 assert(invoked.size >= 3, 'the window must drive its typed commands');
 for (const command of invoked) assert(registered.has(command), `Unknown tauri command ${command}`);
 

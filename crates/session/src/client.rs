@@ -316,6 +316,47 @@ impl ApplicationClient {
             _ => Err(SessionError::UnexpectedResponse.into()),
         }
     }
+    /// S02: run one capture command on the host. A region capture waits for the user, so
+    /// the client wait limit is explicit and independent of the IPC handshake.
+    pub async fn capture_command(
+        &self,
+        params: CaptureCommandParams,
+        timeout_ms: u32,
+        cancellation: Option<CancellationToken>,
+    ) -> Result<CaptureOutcome, ClientError> {
+        match self
+            .call(
+                "capture.command",
+                serde_json::to_value(params).expect("capture params are serializable"),
+                timeout_ms,
+                cancellation,
+            )
+            .await?
+        {
+            ApplicationResult::Capture(outcome) => Ok(outcome),
+            _ => Err(SessionError::UnexpectedResponse.into()),
+        }
+    }
+
+    /// S02: one bounded chunk of a committed canonical asset.
+    pub async fn read_asset(
+        &self,
+        request: LibraryAssetRequest,
+    ) -> Result<LibraryAssetChunk, ClientError> {
+        match self
+            .call(
+                "library.asset.read",
+                serde_json::to_value(request).expect("asset request is serializable"),
+                10_000,
+                None,
+            )
+            .await?
+        {
+            ApplicationResult::AssetChunk(chunk) => Ok(chunk),
+            _ => Err(SessionError::UnexpectedResponse.into()),
+        }
+    }
+
     /// Explicit best-effort cancellation, only for a request still pending on this client.
     pub async fn cancel(&self, id: RequestId) -> Result<(), SessionError> {
         if !self

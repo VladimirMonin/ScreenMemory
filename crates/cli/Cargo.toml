@@ -21,6 +21,7 @@ sm-session = { path = "../session" }
 serde.workspace = true
 serde_json.workspace = true
 tokio = { version = "=1.53.1", features = ["rt", "time", "io-util"] }
+uuid = { workspace = true, features = ["v4"] }
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_System_Console"] }
 
 [dev-dependencies]

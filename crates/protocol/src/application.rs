@@ -5,7 +5,10 @@ use crate::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sm_domain::{ConsentId, EvidenceId, HostInstanceId, LibraryId, ReportId, RequestId, Revision};
+use sm_domain::{
+    AssetId, ConsentId, EvidenceId, HostInstanceId, LibraryId, OperationId, RecordId, ReportId,
+    RequestId, Revision,
+};
 
 pub const APPLICATION_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };
 
@@ -163,6 +166,106 @@ pub struct ShutdownReceipt {
     pub state: HostState,
 }
 
+/// S02 §3.1: closed vocabulary of one capture target.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptureMode {
+    Region,
+    Window,
+    Monitor,
+    Desktop,
+}
+
+impl CaptureMode {
+    /// Closed name used in diagnostics; never a client-supplied free-form value.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Region => "region",
+            Self::Window => "window",
+            Self::Monitor => "monitor",
+            Self::Desktop => "desktop",
+        }
+    }
+}
+
+/// S02 §5.2: parameters of `capture.command`.
+///
+/// The initiator is deliberately absent: a client cannot declare itself a native hotkey.
+/// The trusted host adapter records the trigger out of band.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureCommandParams {
+    pub operation_id: OperationId,
+    pub mode: CaptureMode,
+}
+
+/// S02 §5.2: why a capture ended without an accepted frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CancelReason {
+    Escape,
+    EmptySelection,
+    ExplicitRequest,
+    ClientDisconnected,
+}
+
+/// S02 §5.2/§11.5: receipt of one committed capture. No pixels and no absolute path.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureReceipt {
+    pub operation_id: OperationId,
+    pub record_id: RecordId,
+    pub asset_id: AssetId,
+    pub canonical_mime: String,
+    pub canonical_sha256: String,
+    pub width: u32,
+    pub height: u32,
+    /// Decimal string: a byte count must not round through a JavaScript number.
+    pub byte_size: String,
+    /// Library-relative canonical path (`assets/...`), never an absolute path.
+    pub relative_path: String,
+    pub warnings: Vec<String>,
+}
+
+/// S02 §5.2: terminal outcome of one `capture.command`.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum CaptureOutcome {
+    Saved {
+        receipt: CaptureReceipt,
+    },
+    Cancelled {
+        operation_id: OperationId,
+        reason: CancelReason,
+    },
+}
+
+/// S02 §10.1: bounded read of one committed canonical asset.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryAssetRequest {
+    pub asset_id: AssetId,
+    pub offset: u32,
+}
+
+/// S02 §10.1: one bounded chunk of a canonical asset. `data_hex` keeps the frame a
+/// printable JSON document without a base64 dependency, and `sha256` is the whole-file
+/// digest so a truncated or substituted file is refused instead of exported.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryAssetChunk {
+    pub asset_id: AssetId,
+    pub offset: u32,
+    pub next_offset: u32,
+    pub eof: bool,
+    /// Decimal string of the whole canonical file size.
+    pub total_size: String,
+    pub sha256: String,
+    pub mime: String,
+    #[schemars(regex(pattern = "^([0-9a-f]{2})*$"))]
+    pub data_hex: String,
+}
+
 /// Decoded after the authorized handshake; `params` never carries a trusted context.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -189,6 +292,10 @@ pub enum KnownParams {
     AuthorizeProbe(AuthorizeProbeRequest),
     #[serde(rename = "system.request_shutdown")]
     RequestShutdown(EmptyParams),
+    #[serde(rename = "capture.command")]
+    CaptureCommand(CaptureCommandParams),
+    #[serde(rename = "library.asset.read")]
+    ReadAsset(LibraryAssetRequest),
 }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -208,6 +315,8 @@ pub enum ApplicationResult {
     AiPolicy(AiPolicyView),
     ProbeConsent(ProbeConsentReceipt),
     Shutdown(ShutdownReceipt),
+    Capture(CaptureOutcome),
+    AssetChunk(LibraryAssetChunk),
 }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -252,6 +361,8 @@ where
             | "system.set_ai_policy"
             | "system.authorize_probe"
             | "system.request_shutdown"
+            | "capture.command"
+            | "library.asset.read"
     ) {
         return Response::Error {
             request_id: request.request_id,

@@ -39,6 +39,14 @@ export type ApplicationResult =
   | {
       type: 'shutdown';
       value: ShutdownReceipt;
+    }
+  | {
+      type: 'capture';
+      value: CaptureOutcome;
+    }
+  | {
+      type: 'asset_chunk';
+      value: LibraryAssetChunk;
     };
 export type BridgeState = 'stopped' | 'starting' | 'ready' | 'degraded' | 'unavailable';
 export type BuildId = string;
@@ -51,26 +59,64 @@ export type CheckOutcome = 'PASSED' | 'FAILED' | 'BLOCKED' | 'NOT_RUN' | 'UNSUPP
  * Fixed public registry. Never expose provider exception strings in `safe_message`.
  */
 export type ErrorCode =
-  | 'METHOD_NOT_SUPPORTED'
-  | 'INVALID_REQUEST'
-  | 'FRAME_TOO_LARGE'
-  | 'PROTOCOL_TRUNCATED_FRAME'
-  | 'PERMISSION_DENIED'
-  | 'LIBRARY_MISMATCH'
-  | 'PROTOCOL_MISMATCH'
-  | 'HOST_ALREADY_RUNNING'
-  | 'SCHEMA_INCOMPATIBLE'
-  | 'CREDENTIAL_STORE_UNAVAILABLE'
-  | 'RUNTIME_UNAVAILABLE'
-  | 'MODEL_NOT_INSTALLED'
-  | 'AI_DISABLED'
-  | 'MODEL_CONFIG_UNSUPPORTED'
-  | 'BRIDGE_UNAVAILABLE'
-  | 'WAIT_TIMEOUT';
+  | (
+      | 'METHOD_NOT_SUPPORTED'
+      | 'INVALID_REQUEST'
+      | 'FRAME_TOO_LARGE'
+      | 'PROTOCOL_TRUNCATED_FRAME'
+      | 'PERMISSION_DENIED'
+      | 'LIBRARY_MISMATCH'
+      | 'PROTOCOL_MISMATCH'
+      | 'HOST_ALREADY_RUNNING'
+      | 'SCHEMA_INCOMPATIBLE'
+      | 'CREDENTIAL_STORE_UNAVAILABLE'
+      | 'RUNTIME_UNAVAILABLE'
+      | 'MODEL_NOT_INSTALLED'
+      | 'AI_DISABLED'
+      | 'MODEL_CONFIG_UNSUPPORTED'
+      | 'BRIDGE_UNAVAILABLE'
+      | 'WAIT_TIMEOUT'
+      | 'CAPTURE_BACKPRESSURE'
+      | 'CAPTURE_TARGET_LOST'
+      | 'CAPTURE_TOPOLOGY_CHANGED'
+      | 'CAPTURE_FOCUS_UNAVAILABLE'
+      | 'CAPTURE_UNAVAILABLE'
+      | 'CAPTURE_GDI_FAILED'
+      | 'IMAGE_LIMIT_EXCEEDED'
+      | 'CANONICAL_SIZE_UNSUPPORTED'
+      | 'ASSET_INTEGRITY_FAILED'
+      | 'ASSET_NOT_FOUND'
+      | 'STORAGE_FULL'
+    )
+  | 'CAPTURE_BUSY'
+  | 'CODEC_FAILED'
+  | 'IMAGE_INPUT_INVALID';
 export type ReportId = string;
 export type Revision = string;
 export type ConsentId = string;
 export type UtcTime = string;
+/**
+ * S02 §5.2: terminal outcome of one `capture.command`.
+ */
+export type CaptureOutcome =
+  | {
+      receipt: CaptureReceipt;
+      status: 'saved';
+      [k: string]: unknown;
+    }
+  | {
+      operation_id: OperationId;
+      reason: CancelReason;
+      status: 'cancelled';
+      [k: string]: unknown;
+    };
+export type AssetId = string;
+export type OperationId = string;
+export type RecordId = string;
+/**
+ * S02 §5.2: why a capture ended without an accepted frame.
+ */
+export type CancelReason = 'escape' | 'empty_selection' | 'explicit_request' | 'client_disconnected';
 export type SafeMessage = string;
 
 /**
@@ -128,6 +174,45 @@ export interface ProbeConsentReceipt {
 export interface ShutdownReceipt {
   host_instance_id: HostInstanceId;
   state: HostState;
+}
+/**
+ * S02 §5.2/§11.5: receipt of one committed capture. No pixels and no absolute path.
+ */
+export interface CaptureReceipt {
+  asset_id: AssetId;
+  /**
+   * Decimal string: a byte count must not round through a JavaScript number.
+   */
+  byte_size: string;
+  canonical_mime: string;
+  canonical_sha256: string;
+  height: number;
+  operation_id: OperationId;
+  record_id: RecordId;
+  /**
+   * Library-relative canonical path (`assets/...`), never an absolute path.
+   */
+  relative_path: string;
+  warnings: string[];
+  width: number;
+}
+/**
+ * S02 §10.1: one bounded chunk of a canonical asset. `data_hex` keeps the frame a
+ * printable JSON document without a base64 dependency, and `sha256` is the whole-file
+ * digest so a truncated or substituted file is refused instead of exported.
+ */
+export interface LibraryAssetChunk {
+  asset_id: AssetId;
+  data_hex: string;
+  eof: boolean;
+  mime: string;
+  next_offset: number;
+  offset: number;
+  sha256: string;
+  /**
+   * Decimal string of the whole canonical file size.
+   */
+  total_size: string;
 }
 export interface AppError {
   code: ErrorCode;

@@ -5,7 +5,7 @@ import tomllib
 
 root = Path(__file__).resolve().parents[2]
 workspace = tomllib.loads((root / 'Cargo.toml').read_text(encoding='utf-8'))['workspace']
-assert set(workspace['members']) == {'crates/domain', 'crates/protocol', 'crates/application', 'crates/observability', 'crates/isolation', 'crates/storage', 'crates/codec', 'crates/credentials', 'crates/framing', 'crates/pipe', 'crates/session', 'crates/host', 'crates/cli', 'crates/gui'}
+assert set(workspace['members']) == {'crates/domain', 'crates/protocol', 'crates/application', 'crates/observability', 'crates/isolation', 'crates/storage', 'crates/codec', 'crates/credentials', 'crates/framing', 'crates/pipe', 'crates/capture', 'crates/session', 'crates/host', 'crates/cli', 'crates/gui'}
 allowed = {
     'domain': {'serde', 'uuid', 'schemars'},
     'protocol': {'sm-domain', 'serde', 'serde_json', 'schemars', 'time'},
@@ -17,10 +17,11 @@ allowed = {
     'credentials': {'sm-application', 'sm-isolation', 'windows-sys', 'zeroize'},
     'framing': {'serde', 'serde_json', 'tokio', 'zeroize'},
     'pipe': {'sm-isolation', 'sha2', 'tokio', 'windows-sys'},
+    'capture': {'sm-application', 'uuid', 'windows-sys'},
     'session': {'sm-application', 'sm-domain', 'sm-protocol', 'sm-framing', 'sm-pipe', 'serde', 'serde_json', 'uuid', 'tokio-util', 'tokio'},
-    'host': {'sm-application', 'sm-credentials', 'sm-domain', 'sm-framing', 'sm-isolation', 'sm-observability', 'sm-pipe', 'sm-protocol', 'sm-session', 'sm-storage', 'async-trait', 'serde', 'serde_json', 'tokio', 'tokio-util', 'uuid'},
-    'cli': {'sm-application', 'sm-credentials', 'sm-domain', 'sm-framing', 'sm-isolation', 'sm-pipe', 'sm-protocol', 'sm-session', 'serde', 'serde_json', 'tokio', 'windows-sys'},
-    'gui': {'sm-application', 'sm-cli', 'sm-credentials', 'sm-domain', 'sm-isolation', 'sm-protocol', 'sm-session', 'serde', 'serde_json', 'tauri', 'tokio', 'windows-sys'},
+    'host': {'sm-application', 'sm-capture', 'sm-codec', 'sm-credentials', 'sm-domain', 'sm-framing', 'sm-isolation', 'sm-observability', 'sm-pipe', 'sm-protocol', 'sm-session', 'sm-storage', 'async-trait', 'serde', 'serde_json', 'tokio', 'tokio-util', 'uuid'},
+    'cli': {'sm-application', 'sm-credentials', 'sm-domain', 'sm-framing', 'sm-isolation', 'sm-pipe', 'sm-protocol', 'sm-session', 'serde', 'serde_json', 'tokio', 'uuid', 'windows-sys'},
+    'gui': {'sm-application', 'sm-cli', 'sm-credentials', 'sm-domain', 'sm-isolation', 'sm-protocol', 'sm-session', 'serde', 'serde_json', 'tauri', 'tokio', 'uuid', 'windows-sys'},
 }
 for crate, expected in allowed.items():
     manifest = tomllib.loads((root / 'crates' / crate / 'Cargo.toml').read_text(encoding='utf-8'))
@@ -37,6 +38,11 @@ for crate, expected in allowed.items():
         assert set(manifest['dev-dependencies']) == {'sm-observability', 'uuid'}
     if crate == 'pipe':
         assert set(manifest['dev-dependencies']) == {'sm-framing', 'serde_json', 'tokio'}
+    if crate == 'capture':
+        # The live native suite posts messages to its own overlay window, so the audited
+        # Windows bindings are needed as a dev-dependency as well; the production surface
+        # is unchanged.
+        assert set(manifest['dev-dependencies']) == {'windows-sys'}
     if crate == 'session':
         assert set(manifest['dev-dependencies']) == {'async-trait', 'sm-isolation'}
     if crate == 'host':
@@ -49,6 +55,10 @@ for crate, expected in allowed.items():
     for source in (root / 'crates' / crate / 'src').rglob('*.rs'):
         text = source.read_text(encoding='utf-8')
         forbidden_modules = ('tauri::', 'winapi::', 'lmstudio::', 'std::net::') if crate == 'storage' else ('tauri::', 'rusqlite::', 'winapi::', 'lmstudio::', 'std::net::')
+        if crate == 'capture':
+            # The native owner reads pixels and windows only: no storage, no codec, no
+            # filesystem, no environment, no network and no log sink of its own.
+            forbidden_modules = ('tauri::', 'rusqlite::', 'sm_storage::', 'sm_codec::', 'std::fs::', 'std::net::', 'std::env::var', 'lmstudio::', 'winapi::', 'println!', 'eprintln!', 'log::', 'tracing::')
         if crate == 'gui':
             # The window speaks only the shared client; it never opens storage or the wire.
             forbidden_modules = ('rusqlite::', 'sm_storage::', 'winapi::', 'lmstudio::', 'std::net::')
@@ -68,6 +78,7 @@ for name, text in cli_sources.items():
     for forbidden in ('sm_storage::', 'rusqlite::', 'Connection::open', 'sqlite'):
         assert forbidden not in text, ('cli', name, forbidden)
 assert set(cli_sources) == {'args.rs', 'config.rs', 'exec.rs', 'launcher.rs', 'lib.rs', 'main.rs', 'output.rs'}
+assert 'std::fs::OpenOptions' in cli_sources['exec.rs'], 'the capture copy writes only its explicit --output file'
 assert 'Command::new' in cli_sources['launcher.rs']
 for name, text in cli_sources.items():
     if name != 'launcher.rs':
@@ -160,4 +171,29 @@ assert set(frontend) == {'App.tsx', 'main.tsx', 'model.ts', 'model.test.ts'}
 for name, text in frontend.items():
     for forbidden in ('@lmstudio/sdk', 'better-sqlite3', 'sqlite', 'child_process', 'XMLHttpRequest'):
         assert forbidden not in text, ('gui-frontend', name, forbidden)
-print('S01-DEP-01/S02-DEP-02 PASS: fourteen crates, exact dependency allowlists, bundled SQLite in storage, bundled static libwebp in the codec, closed images schema vocabulary and the diagnostic-window client boundary retained')
+# S02 native capture: the owner keeps GDI/overlay state private and returns owned pixels.
+capture_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/capture/src').rglob('*.rs')}
+assert set(capture_sources) == {'lib.rs', 'geometry.rs', 'gdi.rs', 'window.rs', 'context.rs', 'overlay.rs', 'hotkeys.rs', 'host.rs'}
+assert {path.name for path in (root / 'crates/capture/tests').glob('*.rs')} == {'live_capture.rs'}
+for name, text in capture_sources.items():
+    assert 'unsafe impl Send' not in text and 'unsafe impl Sync' not in text, ('capture', name)
+    assert 'std::thread::spawn' not in text or name == 'host.rs', ('capture', name)
+assert 'CreateDIBSection(' in capture_sources['gdi.rs'] and 'GetDIBits(' not in capture_sources['gdi.rs'], 'the only freeze path is a top-down DIB section'
+assert 'CAPTUREBLT' in capture_sources['gdi.rs'] and 'NOMIRRORBITMAP' in capture_sources['gdi.rs']
+assert 'GetMessageW' in capture_sources['overlay.rs'] and 'received == 0' in capture_sources['overlay.rs'] and 'received > 0' in capture_sources['overlay.rs'], 'GetMessageW has three decoded outcomes'
+assert 'PostQuitMessage(' not in capture_sources['overlay.rs'], 'a finished selection never ends the thread'
+assert 'signed_axis' in capture_sources['overlay.rs'], 'mouse coordinates are read as signed halves'
+assert 'RegisterHotKey' in capture_sources['hotkeys.rs'] and 'MOD_NOREPEAT' in capture_sources['hotkeys.rs']
+application_capture = (root / 'crates/application/src/capture.rs').read_text(encoding='utf-8')
+assert 'pub trait NativeCaptureAdapter' in application_capture, 'the native port lives in the application seams'
+assert 'windows_sys::' not in application_capture and 'unsafe' not in application_capture, 'the application seam stays platform free'
+host_capture = (root / 'crates/host/src/capture.rs').read_text(encoding='utf-8')
+assert 'commit_image_capture' in host_capture and 'encode_exact_lossless_verified' in host_capture, 'the host publishes only a verified canonical asset'
+assert 'provenances' in host_capture and 'Provenance::Automatic' in host_capture
+assert 'windows_sys::' not in host_capture and 'sm_capture::' not in host_capture.replace('sm_capture::HotkeySink', ''), 'the host never touches GDI directly'
+protocol_capture = (root / 'crates/protocol/src/application.rs').read_text(encoding='utf-8')
+assert '"capture.command"' in protocol_capture and '"library.asset.read"' in protocol_capture
+assert 'struct CaptureCommandParams' in protocol_capture and 'enum CaptureOutcome' in protocol_capture
+session_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/session/src').rglob('*.rs')}
+assert '"capture.command"' in session_sources['lib.rs'] and 'Scope::CaptureScreen' in session_sources['lib.rs']
+print('S01-DEP-01/S02-DEP-02 PASS: fifteen crates, exact dependency allowlists, bundled SQLite in storage, bundled static libwebp in the codec, closed images schema vocabulary and the diagnostic-window client boundary retained')

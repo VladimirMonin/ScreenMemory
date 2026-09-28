@@ -1,6 +1,7 @@
 //! Real foundation services: status and doctor read the live storage worker and log sink.
 use async_trait::async_trait;
 use sm_application::{
+    capture::CaptureApi,
     credentials::{CredentialKey, SecretStore, StoreError},
     observability::{
         Component, EventId, Level, Operation, Outcome, SafeCode, SafeEvent, SafeEventSink,
@@ -12,8 +13,9 @@ use sm_domain::{HostInstanceId, LibraryId, ReportId};
 use sm_observability::Logger;
 use sm_protocol::{
     application::{
-        AiPolicyPatch, AiPolicyView, AuthorizeProbeRequest, BridgeState, CheckOutcome, CheckResult,
-        DoctorReport, DoctorRequest, HostState, HostStatus, ProbeConsentReceipt,
+        AiPolicyPatch, AiPolicyView, AuthorizeProbeRequest, BridgeState, CaptureCommandParams,
+        CaptureOutcome, CheckOutcome, CheckResult, DoctorReport, DoctorRequest, HostState,
+        HostStatus, LibraryAssetChunk, LibraryAssetRequest, ProbeConsentReceipt,
         RuntimeProbeReport, RuntimeProbeRequest, ShutdownReceipt, APPLICATION_VERSION,
     },
     errors::{AppError, ErrorCode},
@@ -33,9 +35,11 @@ use std::{
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-/// The three handlers actually implemented and authorized in this slice.
+/// The three foundation handlers always implemented by this host.
 pub const AVAILABLE_METHODS: [&str; 3] =
     ["system.status", "system.doctor", "system.request_shutdown"];
+/// S02 handlers, advertised only when this composition really owns a capture adapter.
+pub const CAPTURE_METHODS: [&str; 2] = ["capture.command", "library.asset.read"];
 const PHASE_STARTING: u8 = 0;
 const PHASE_READY: u8 = 1;
 const PHASE_STOPPING: u8 = 2;
@@ -47,7 +51,7 @@ fn app_error(code: ErrorCode, safe_message: &'static str) -> AppError {
         retryable: false,
     }
 }
-fn storage_error(error: StorageError) -> AppError {
+pub(crate) fn storage_error(error: StorageError) -> AppError {
     match error {
         StorageError::SchemaIncompatible | StorageError::IntegrityFailed => app_error(
             ErrorCode::SchemaIncompatible,
@@ -66,6 +70,16 @@ fn storage_error(error: StorageError) -> AppError {
         StorageError::InvalidPayload | StorageError::InvalidQuery => app_error(
             ErrorCode::InvalidRequest,
             "Library record or query was rejected.",
+        ),
+        // A committed asset that cannot be read back honestly is never exported as an
+        // empty or substituted document (S02 §5.6).
+        StorageError::AssetNotFound => app_error(
+            ErrorCode::AssetNotFound,
+            "The requested asset does not exist in this library.",
+        ),
+        StorageError::AssetIntegrityFailed => app_error(
+            ErrorCode::AssetIntegrityFailed,
+            "The stored asset does not match its committed record.",
         ),
         StorageError::MigrationFailed | StorageError::Unavailable => app_error(
             ErrorCode::RuntimeUnavailable,
@@ -100,6 +114,8 @@ pub struct FoundationServices {
     store: Arc<dyn SecretStore + Send + Sync>,
     log_root: PathBuf,
     logger: Logger,
+    /// S02 capture port; `None` means this composition serves no capture handler at all.
+    capture: Option<Arc<dyn CaptureApi>>,
 }
 
 impl FoundationServices {
@@ -114,6 +130,7 @@ impl FoundationServices {
         store: Arc<dyn SecretStore + Send + Sync>,
         log_root: PathBuf,
         logger: Logger,
+        capture: Option<Arc<dyn CaptureApi>>,
     ) -> Self {
         Self {
             storage,
@@ -126,7 +143,18 @@ impl FoundationServices {
             store,
             log_root,
             logger,
+            capture,
         }
+    }
+
+    /// Advertised handler list of *this* composition; a disabled capture handler is never
+    /// advertised as available.
+    pub fn advertised_methods(&self) -> Vec<&'static str> {
+        let mut methods: Vec<&'static str> = AVAILABLE_METHODS.to_vec();
+        if self.capture.is_some() {
+            methods.extend(CAPTURE_METHODS);
+        }
+        methods
     }
     pub fn new_phase() -> Arc<AtomicU8> {
         Arc::new(AtomicU8::new(PHASE_STARTING))
@@ -149,10 +177,10 @@ impl FoundationServices {
             _ => HostState::Starting,
         }
     }
-    fn methods() -> Vec<MethodName> {
-        AVAILABLE_METHODS
-            .iter()
-            .map(|name| MethodName::parse(*name).expect("static method name"))
+    fn methods(&self) -> Vec<MethodName> {
+        self.advertised_methods()
+            .into_iter()
+            .map(|name| MethodName::parse(name).expect("static method name"))
             .collect()
     }
     fn status_value(
@@ -170,7 +198,7 @@ impl FoundationServices {
             schema_version,
             ai_enabled,
             bridge_state: BridgeState::Stopped,
-            available_methods: Self::methods(),
+            available_methods: self.methods(),
         }
     }
     /// A real owned probe file, never a rewrite of the database or any canonical source.
@@ -423,5 +451,33 @@ impl FoundationControlApi for FoundationServices {
             host_instance_id: self.host_instance,
             state: HostState::Stopping,
         })
+    }
+}
+
+/// S02 capture port of this host: it delegates to the single ingest of the composition and
+/// answers `METHOD_NOT_SUPPORTED` when no capture adapter exists.
+#[async_trait]
+impl CaptureApi for FoundationServices {
+    async fn capture_command(
+        &self,
+        ctx: RequestContext,
+        params: CaptureCommandParams,
+        cancel: CancellationToken,
+    ) -> Result<CaptureOutcome, AppError> {
+        match &self.capture {
+            Some(capture) => capture.capture_command(ctx, params, cancel).await,
+            None => Err(AppError::method_not_supported()),
+        }
+    }
+
+    async fn read_asset(
+        &self,
+        ctx: RequestContext,
+        request: LibraryAssetRequest,
+    ) -> Result<LibraryAssetChunk, AppError> {
+        match &self.capture {
+            Some(capture) => capture.read_asset(ctx, request).await,
+            None => Err(AppError::method_not_supported()),
+        }
     }
 }

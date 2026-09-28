@@ -7,17 +7,18 @@
 //! in `not_implemented` instead of showing an empty ("0 images") result.
 use serde::{Deserialize, Serialize};
 use sm_cli::ClientFailure;
+use sm_domain::{AssetId, OperationId, RecordId};
 use sm_protocol::{
-    application::{BridgeState, DoctorReport, HostStatus},
+    application::{BridgeState, CancelReason, CaptureOutcome, DoctorReport, HostStatus},
     errors::ErrorCode,
 };
 
 /// Version of this envelope only; the application protocol version stays in `host`.
 pub const GUI_ENVELOPE_VERSION: u32 = 1;
 
-/// Capabilities deliberately absent from S01; the window marks them as not implemented.
-pub const NOT_IMPLEMENTED: [&str; 7] = [
-    "capture",
+/// Capabilities still absent; the window marks them as not implemented. `capture` is no
+/// longer listed: S02 wires a real button through the same host command as `shot`.
+pub const NOT_IMPLEMENTED: [&str; 6] = [
     "library_counts",
     "gallery",
     "search",
@@ -25,6 +26,93 @@ pub const NOT_IMPLEMENTED: [&str; 7] = [
     "model_settings",
     "bridge_runtime",
 ];
+
+/// Capture modes the window may request; the vocabulary is the wire one.
+pub const CAPTURE_MODES: [&str; 4] = ["region", "window", "monitor", "desktop"];
+
+/// Terminal state of one capture answer, as the window shows it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GuiCaptureState {
+    Saved,
+    Cancelled,
+    Refused,
+}
+
+/// One capture answer. It carries identities and geometry only: never pixels, never a
+/// window handle and never an absolute path.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GuiCaptureAnswer {
+    pub schema_version: u32,
+    pub state: GuiCaptureState,
+    pub operation_id: Option<OperationId>,
+    pub record_id: Option<RecordId>,
+    pub asset_id: Option<AssetId>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub byte_size: Option<String>,
+    pub relative_path: Option<String>,
+    pub reason: Option<CancelReason>,
+    pub safe_code: Option<ErrorCode>,
+    pub retryable: bool,
+    pub warnings: Vec<String>,
+}
+
+impl GuiCaptureAnswer {
+    fn envelope(state: GuiCaptureState) -> Self {
+        Self {
+            schema_version: GUI_ENVELOPE_VERSION,
+            state,
+            operation_id: None,
+            record_id: None,
+            asset_id: None,
+            width: None,
+            height: None,
+            byte_size: None,
+            relative_path: None,
+            reason: None,
+            safe_code: None,
+            retryable: false,
+            warnings: Vec::new(),
+        }
+    }
+
+    /// A committed capture of this window session.
+    pub fn from_outcome(outcome: &CaptureOutcome) -> Self {
+        match outcome {
+            CaptureOutcome::Saved { receipt } => Self {
+                state: GuiCaptureState::Saved,
+                operation_id: Some(receipt.operation_id),
+                record_id: Some(receipt.record_id),
+                asset_id: Some(receipt.asset_id),
+                width: Some(receipt.width),
+                height: Some(receipt.height),
+                byte_size: Some(receipt.byte_size.clone()),
+                relative_path: Some(receipt.relative_path.clone()),
+                warnings: receipt.warnings.clone(),
+                ..Self::envelope(GuiCaptureState::Saved)
+            },
+            CaptureOutcome::Cancelled {
+                operation_id,
+                reason,
+            } => Self {
+                operation_id: Some(*operation_id),
+                reason: Some(*reason),
+                ..Self::envelope(GuiCaptureState::Cancelled)
+            },
+        }
+    }
+
+    /// A typed refusal: the same stable codes the CLI reports.
+    pub fn refused(failure: &ClientFailure) -> Self {
+        Self {
+            safe_code: Some(failure.code),
+            retryable: failure.retryable,
+            ..Self::envelope(GuiCaptureState::Refused)
+        }
+    }
+}
 
 /// One of the six states of S01 §10.1 plus `connecting`, which bounds one attempt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -169,6 +257,22 @@ pub fn state_for_failure(failure: &ClientFailure) -> GuiState {
         ErrorCode::RuntimeUnavailable | ErrorCode::WaitTimeout | ErrorCode::HostAlreadyRunning => {
             GuiState::HostNotRunning
         }
+        // The S02 capture and asset vocabulary is reported by the capture answer itself;
+        // it never means that the host, its root or its credential became unusable.
+        ErrorCode::CaptureBusy
+        | ErrorCode::CaptureBackpressure
+        | ErrorCode::CaptureTargetLost
+        | ErrorCode::CaptureTopologyChanged
+        | ErrorCode::CaptureFocusUnavailable
+        | ErrorCode::CaptureUnavailable
+        | ErrorCode::CaptureGdiFailed
+        | ErrorCode::ImageLimitExceeded
+        | ErrorCode::CanonicalSizeUnsupported
+        | ErrorCode::ImageInputInvalid
+        | ErrorCode::CodecFailed
+        | ErrorCode::AssetIntegrityFailed
+        | ErrorCode::AssetNotFound
+        | ErrorCode::StorageFull => GuiState::Ready,
     }
 }
 

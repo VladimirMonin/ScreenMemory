@@ -228,6 +228,9 @@ impl Fixture {
             Some(reader_auth),
             services.clone(),
             services.clone(),
+            // The S01 session fixtures own no capture handler; S02 composition tests cover
+            // the advertised capture methods with a real injected adapter.
+            None,
             budget,
         ));
         let stop = CancellationToken::new();

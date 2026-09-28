@@ -7,8 +7,9 @@
 use rusqlite::{params, Connection, TransactionBehavior};
 use sha2::{Digest, Sha256};
 use sm_application::storage::{
-    provenances_to_json, Asset, AssetType, CaptureContext, CommitImageCapture, CommittedImage,
-    Page, Record, RecordPageQuery, StorageError, CANONICAL_FORMAT_WEBP_LOSSLESS,
+    provenances_to_json, Asset, AssetChunk, AssetType, CaptureContext, CommitImageCapture,
+    CommittedImage, Page, Record, RecordPageQuery, StorageError, ASSET_CHUNK_BYTES,
+    CANONICAL_FORMAT_WEBP_LOSSLESS, MAX_CANONICAL_FILE_BYTES,
 };
 use sm_domain::{AssetId, RecordId};
 use std::{
@@ -298,6 +299,91 @@ fn stored_asset(
         size_bytes: *size_bytes as u64,
         sha256: sha256.clone(),
         created_at: created_at.clone(),
+    })
+}
+
+/// Absolute path of one committed canonical asset below the leased assets root.
+///
+/// The stored relative path is re-validated component by component, so a tampered row can
+/// never escape the assets directory.
+fn asset_path(assets: &Path, relative: &str) -> Result<PathBuf, StorageError> {
+    let rest = relative
+        .strip_prefix("assets/")
+        .ok_or(StorageError::IntegrityFailed)?;
+    if rest.contains("..") || rest.contains(':') || rest.contains('\\') {
+        return Err(StorageError::IntegrityFailed);
+    }
+    let mut path = assets.to_path_buf();
+    for component in rest.split('/') {
+        if component.is_empty() || component == "." || component == ".." {
+            return Err(StorageError::IntegrityFailed);
+        }
+        path.push(component);
+    }
+    if path.extension().and_then(|value| value.to_str()) != Some("webp") {
+        return Err(StorageError::IntegrityFailed);
+    }
+    Ok(path)
+}
+
+/// Read one bounded chunk of a committed canonical asset after re-verifying the whole file.
+///
+/// A file whose size or digest differs from its committed row is refused; the caller
+/// reports the integrity failure instead of exporting substituted bytes.
+pub(super) fn read_asset_chunk(
+    db: &Connection,
+    assets: &Path,
+    asset_id: &str,
+    offset: u64,
+    length: u32,
+) -> Result<AssetChunk, StorageError> {
+    let id = identity(asset_id)?;
+    let row = db
+        .query_row(
+            "SELECT path, size_bytes, sha256, format FROM assets WHERE id = ?1",
+            params![asset_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            },
+        )
+        .map_err(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => StorageError::AssetNotFound,
+            other => sql_error(other),
+        })?;
+    let (relative, size_bytes, sha256, format) = row;
+    if format != CANONICAL_FORMAT_WEBP_LOSSLESS || size_bytes <= 0 {
+        return Err(StorageError::IntegrityFailed);
+    }
+    let total = size_bytes as u64;
+    if total > MAX_CANONICAL_FILE_BYTES || offset > total {
+        return Err(StorageError::InvalidQuery);
+    }
+    let path = asset_path(assets, &relative)?;
+    let bytes = std::fs::read(&path).map_err(|error| match error.kind() {
+        ErrorKind::NotFound => StorageError::AssetNotFound,
+        ErrorKind::PermissionDenied => StorageError::PermissionDenied,
+        _ => StorageError::IntegrityFailed,
+    })?;
+    if bytes.len() as u64 != total || sha256_hex(&bytes) != sha256 {
+        return Err(StorageError::AssetIntegrityFailed);
+    }
+    let chunk_len = u64::from(length.min(ASSET_CHUNK_BYTES)).min(total - offset);
+    let start = offset as usize;
+    let end = start + chunk_len as usize;
+    Ok(AssetChunk {
+        asset_id: AssetId::new(id),
+        offset,
+        next_offset: offset + chunk_len,
+        eof: offset + chunk_len >= total,
+        total_size: total,
+        sha256,
+        format: CANONICAL_FORMAT_WEBP_LOSSLESS,
+        bytes: bytes[start..end].to_vec(),
     })
 }
 

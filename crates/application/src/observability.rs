@@ -22,6 +22,8 @@ pub enum Component {
     Sqlite,
     Policy,
     Log,
+    /// S02: capture sessions and the canonical ingest of an accepted frame.
+    Capture,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -35,6 +37,8 @@ pub enum Operation {
     Probe,
     Rotation,
     Progress,
+    /// S02: one capture session from the authorized intent to the committed receipt.
+    Capture,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -86,6 +90,14 @@ pub enum EventId {
     LogRotationCompleted,
     LogSinkFailed,
     ProbeProgress,
+    /// S02: a capture session was authorized and started.
+    CaptureStarted,
+    /// S02: an accepted frame was committed as a canonical record.
+    CaptureCompleted,
+    /// S02: the session or the canonical commit ended in a typed failure.
+    CaptureFailed,
+    /// S02: a typed refusal before the freeze (busy, backpressure, lost target).
+    CaptureRefused,
 }
 
 impl EventId {

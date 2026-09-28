@@ -5,10 +5,11 @@
 //! protocol frame from the frontend, and no handler can stop the host: closing the window
 //! only closes this connection.
 use crate::{
-    model::{GuiDiagnostics, GuiLimits, OpenReportOutcome},
+    model::{GuiCaptureAnswer, GuiDiagnostics, GuiLimits, OpenReportOutcome},
     open::ReportOpener,
     session::GuiSession,
 };
+use sm_protocol::application::CaptureMode;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, WebviewWindowBuilder};
 use tokio::sync::Mutex;
@@ -75,6 +76,39 @@ pub async fn gui_doctor(app: AppHandle) -> GuiDiagnostics {
 
 /// The «Открыть диагностический отчёт» action. The handler takes no path: only the
 /// validated cache/log directory of the explicit configuration can ever be opened.
+/// One capture command per mode. Every handler stays **argument free**, so the WebView
+/// still cannot name a mode string, a window, a monitor, a path or a pixel buffer; the
+/// closed set of registered handlers *is* the accepted vocabulary (S02 section 11).
+async fn capture_with(app: &AppHandle, mode: CaptureMode) -> GuiCaptureAnswer {
+    let session = app.state::<ShellState>().session();
+    let mut guard = session.lock().await;
+    guard.capture(mode).await
+}
+
+/// Capture the region selected on the frozen desktop.
+#[tauri::command]
+pub async fn gui_capture_region(app: AppHandle) -> GuiCaptureAnswer {
+    capture_with(&app, CaptureMode::Region).await
+}
+
+/// Capture the active external window.
+#[tauri::command]
+pub async fn gui_capture_window(app: AppHandle) -> GuiCaptureAnswer {
+    capture_with(&app, CaptureMode::Window).await
+}
+
+/// Capture the monitor under the cursor.
+#[tauri::command]
+pub async fn gui_capture_monitor(app: AppHandle) -> GuiCaptureAnswer {
+    capture_with(&app, CaptureMode::Monitor).await
+}
+
+/// Capture every connected monitor.
+#[tauri::command]
+pub async fn gui_capture_desktop(app: AppHandle) -> GuiCaptureAnswer {
+    capture_with(&app, CaptureMode::Desktop).await
+}
+
 #[tauri::command]
 pub async fn gui_open_report(app: AppHandle) -> OpenReportOutcome {
     let state = app.state::<ShellState>();
@@ -101,6 +135,10 @@ pub fn run_window(state: ShellState, webview_directory: std::path::PathBuf) -> t
             gui_probe,
             gui_connect,
             gui_doctor,
+            gui_capture_region,
+            gui_capture_window,
+            gui_capture_monitor,
+            gui_capture_desktop,
             gui_open_report
         ])
         .run(tauri::generate_context!())

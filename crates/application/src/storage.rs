@@ -40,6 +40,10 @@ pub enum StorageError {
     InvalidPayload,
     /// A page query carried an unusable limit, cursor or identity.
     InvalidQuery,
+    /// The named asset row does not exist in this library.
+    AssetNotFound,
+    /// The canonical file does not match its committed row (size or digest).
+    AssetIntegrityFailed,
     Unavailable,
 }
 
@@ -364,6 +368,19 @@ pub struct CommittedImage {
     pub sha256: String,
 }
 
+/// One bounded chunk of a committed canonical asset; the digest covers the whole file.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AssetChunk {
+    pub asset_id: AssetId,
+    pub offset: u64,
+    pub next_offset: u64,
+    pub eof: bool,
+    pub total_size: u64,
+    pub sha256: String,
+    pub format: &'static str,
+    pub bytes: Vec<u8>,
+}
+
 /// One storage owner: snapshots, image commits and bounded reads.
 #[async_trait]
 pub trait FoundationRepository: Send + Sync {
@@ -376,4 +393,18 @@ pub trait FoundationRepository: Send + Sync {
     ) -> Result<CommittedImage, StorageError>;
     /// Bounded, snapshot-stable page of committed records with their assets.
     async fn page_records(&self, query: RecordPageQuery) -> Result<Page<Record>, StorageError>;
+    /// Read one bounded chunk of a committed canonical asset. The path is never supplied
+    /// by the caller: it is taken from the committed row under the leased assets root.
+    async fn read_asset_chunk(
+        &self,
+        asset_id: AssetId,
+        offset: u64,
+        length: u32,
+    ) -> Result<AssetChunk, StorageError>;
 }
+
+/// Largest canonical file a bounded read may touch; a bigger file is refused instead of
+/// being read into memory.
+pub const MAX_CANONICAL_FILE_BYTES: u64 = 128 * 1024 * 1024;
+/// Chunk size of one bounded asset read, chosen to keep one application frame small.
+pub const ASSET_CHUNK_BYTES: u32 = 512 * 1024;

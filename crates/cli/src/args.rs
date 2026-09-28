@@ -1,12 +1,23 @@
 //! Argument parsing only: no IO, no side effect, no implicit default configuration.
+use sm_protocol::application::CaptureMode;
 use std::path::PathBuf;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
     Version,
-    Status { no_start: bool },
+    Status {
+        no_start: bool,
+    },
     Doctor,
     HostStop,
+    /// S02 §11.4: one capture command.
+    Capture {
+        mode: CaptureMode,
+        /// Explicit operation identity; the trusted CLI mints one when it is omitted.
+        operation_id: Option<String>,
+        /// Optional absolute local destination of a copy of the canonical file.
+        output: Option<PathBuf>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -24,15 +35,33 @@ pub enum ArgError {
     ConfigNotAbsolute,
     UnexpectedArgument,
     UnsupportedCombination,
+    MissingCaptureMode,
+    UnknownCaptureMode,
+    OutputNotAbsolute,
+}
+
+/// Closed mode vocabulary of `shot capture`; `all` is the documented alias of `desktop`.
+pub fn parse_capture_mode(raw: &str) -> Result<CaptureMode, ArgError> {
+    match raw {
+        "region" => Ok(CaptureMode::Region),
+        "window" => Ok(CaptureMode::Window),
+        "monitor" => Ok(CaptureMode::Monitor),
+        "desktop" | "all" => Ok(CaptureMode::Desktop),
+        _ => Err(ArgError::UnknownCaptureMode),
+    }
 }
 
 /// Accepted forms: `--version`; `status [--no-start] [--json]`; `doctor [--json]`;
-/// `host stop [--json]`; optional `--config <absolute local path>` before the command.
+/// `host stop [--json]`; `capture --mode region|window|monitor|all [--operation-id <uuid>]
+/// [--output <absolute local path>] [--json]`; optional `--config <absolute local path>`.
 pub fn parse_args(argv: &[String]) -> Result<CliArgs, ArgError> {
     let mut config: Option<PathBuf> = None;
     let mut json = false;
     let mut no_start = false;
     let mut command: Option<Command> = None;
+    let mut capture_mode: Option<CaptureMode> = None;
+    let mut operation_id: Option<String> = None;
+    let mut output: Option<PathBuf> = None;
     let mut index = 0;
     while index < argv.len() {
         let token = argv[index].as_str();
@@ -69,6 +98,45 @@ pub fn parse_args(argv: &[String]) -> Result<CliArgs, ArgError> {
                 }
                 command = Some(Command::Doctor);
             }
+            "capture" => {
+                if command.is_some() {
+                    return Err(ArgError::UnexpectedArgument);
+                }
+                command = Some(Command::Capture {
+                    // Filled in after the whole command line was read.
+                    mode: CaptureMode::Region,
+                    operation_id: None,
+                    output: None,
+                });
+            }
+            "--mode" => {
+                if capture_mode.is_some() {
+                    return Err(ArgError::UnexpectedArgument);
+                }
+                let value = argv.get(index + 1).ok_or(ArgError::MissingCaptureMode)?;
+                capture_mode = Some(parse_capture_mode(value)?);
+                index += 1;
+            }
+            "--operation-id" => {
+                if operation_id.is_some() {
+                    return Err(ArgError::UnexpectedArgument);
+                }
+                let value = argv.get(index + 1).ok_or(ArgError::MissingCaptureMode)?;
+                operation_id = Some(value.clone());
+                index += 1;
+            }
+            "--output" => {
+                if output.is_some() {
+                    return Err(ArgError::UnexpectedArgument);
+                }
+                let value = argv.get(index + 1).ok_or(ArgError::OutputNotAbsolute)?;
+                let path = PathBuf::from(value);
+                if !absolute_local(&path) {
+                    return Err(ArgError::OutputNotAbsolute);
+                }
+                output = Some(path);
+                index += 1;
+            }
             "host" => {
                 if command.is_some() || argv.get(index + 1).map(String::as_str) != Some("stop") {
                     return Err(ArgError::UnknownArgument);
@@ -102,6 +170,26 @@ pub fn parse_args(argv: &[String]) -> Result<CliArgs, ArgError> {
                 return Err(ArgError::MissingConfig);
             }
             command
+        }
+        Command::Capture { .. } => {
+            if no_start {
+                return Err(ArgError::UnsupportedCombination);
+            }
+            if config.is_none() {
+                return Err(ArgError::MissingConfig);
+            }
+            let mode = capture_mode.ok_or(ArgError::MissingCaptureMode)?;
+            if operation_id
+                .as_deref()
+                .is_some_and(|value| uuid::Uuid::parse_str(value).is_err())
+            {
+                return Err(ArgError::UnknownArgument);
+            }
+            Command::Capture {
+                mode,
+                operation_id,
+                output,
+            }
         }
     };
     Ok(CliArgs {

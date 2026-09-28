@@ -45,6 +45,10 @@ impl Profile {
                 Scope::RunAiProbe,
                 Scope::LoadModelForProbe,
                 Scope::ManageHost,
+                // S02 §5.6: a new capture and a bounded read of an owned canonical asset
+                // are owner actions. The read-only principal never receives them.
+                Scope::CaptureScreen,
+                Scope::ReadImages,
             ],
             Self::TestReadOnly => vec![Scope::ReadStatus, Scope::RunDoctor],
         }

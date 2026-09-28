@@ -58,7 +58,10 @@ function Assert-GuiSelfCheckReport($Report, [string]$LibraryId, [string]$Label) 
     if ($diagnostics.runtime_available -ne $false) { throw "$Label claims a usable AI runtime while AI is disabled" }
     if ($diagnostics.report_available -ne $true) { throw "$Label reported an unavailable diagnostic report directory" }
     if ($null -ne $diagnostics.safe_code) { throw "$Label reported a safe code on success" }
-    foreach ($capability in @('capture', 'library_counts', 'gallery', 'search', 'drop_zone', 'model_settings', 'bridge_runtime')) {
+    # `capture` is deliberately NOT expected here: S02 wires a real capture command through the
+    # same host, so the window must not report it as unfinished any more.
+    if ($diagnostics.not_implemented -ccontains 'capture') { throw "$Label still reports the implemented capture command as unfinished" }
+    foreach ($capability in @('library_counts', 'gallery', 'search', 'drop_zone', 'model_settings', 'bridge_runtime')) {
         if ($diagnostics.not_implemented -cnotcontains $capability) { throw "$Label does not report the unfinished capability $capability" }
     }
     if ($null -eq $diagnostics.doctor) { throw "$Label did not run the foundation doctor" }

@@ -1,8 +1,10 @@
 //! S01 §6.3 bootstrap order and §6.5 shutdown order for the single host owner.
 use crate::args::BootstrapMode;
+use crate::capture::{drain_hotkeys, CaptureIngest, HostCaptureApi};
 use crate::services::FoundationServices;
 use serde::Serialize;
 use sm_application::{
+    capture::{CaptureApi, CaptureError, NativeCaptureAdapter},
     credentials::{
         Authenticator, CredentialEnvironment, CredentialError, CredentialKey, Secret, SecretStore,
         StoreError,
@@ -12,12 +14,13 @@ use sm_application::{
     },
     storage::{FoundationRepository, StorageError},
 };
+use sm_capture::{CaptureHostConfig, WindowsCaptureAdapter};
 use sm_domain::{HostInstanceId, LibraryId};
 use sm_framing::BufferBudget;
 use sm_isolation::{HostLease, LeaseError, LibraryRootResolver, RootError, RootSource};
 use sm_observability::{
-    BoundedLogger, ConsoleSink, FileSink, FlushOutcome, LogSink, RotationLimits, SystemClock,
-    DEFAULT_CAPACITY,
+    BoundedLogger, ConsoleSink, FileSink, FlushOutcome, LogSink, Logger, RotationLimits,
+    SystemClock, DEFAULT_CAPACITY,
 };
 use sm_pipe::{Endpoint, Listener};
 use sm_session::SessionHost;
@@ -45,6 +48,8 @@ pub enum HostError {
     Logging,
     Compose,
     Session,
+    /// S02: the trusted native capture owner could not be started.
+    Capture(CaptureError),
 }
 impl HostError {
     /// Fixed host exit code; never a path, OS string or secret in the process status.
@@ -52,7 +57,10 @@ impl HostError {
         match self {
             Self::Root(_) | Self::LeaseBusy | Self::LeaseUnsafe => crate::EXIT_HOST,
             Self::Storage(StorageError::LockConflict) => crate::EXIT_HOST,
-            Self::Storage(_) | Self::Logging => crate::EXIT_STORAGE,
+            Self::Capture(
+                CaptureError::Busy | CaptureError::Backpressure | CaptureError::Unavailable,
+            ) => crate::EXIT_STORAGE,
+            Self::Capture(_) | Self::Storage(_) | Self::Logging => crate::EXIT_STORAGE,
             Self::CredentialUnavailable | Self::CredentialDenied => crate::EXIT_POLICY,
             Self::Endpoint | Self::Compose | Self::Session => crate::EXIT_HOST,
         }
@@ -67,7 +75,7 @@ impl HostError {
             Self::LeaseBusy => SafeCode::LockConflict,
             Self::CredentialUnavailable | Self::CredentialDenied => SafeCode::PermissionDenied,
             Self::Logging => SafeCode::SinkUnavailable,
-            Self::Storage(_) | Self::Session => SafeCode::InternalFailure,
+            Self::Capture(_) | Self::Storage(_) | Self::Session => SafeCode::InternalFailure,
         }
     }
     pub fn event_id(self) -> EventId {
@@ -78,11 +86,26 @@ impl HostError {
     }
 }
 
+/// S02 capture wiring of one composition. The native owner is supplied by the caller so
+/// that a composition test can inject a deterministic adapter without a live desktop.
+#[derive(Default)]
+pub enum CaptureOptions {
+    /// No capture handler exists; the capture methods are then not advertised either.
+    #[default]
+    Disabled,
+    /// Start the real Windows owner. The host installs its own bounded hotkey sink.
+    Native(Box<CaptureHostConfig>),
+    /// Adapter supplied by the caller (composition/integration tests).
+    Injected(Arc<dyn NativeCaptureAdapter>),
+}
+
 /// Explicit configuration of one owned root plus the host credential store of this process.
 pub struct BootstrapOptions {
     pub root: PathBuf,
     pub mode: BootstrapMode,
     pub store: Arc<dyn SecretStore + Send + Sync>,
+    /// Capture wiring of this composition.
+    pub capture: CaptureOptions,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -178,6 +201,7 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
     let mode = options.mode;
     let root = options.root.clone();
     let store = options.store.clone();
+    let capture = options.capture;
     let prepared = tokio::task::spawn_blocking(move || prepare(&root))
         .await
         .map_err(|_| HostError::Compose)??;
@@ -206,7 +230,7 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
         }
     };
     // Step 5b: structured logs and minimal services.
-    let logger = BoundedLogger::start(
+    let mut logger = BoundedLogger::start(
         FileSink::new(prepared.cache_root.clone(), RotationLimits::default())
             .map_err(|_| HostError::Logging)?,
         Arc::new(SystemClock::default()),
@@ -224,6 +248,27 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
     let host_instance = HostInstanceId::new(Uuid::new_v4());
     let stop = CancellationToken::new();
     let phase = FoundationServices::new_phase();
+    // S02 step: the capture owner exists before the listener, so a readiness claim is
+    // never made by a host whose advertised capture handler could not be constructed.
+    let (capture, hotkey_task) =
+        match start_capture(capture, prepared.storage.clone(), logger.producer()).await {
+            Ok(pair) => pair,
+            Err(error) => {
+                // A capture owner that cannot start is a startup failure, never a host that
+                // advertises a handler it does not own.
+                let mut failed = SafeEvent::new(
+                    Level::Error,
+                    Component::Host,
+                    EventId::HostFailed,
+                    Operation::Startup,
+                );
+                failed.outcome = Some(Outcome::Failed);
+                failed.safe_code = Some(SafeCode::InternalFailure);
+                logger.producer().emit(failed);
+                let _ = logger.shutdown(LOG_FLUSH_BUDGET);
+                return Err(error);
+            }
+        };
     let services = Arc::new(FoundationServices::new(
         prepared.storage.clone(),
         library,
@@ -234,7 +279,9 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
         store,
         prepared.cache_root.clone(),
         logger.producer(),
+        capture.clone(),
     ));
+    let hotkey_task = hotkey_task;
     let session = Arc::new(SessionHost::new(
         library,
         host_instance,
@@ -242,6 +289,7 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
         None,
         services.clone(),
         services.clone(),
+        capture.clone(),
         BufferBudget::new(),
     ));
     // Step 6: the sealed listener exists before any readiness claim; connections are
@@ -286,7 +334,45 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
         storage: prepared.storage,
         logger,
         services,
+        hotkey_task,
     })
+}
+
+/// Bring up the S02 capture owner and its bounded hotkey consumer.
+async fn start_capture(
+    options: CaptureOptions,
+    storage: StorageWorker,
+    logger: Logger,
+) -> Result<
+    (
+        Option<Arc<dyn CaptureApi>>,
+        Option<tokio::task::JoinHandle<()>>,
+    ),
+    HostError,
+> {
+    let (adapter, hotkeys) = match options {
+        CaptureOptions::Disabled => return Ok((None, None)),
+        CaptureOptions::Injected(adapter) => (adapter, None),
+        CaptureOptions::Native(mut config) => {
+            // The host owns the bounded sink of the hotkey path; the native thread only
+            // enqueues a finished session.
+            let (sink, receiver) = crate::capture::HotkeyPersistence::channel();
+            config.hotkey_sink = Some(sink);
+            let started =
+                tokio::task::spawn_blocking(move || WindowsCaptureAdapter::start(*config))
+                    .await
+                    .map_err(|_| HostError::Compose)?
+                    .map_err(HostError::Capture)?;
+            (
+                Arc::new(started) as Arc<dyn NativeCaptureAdapter>,
+                Some(receiver),
+            )
+        }
+    };
+    let ingest = CaptureIngest::new(adapter, storage, logger);
+    let api: Arc<dyn CaptureApi> = HostCaptureApi::new(ingest.clone());
+    let task = hotkeys.map(|receiver| tokio::spawn(drain_hotkeys(ingest, receiver)));
+    Ok((Some(api), task))
 }
 
 /// One live owner of an owned root: exclusive lease, one SQLite writer, one listener.
@@ -301,6 +387,7 @@ pub struct BootstrappedHost {
     storage: StorageWorker,
     logger: BoundedLogger,
     services: Arc<FoundationServices>,
+    hotkey_task: Option<tokio::task::JoinHandle<()>>,
 }
 impl BootstrappedHost {
     pub fn library_id(&self) -> LibraryId {
@@ -341,8 +428,14 @@ impl BootstrappedHost {
             storage,
             mut logger,
             services,
+            hotkey_task,
             ..
         } = self;
+        // The bounded hotkey consumer stops with the composition; a dropped sink would end
+        // it as well, and the abort makes the shutdown order explicit.
+        if let Some(task) = hotkey_task {
+            task.abort();
+        }
         services.set_stopping();
         drop(listener);
         let deadline = std::time::Instant::now() + SHUTDOWN_BUDGET;

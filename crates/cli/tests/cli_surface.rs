@@ -115,6 +115,7 @@ impl HostLauncher for InProcessLauncher {
         let serve_slot = self.serve.clone();
         let handle = tokio::spawn(async move {
             let host = bootstrap(BootstrapOptions {
+                capture: sm_host::CaptureOptions::Disabled,
                 root,
                 mode: BootstrapMode::Serve,
                 store,
@@ -440,6 +441,7 @@ fn s01_cli_03_status_doctor_and_stop_share_one_real_host_identity() {
         let roots = Roots::new("serve");
         let store = Arc::new(MemoryStore::default());
         let host = bootstrap(BootstrapOptions {
+            capture: sm_host::CaptureOptions::Disabled,
             root: roots.path(),
             mode: BootstrapMode::Serve,
             store: store.clone(),
@@ -559,6 +561,7 @@ fn s01_cli_04_autostart_uses_the_configured_image_once() {
         // The library identity of this owned root is created by an explicit first-run
         // bootstrap, exactly as the preview launcher does before writing the config.
         let prepared = bootstrap(BootstrapOptions {
+            capture: sm_host::CaptureOptions::Disabled,
             root: roots.path(),
             mode: BootstrapMode::Initialize,
             store: store.clone(),

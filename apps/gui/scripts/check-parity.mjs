@@ -64,7 +64,6 @@ const list = /pub const NOT_IMPLEMENTED: \[&str; \d+\] = \[([^\]]*)\];/.exec(own
 assert(list, 'NOT_IMPLEMENTED must stay parseable in the gui owner');
 const capabilities = [...list[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
 assert.deepEqual(capabilities, [
-  'capture',
   'library_counts',
   'gallery',
   'search',

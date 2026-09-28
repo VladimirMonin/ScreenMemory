@@ -6,17 +6,20 @@
 //! window drops only this connection; the host keeps running and the next window connects
 //! to the same instance.
 use crate::{
-    model::{state_for_failure, GuiDiagnostics, OpenReportOutcome},
+    model::{state_for_failure, GuiCaptureAnswer, GuiDiagnostics, OpenReportOutcome},
     open::{safe_code, validated_report_directory, OpenReportError, ReportOpener},
 };
 use sm_cli::{
     client_failure, connect_session, resolve_target, target_failure, CliDeps, ClientFailure,
     PreviewConfig, ResolvedTarget,
 };
-use sm_domain::LibraryId;
-use sm_protocol::application::{DoctorReport, HostStatus};
+use sm_domain::{LibraryId, OperationId};
+use sm_protocol::application::{CaptureCommandParams, CaptureMode, DoctorReport, HostStatus};
 use sm_session::{ApplicationClient, ClientError};
 use std::path::PathBuf;
+
+/// Longest wait of one interactive capture command; it is independent of the IPC handshake.
+pub const CAPTURE_WAIT_MS: u32 = 30_000;
 
 pub struct GuiSession {
     config: PreviewConfig,
@@ -154,6 +157,28 @@ impl GuiSession {
                 opened: false,
                 safe_code: Some(safe_code(error)),
             },
+        }
+    }
+
+    /// The capture action: the *same* host command the CLI uses. The native session runs
+    /// inside the host; this window only sends an authorized request and shows the answer.
+    pub async fn capture(&mut self, mode: CaptureMode) -> GuiCaptureAnswer {
+        if let Err(failure) = self.ensure(true).await {
+            return GuiCaptureAnswer::refused(&failure);
+        }
+        let params = CaptureCommandParams {
+            operation_id: OperationId::new(uuid::Uuid::new_v4()),
+            mode,
+        };
+        let result = self
+            .client
+            .as_ref()
+            .expect("client is connected")
+            .capture_command(params, CAPTURE_WAIT_MS, None)
+            .await;
+        match self.finish(result) {
+            Ok(outcome) => GuiCaptureAnswer::from_outcome(&outcome),
+            Err(failure) => GuiCaptureAnswer::refused(&failure),
         }
     }
 

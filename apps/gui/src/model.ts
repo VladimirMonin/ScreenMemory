@@ -110,3 +110,75 @@ export function unfinishedChecks(report: Diagnostics | null): CheckResult[] {
 export function notImplemented(report: Diagnostics | null): string[] {
   return report?.not_implemented ?? [];
 }
+
+/**
+ * Terminal state of one capture answer; it mirrors `GuiCaptureState` in
+ * `crates/gui/src/model.rs`. A cancellation and a refusal are their own states, so the
+ * window can never show an empty gallery entry as a successful capture.
+ */
+export type CaptureState = 'saved' | 'cancelled' | 'refused';
+
+/** One capture answer: identities and geometry only, never pixels or paths of the host. */
+export interface CaptureAnswer {
+  schema_version: number;
+  state: CaptureState;
+  operation_id: string | null;
+  record_id: string | null;
+  asset_id: string | null;
+  width: number | null;
+  height: number | null;
+  byte_size: string | null;
+  relative_path: string | null;
+  reason: string | null;
+  safe_code: string | null;
+  retryable: boolean;
+  warnings: string[];
+}
+
+/** The modes the window may request; the same closed vocabulary the host accepts. */
+export const captureModes = ['region', 'window', 'monitor', 'desktop'] as const;
+export type CaptureMode = (typeof captureModes)[number];
+
+/**
+ * One *argument-free* handler per mode: the WebView never sends a parameter, and the
+ * registered handler set is exactly this closed table (mirrors `crates/gui/src/shell.rs`).
+ */
+export const captureCommand: Record<CaptureMode, string> = {
+  region: 'gui_capture_region',
+  window: 'gui_capture_window',
+  monitor: 'gui_capture_monitor',
+  desktop: 'gui_capture_desktop',
+};
+
+export const captureStateText: Record<CaptureState, string> = {
+  saved: 'Снимок сохранён в библиотеку.',
+  cancelled: 'Захват отменён; изображение не создавалось.',
+  refused: 'Host отказал в захвате.',
+};
+
+export const captureModeText: Record<CaptureMode, string> = {
+  region: 'Область',
+  window: 'Активное окно',
+  monitor: 'Монитор под курсором',
+  desktop: 'Все мониторы',
+};
+
+/** Fields the window shows for a capture answer; unknown values stay explicitly absent. */
+export function captureFields(answer: CaptureAnswer | null): [string, string][] {
+  if (!answer) return [['Захват', absent]];
+  const rows: [string, string][] = [
+    ['Захват', captureStateText[answer.state]],
+    ['Operation ID', answer.operation_id ?? absent],
+    ['Record ID', answer.record_id ?? absent],
+    ['Asset ID', answer.asset_id ?? absent],
+    [
+      'Размер',
+      answer.width !== null && answer.height !== null ? `${answer.width} × ${answer.height}` : absent,
+    ],
+    ['Байт', answer.byte_size ?? absent],
+    ['Канонический путь', answer.relative_path ?? absent],
+    ['Причина отмены', answer.reason ?? absent],
+  ];
+  if (answer.safe_code) rows.push(['Безопасный код', answer.safe_code]);
+  return rows;
+}

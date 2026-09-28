@@ -1,9 +1,10 @@
 //! `shotd` entry point: explicit arguments, safe stderr diagnostics, fixed exit codes.
 use sm_application::credentials::SecretStore;
+use sm_capture::CaptureHostConfig;
 use sm_credentials::WindowsSecretStore;
 use sm_host::{
     bootstrap, emit_pre_root_failure, parse_bootstrap_args, BootstrapMode, BootstrapOptions,
-    EXIT_HOST, EXIT_USAGE,
+    CaptureOptions, EXIT_HOST, EXIT_USAGE,
 };
 use sm_isolation::Environment;
 use std::{io::Write, process::ExitCode, sync::Arc};
@@ -31,6 +32,9 @@ fn main() -> ExitCode {
         root: args.root.clone(),
         mode: args.mode,
         store,
+        // S02: the real Windows capture owner. It registers no system-wide hotkey until the
+        // hotkey settings/tray owner exists, so this process claims no foreign chord.
+        capture: CaptureOptions::Native(Box::new(CaptureHostConfig::new())),
     };
     runtime.block_on(async move {
         let host = match bootstrap(options).await {

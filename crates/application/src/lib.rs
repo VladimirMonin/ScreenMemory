@@ -1,4 +1,5 @@
 //! Application seams only: host-created authority and ports; no concrete adapters.
+pub mod capture;
 pub mod credentials;
 pub mod observability;
 pub mod storage;
@@ -22,6 +23,10 @@ pub enum Scope {
     RunAiProbe,
     LoadModelForProbe,
     ManageHost,
+    /// S02: start a new capture (or read the state of the caller's own capture operation).
+    CaptureScreen,
+    /// S02: read a committed canonical asset of an owned record.
+    ReadImages,
 }
 /// Constructed only by the authenticated host boundary; never decoded from request.params.
 #[derive(Clone, Debug)]

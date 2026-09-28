@@ -171,6 +171,7 @@ impl Fixture {
             None,
             calls.clone(),
             calls.clone(),
+            None,
             BufferBudget::new(),
         ));
         let stop = CancellationToken::new();
@@ -221,7 +222,15 @@ impl Fixture {
             .unwrap();
     }
 }
-const CAPS: [&str; 3] = ["system.status", "system.doctor", "system.request_shutdown"];
+/// The negotiated list of this build: the three foundation handlers plus the two S02
+/// capture handlers. A peer that does not speak exactly this list is refused.
+const CAPS: [&str; 5] = [
+    "system.status",
+    "system.doctor",
+    "system.request_shutdown",
+    "capture.command",
+    "library.asset.read",
+];
 fn request(
     f: &Fixture,
     id: RequestId,

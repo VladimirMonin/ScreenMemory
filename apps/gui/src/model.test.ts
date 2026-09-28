@@ -3,12 +3,17 @@ import {
   GUI_ENVELOPE_VERSION,
   absent,
   bridgeText,
+  captureFields,
+  captureModeText,
+  captureModes,
+  captureStateText,
   doctorFailed,
   guiBuild,
   notImplemented,
   stateText,
   statusFields,
   unfinishedChecks,
+  type CaptureAnswer,
   type Diagnostics,
   type GuiState,
 } from './model';
@@ -36,7 +41,6 @@ const ready: Diagnostics = {
   bounded_ms: 5000,
   report_available: true,
   not_implemented: [
-    'capture',
     'library_counts',
     'gallery',
     'search',
@@ -146,8 +150,8 @@ describe('S01 diagnostic state mapping', () => {
   it('shows the owner list of unfinished capabilities and never invents one', () => {
     expect(notImplemented(null)).toEqual([]);
     const listed = notImplemented(ready);
-    expect(listed).toContain('capture');
     expect(listed).toContain('library_counts');
+    expect(listed).not.toContain('capture');
     expect(listed.every((name) => !name.includes('images'))).toBe(true);
   });
 });
@@ -163,5 +167,68 @@ describe('S01 diagnostic envelope shape', () => {
   it('never exposes an image count, a path or a model field', () => {
     const keys = Object.keys(ready);
     expect(keys.some((key) => /count|path|model|image/i.test(key))).toBe(false);
+  });
+});
+
+describe('S02 capture answer of the diagnostic window', () => {
+  const saved: CaptureAnswer = {
+    schema_version: GUI_ENVELOPE_VERSION,
+    state: 'saved',
+    operation_id: '01900000-0000-7000-8000-000000000201',
+    record_id: '01900000-0000-7000-8000-000000000001',
+    asset_id: '01900000-0000-7000-8000-000000000101',
+    width: 1000,
+    height: 600,
+    byte_size: '48271',
+    relative_path: 'assets/2026-09/01900000-0000-7000-8000-000000000001/original.webp',
+    reason: null,
+    safe_code: null,
+    retryable: false,
+    warnings: [],
+  };
+
+  it('shows the committed identities and geometry without inventing a count', () => {
+    const fields = Object.fromEntries(captureFields(saved));
+    expect(fields['Захват']).toBe(captureStateText.saved);
+    expect(fields['Record ID']).toBe(saved.record_id);
+    expect(fields['Asset ID']).toBe(saved.asset_id);
+    expect(fields['Размер']).toBe('1000 × 600');
+    expect(fields['Байт']).toBe('48271');
+    expect(fields['Канонический путь']).toBe(saved.relative_path);
+    expect(Object.keys(fields).some((key) => /count|image/i.test(key))).toBe(false);
+  });
+
+  it('separates a cancellation and a refusal from a saved capture', () => {
+    const cancelled: CaptureAnswer = {
+      ...saved,
+      state: 'cancelled',
+      record_id: null,
+      asset_id: null,
+      width: null,
+      height: null,
+      byte_size: null,
+      relative_path: null,
+      reason: 'escape',
+    };
+    expect(Object.fromEntries(captureFields(cancelled))['Захват']).toBe(captureStateText.cancelled);
+    expect(Object.fromEntries(captureFields(cancelled))['Record ID']).toBe(absent);
+    const refused: CaptureAnswer = {
+      ...cancelled,
+      state: 'refused',
+      reason: null,
+      safe_code: 'CAPTURE_FOCUS_UNAVAILABLE',
+    };
+    const refusedFields = Object.fromEntries(captureFields(refused));
+    expect(refusedFields['Захват']).toBe(captureStateText.refused);
+    expect(refusedFields['Безопасный код']).toBe('CAPTURE_FOCUS_UNAVAILABLE');
+    expect(captureFields(null)).toEqual([['Захват', absent]]);
+  });
+
+  it('keeps the requested mode vocabulary closed', () => {
+    expect([...captureModes]).toEqual(['region', 'window', 'monitor', 'desktop']);
+    for (const mode of captureModes) {
+      expect(captureModeText[mode]).toBeTruthy();
+    }
+    expect(Object.keys(captureModeText).sort()).toEqual([...captureModes].sort());
   });
 });

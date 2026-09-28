@@ -4,6 +4,7 @@ mod client;
 pub use client::{ApplicationClient, ClientError, CredentialSource};
 use serde::{Deserialize, Serialize};
 use sm_application::{
+    capture::CaptureApi,
     credentials::{Authenticator, CredentialKey, Secret, SecretStore},
     FoundationApi, FoundationControlApi, RequestContext, Scope,
 };
@@ -12,7 +13,8 @@ use sm_framing::{BufferBudget, Frame, Phase, Reader, Writer};
 use sm_pipe::{Connection, Endpoint, Listener, TrustedServerImage};
 use sm_protocol::{
     application::{
-        ApplicationResult, DoctorReport, HostStatus, KnownParams, ProtocolVersion, RequestEnvelope,
+        ApplicationResult, CaptureCommandParams, CaptureOutcome, DoctorReport, HostStatus,
+        KnownParams, LibraryAssetChunk, LibraryAssetRequest, ProtocolVersion, RequestEnvelope,
         Response, ShutdownReceipt, APPLICATION_VERSION,
     },
     errors::{AppError, ErrorCode},
@@ -32,7 +34,16 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-pub const CAPABILITIES: [&str; 3] = ["system.status", "system.doctor", "system.request_shutdown"];
+/// Capability list negotiated by exactly one build of this workspace. S02 adds the two
+/// capture handlers; a peer that does not speak the same list is refused instead of being
+/// served a method it cannot decode.
+pub const CAPABILITIES: [&str; 5] = [
+    "system.status",
+    "system.doctor",
+    "system.request_shutdown",
+    "capture.command",
+    "library.asset.read",
+];
 const HANDSHAKE_TIME: Duration = Duration::from_secs(3);
 const MAX_ACTIVE: usize = 8;
 
@@ -107,9 +118,11 @@ pub struct SessionHost {
     read_only: Option<Authenticator>,
     foundation: Arc<dyn FoundationApi>,
     control: Arc<dyn FoundationControlApi>,
+    capture: Option<Arc<dyn CaptureApi>>,
     budget: BufferBudget,
 }
 impl SessionHost {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         library: LibraryId,
         host: HostInstanceId,
@@ -117,6 +130,7 @@ impl SessionHost {
         read_only: Option<Authenticator>,
         foundation: Arc<dyn FoundationApi>,
         control: Arc<dyn FoundationControlApi>,
+        capture: Option<Arc<dyn CaptureApi>>,
         budget: BufferBudget,
     ) -> Self {
         Self {
@@ -126,6 +140,7 @@ impl SessionHost {
             read_only,
             foundation,
             control,
+            capture,
             budget,
         }
     }
@@ -257,13 +272,14 @@ impl SessionHost {
                             let writer = writer.clone();
                             let foundation = self.foundation.clone();
                             let control = self.control.clone();
+                            let capture = self.capture.clone();
                             let context = context.for_request(id, CorrelationId::new(Uuid::new_v4()));
                             let library = self.library;
                             tasks.spawn(async move {
                                 let response = tokio::select! {
                                     biased;
                                     _ = token.cancelled() => response_error(id, ErrorCode::WaitTimeout),
-                                    result = dispatch(request, library, context, foundation, control, token.clone()) => result,
+                                    result = dispatch(request, library, context, foundation, control, capture.clone(), token.clone()) => result,
                                 };
                                 // Keep the active ID/slot until a terminal response is actually sent.
                                 writer.send(Phase::Application, &response).await.map_err(|_| ())?;
@@ -352,12 +368,14 @@ enum Incoming {
     Request(RequestEnvelope),
 }
 // A cancel is never privileged: only this connection's active IDs can be signalled.
+#[allow(clippy::too_many_arguments)]
 async fn dispatch(
     request: RequestEnvelope,
     library: LibraryId,
     ctx: RequestContext,
     foundation: Arc<dyn FoundationApi>,
     control: Arc<dyn FoundationControlApi>,
+    capture: Option<Arc<dyn CaptureApi>>,
     cancel: CancellationToken,
 ) -> Response {
     let id = request.request_id;
@@ -377,6 +395,8 @@ async fn dispatch(
             | "runtime.probe"
             | "system.set_ai_policy"
             | "system.authorize_probe"
+            | "capture.command"
+            | "library.asset.read"
     ) {
         return Response::Error {
             request_id: id,
@@ -397,6 +417,9 @@ async fn dispatch(
         | KnownParams::SetAiPolicy(_)
         | KnownParams::AuthorizeProbe(_) => Scope::ManageHost,
         KnownParams::ProbeRuntime(_) => Scope::RunAiProbe,
+        // S02: a new capture and a bounded read of an owned canonical asset.
+        KnownParams::CaptureCommand(_) => Scope::CaptureScreen,
+        KnownParams::ReadAsset(_) => Scope::ReadImages,
     };
     if !ctx.allows(scope) {
         return fail(ErrorCode::PermissionDenied);
@@ -415,6 +438,10 @@ async fn dispatch(
                 .request_shutdown(ctx)
                 .await
                 .map(ApplicationResult::Shutdown),
+            KnownParams::CaptureCommand(params) => {
+                capture_command(capture, ctx, params, cancel.clone()).await
+            }
+            KnownParams::ReadAsset(request) => read_asset(capture, ctx, request).await,
             _ => Err(AppError::method_not_supported()),
         }
     };
@@ -431,5 +458,36 @@ async fn dispatch(
             cancel.cancel();
             fail(ErrorCode::WaitTimeout)
         }
+    }
+}
+
+/// Capture handlers exist only when this host owns a capture adapter; otherwise the closed
+/// `METHOD_NOT_SUPPORTED` answer is returned instead of an invented result.
+async fn capture_command(
+    capture: Option<Arc<dyn CaptureApi>>,
+    ctx: RequestContext,
+    params: CaptureCommandParams,
+    cancel: CancellationToken,
+) -> Result<ApplicationResult, AppError> {
+    match capture {
+        Some(capture) => capture
+            .capture_command(ctx, params, cancel)
+            .await
+            .map(ApplicationResult::Capture),
+        None => Err(AppError::method_not_supported()),
+    }
+}
+
+async fn read_asset(
+    capture: Option<Arc<dyn CaptureApi>>,
+    ctx: RequestContext,
+    request: LibraryAssetRequest,
+) -> Result<ApplicationResult, AppError> {
+    match capture {
+        Some(capture) => capture
+            .read_asset(ctx, request)
+            .await
+            .map(ApplicationResult::AssetChunk),
+        None => Err(AppError::method_not_supported()),
     }
 }

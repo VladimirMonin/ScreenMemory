@@ -11,6 +11,8 @@ path = "src/main.rs"
 
 [dependencies]
 sm-application = { path = "../application" }
+sm-capture = { path = "../capture" }
+sm-codec = { path = "../codec" }
 sm-credentials = { path = "../credentials" }
 sm-domain = { path = "../domain" }
 sm-framing = { path = "../framing" }

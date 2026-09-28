@@ -16,6 +16,12 @@
       ],
       "type": "object"
     },
+    "AssetId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
     "AuthorizeProbeRequest": {
       "additionalProperties": false,
       "properties": {
@@ -39,6 +45,33 @@
         "lifetime_seconds"
       ],
       "type": "object"
+    },
+    "CaptureCommandParams": {
+      "additionalProperties": false,
+      "description": "S02 §5.2: parameters of `capture.command`.\n\nThe initiator is deliberately absent: a client cannot declare itself a native hotkey.\nThe trusted host adapter records the trigger out of band.",
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/CaptureMode"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "operation_id",
+        "mode"
+      ],
+      "type": "object"
+    },
+    "CaptureMode": {
+      "description": "S02 §3.1: closed vocabulary of one capture target.",
+      "enum": [
+        "region",
+        "window",
+        "monitor",
+        "desktop"
+      ],
+      "type": "string"
     },
     "ConsentId": {
       "maxLength": 36,
@@ -66,6 +99,31 @@
     "EmptyParams": {
       "additionalProperties": false,
       "type": "object"
+    },
+    "LibraryAssetRequest": {
+      "additionalProperties": false,
+      "description": "S02 §10.1: bounded read of one committed canonical asset.",
+      "properties": {
+        "asset_id": {
+          "$ref": "#/$defs/AssetId"
+        },
+        "offset": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "asset_id",
+        "offset"
+      ],
+      "type": "object"
+    },
+    "OperationId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
     },
     "ProbeFixture": {
       "enum": [
@@ -207,6 +265,40 @@
         },
         "params": {
           "$ref": "#/$defs/EmptyParams"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "const": "capture.command",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/CaptureCommandParams"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "const": "library.asset.read",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/LibraryAssetRequest"
         }
       },
       "required": [

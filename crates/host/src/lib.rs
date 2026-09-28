@@ -5,10 +5,13 @@
 //! or an environment variable: the only accepted root is the explicit `--root` argument.
 mod args;
 mod bootstrap;
+mod capture;
 mod services;
 
 pub use args::{parse_bootstrap_args, ArgError, BootstrapArgs, BootstrapMode};
-pub use bootstrap::{bootstrap, emit_pre_root_failure, BootstrapOptions, BootstrappedHost};
+pub use bootstrap::{
+    bootstrap, emit_pre_root_failure, BootstrapOptions, BootstrappedHost, CaptureOptions,
+};
 pub use bootstrap::{HostError, ShutdownOutcome, DEFAULT_DRAIN, SHUTDOWN_BUDGET};
 pub use services::FoundationServices;
 

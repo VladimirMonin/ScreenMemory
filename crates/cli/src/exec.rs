@@ -6,13 +6,23 @@ use crate::{
     output, RETRY_INTERVAL, START_DEADLINE,
 };
 use sm_application::credentials::{CredentialEnvironment, CredentialKey, SecretStore};
+use sm_domain::OperationId;
 use sm_framing::BufferBudget;
 use sm_protocol::{
-    application::{CheckOutcome, DoctorReport, HostState, APPLICATION_VERSION},
+    application::{
+        CaptureMode, CaptureOutcome, CheckOutcome, DoctorReport, HostState, LibraryAssetRequest,
+        APPLICATION_VERSION,
+    },
     errors::{AppError, ErrorCode},
 };
 use sm_session::{ApplicationClient, ClientError, CredentialSource, SessionError};
-use std::{io::Write, sync::Arc, time::Instant};
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Instant,
+};
+use uuid::Uuid;
 
 /// Explicit dependencies of one client invocation; production wires the native vault and
 /// the fixed process launcher, tests inject the same seams without touching live data.
@@ -42,6 +52,22 @@ pub fn exit_for_code(code: ErrorCode) -> u8 {
         | ErrorCode::CredentialStoreUnavailable
         | ErrorCode::AiDisabled => crate::EXIT_POLICY,
         ErrorCode::WaitTimeout => crate::EXIT_WAIT,
+        // S02 §11.5: a known-state lookup failure is code 3, a limit that the caller asked
+        // for is code 2, and a capture/GDI/save/integrity failure is code 7.
+        ErrorCode::AssetNotFound => crate::EXIT_NOT_FOUND,
+        ErrorCode::ImageLimitExceeded
+        | ErrorCode::CanonicalSizeUnsupported
+        | ErrorCode::ImageInputInvalid => crate::EXIT_USAGE,
+        ErrorCode::CodecFailed
+        | ErrorCode::AssetIntegrityFailed
+        | ErrorCode::StorageFull
+        | ErrorCode::CaptureBusy
+        | ErrorCode::CaptureBackpressure
+        | ErrorCode::CaptureTargetLost
+        | ErrorCode::CaptureTopologyChanged
+        | ErrorCode::CaptureFocusUnavailable
+        | ErrorCode::CaptureUnavailable
+        | ErrorCode::CaptureGdiFailed => crate::EXIT_CAPTURE,
         ErrorCode::SchemaIncompatible
         | ErrorCode::MethodNotSupported
         | ErrorCode::InvalidRequest
@@ -231,6 +257,23 @@ pub async fn run(argv: &[String], deps: &CliDeps, out: &mut dyn Write, err: &mut
             }
             Err(error) => return emit_failure(client_failure(error), args.json, out, err),
         },
+        Command::Capture {
+            mode,
+            operation_id,
+            output,
+        } => {
+            return run_capture(
+                &config,
+                &client,
+                mode,
+                operation_id.as_deref(),
+                output.as_deref(),
+                args.json,
+                out,
+                err,
+            )
+            .await;
+        }
         Command::Version => crate::EXIT_OK,
     };
     // Dropping the client closes only this connection; the host keeps running.
@@ -385,4 +428,252 @@ fn emit_failure(
         output::write_error_human(err, failure.code, failure.message);
     }
     failure.exit
+}
+
+/// Longest client wait of one interactive capture command. The host bounds a single
+/// application request to the same value (§11.5: the wait limit is separate from the
+/// three-second IPC handshake).
+pub const CAPTURE_WAIT_MS: u32 = 30_000;
+/// Bounded copy buffer: one canonical asset chunk at a time.
+const OUTPUT_CHUNK_LIMIT: usize = 512 * 1024;
+
+/// Refusal of an output destination that would land inside the owned library root.
+///
+/// A lexicographic prefix test of the raw argument is not enough: a spelling such as
+/// `<sibling>/../<root>/copy.webp` does not start with the root textually yet resolves
+/// inside it, and a differently spelled or linked spelling of the root resolves inside it
+/// as well. The destination is therefore judged twice: first lexically after normalizing
+/// `.`/`..` components, then physically by comparing the canonical path of the directory
+/// the copy would be created in against the canonical root.
+fn destination_refusal(root: &Path, destination: &Path) -> Option<ClientFailure> {
+    if destination_inside_root(root, destination) {
+        Some(ClientFailure {
+            exit: crate::EXIT_USAGE,
+            code: ErrorCode::InvalidRequest,
+            message: "The output destination must be outside the library root.",
+            retryable: false,
+        })
+    } else {
+        None
+    }
+}
+
+/// Lexically normalized form of one path: `.` disappears and `..` pops a known component.
+/// A `..` that cannot be resolved (a relative path already at its head) stays a real
+/// component, so it can neither climb above the path nor pretend to be outside the root.
+fn normalize_lexically(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if !normalized.pop() {
+                    normalized.push("..");
+                }
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    normalized
+}
+
+/// Physical path of the destination that `create_new` would really use: an existing
+/// destination is resolved through its own (possibly reparse) path, a new file through the
+/// parent directory it must be created in.
+fn resolved_destination(destination: &Path) -> Option<PathBuf> {
+    let probe = if destination.exists() {
+        destination
+    } else {
+        destination.parent()?
+    };
+    probe.canonicalize().ok()
+}
+
+fn destination_inside_root(root: &Path, destination: &Path) -> bool {
+    if normalize_lexically(destination).starts_with(normalize_lexically(root)) {
+        return true;
+    }
+    // Both sides are canonicalized, so two spellings of one directory (case, reparse,
+    // short name) compare equal on every Windows filesystem.
+    let (Ok(root_real), Some(destination_real)) = (root.canonicalize(), resolved_destination(destination))
+    else {
+        // Without a resolvable root/parent the later `create_new` fails on its own and can
+        // publish nothing inside the library.
+        return false;
+    };
+    // A prefix match is compared component-wise, so `<root>-other` is not inside `<root>`.
+    destination_real.starts_with(root_real)
+}
+
+/// One `capture` command: request, optional canonical copy, then one JSON document.
+#[allow(clippy::too_many_arguments)]
+async fn run_capture(
+    config: &PreviewConfig,
+    client: &ApplicationClient,
+    mode: CaptureMode,
+    operation_id: Option<&str>,
+    output: Option<&std::path::Path>,
+    json: bool,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    let operation = match operation_id {
+        Some(raw) => match Uuid::parse_str(raw) {
+            Ok(id) => OperationId::new(id),
+            Err(_) => {
+                return emit_failure(
+                    ClientFailure {
+                        exit: crate::EXIT_USAGE,
+                        code: ErrorCode::InvalidRequest,
+                        message: "The operation identity is not a canonical UUID.",
+                        retryable: false,
+                    },
+                    json,
+                    out,
+                    err,
+                )
+            }
+        },
+        // The trusted CLI mints a real operation identity; no ordinal is invented.
+        None => OperationId::new(Uuid::new_v4()),
+    };
+    // A destination inside the owned library root is refused: the CLI never writes into the
+    // library and never turns an output copy into a second canonical file.
+    if let Some(path) = output {
+        if let Some(failure) = destination_refusal(&config.root, path) {
+            return emit_failure(failure, json, out, err);
+        }
+    }
+    let params = sm_protocol::application::CaptureCommandParams {
+        operation_id: operation,
+        mode,
+    };
+    let outcome = match client.capture_command(params, CAPTURE_WAIT_MS, None).await {
+        Ok(outcome) => outcome,
+        Err(error) => return emit_failure(client_failure(error), json, out, err),
+    };
+    if let (Some(path), CaptureOutcome::Saved { receipt }) = (output, &outcome) {
+        if let Err(failure) = write_canonical_copy(client, receipt, path, &config.root).await {
+            return emit_failure(failure, json, out, err);
+        }
+    }
+    if json {
+        output::write_json(out, &outcome);
+    } else {
+        output::write_capture_human(out, &outcome);
+    }
+    // A normal user cancellation is a successful command (S02 §11.5).
+    crate::EXIT_OK
+}
+
+/// Copy the committed canonical file to an explicit destination through bounded reads.
+async fn write_canonical_copy(
+    client: &ApplicationClient,
+    receipt: &sm_protocol::application::CaptureReceipt,
+    path: &std::path::Path,
+    root: &std::path::Path,
+) -> Result<(), ClientFailure> {
+    // Judged again at the write itself, with the same physical rules: the destination must
+    // not resolve into the pinned library root, whatever its spelling.
+    if let Some(failure) = destination_refusal(root, path) {
+        return Err(failure);
+    }
+    let mut file = match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) => {
+            return Err(ClientFailure {
+                exit: crate::EXIT_USAGE,
+                code: ErrorCode::InvalidRequest,
+                message: match error.kind() {
+                    // An existing destination is never overwritten by a capture copy.
+                    std::io::ErrorKind::AlreadyExists => {
+                        "The output destination already exists and is never overwritten."
+                    }
+                    std::io::ErrorKind::PermissionDenied => {
+                        "The output destination is not writable."
+                    }
+                    _ => "The output destination could not be created.",
+                },
+                retryable: false,
+            });
+        }
+    };
+    let mut offset = 0u32;
+    loop {
+        let request = LibraryAssetRequest {
+            asset_id: receipt.asset_id,
+            offset,
+        };
+        let chunk = match client.read_asset(request).await {
+            Ok(chunk) => chunk,
+            Err(error) => return Err(client_failure(error)),
+        };
+        let bytes = match decode_hex(&chunk.data_hex) {
+            Some(bytes) => bytes,
+            None => {
+                return Err(ClientFailure {
+                    exit: crate::EXIT_CAPTURE,
+                    code: ErrorCode::AssetIntegrityFailed,
+                    message: "The host returned an unreadable asset chunk.",
+                    retryable: false,
+                })
+            }
+        };
+        if bytes.len() > OUTPUT_CHUNK_LIMIT {
+            return Err(ClientFailure {
+                exit: crate::EXIT_CAPTURE,
+                code: ErrorCode::AssetIntegrityFailed,
+                message: "The host returned an oversized asset chunk.",
+                retryable: false,
+            });
+        }
+        if file.write_all(&bytes).is_err() {
+            return Err(ClientFailure {
+                exit: crate::EXIT_CAPTURE,
+                code: ErrorCode::StorageFull,
+                message: "The output destination could not be written completely.",
+                retryable: false,
+            });
+        }
+        if chunk.eof {
+            break;
+        }
+        if chunk.next_offset <= offset || chunk.next_offset == 0 {
+            // A non-advancing transfer would loop forever; it is refused instead.
+            return Err(ClientFailure {
+                exit: crate::EXIT_CAPTURE,
+                code: ErrorCode::AssetIntegrityFailed,
+                message: "The asset transfer did not advance.",
+                retryable: false,
+            });
+        }
+        offset = chunk.next_offset;
+    }
+    if file.flush().is_err() {
+        return Err(ClientFailure {
+            exit: crate::EXIT_CAPTURE,
+            code: ErrorCode::StorageFull,
+            message: "The output destination could not be flushed.",
+            retryable: false,
+        });
+    }
+    Ok(())
+}
+
+fn decode_hex(raw: &str) -> Option<Vec<u8>> {
+    if !raw.len().is_multiple_of(2) || !raw.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(raw.len() / 2);
+    let mut index = 0;
+    while index < raw.len() {
+        let pair = u8::from_str_radix(&raw[index..index + 2], 16).ok()?;
+        bytes.push(pair);
+        index += 2;
+    }
+    Some(bytes)
 }

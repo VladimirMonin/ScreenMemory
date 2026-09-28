@@ -23,6 +23,24 @@ pub enum ErrorCode {
     ModelConfigUnsupported,
     BridgeUnavailable,
     WaitTimeout,
+    /// S02 §5.6: capture vocabulary. Every value is produced by the real capture/library
+    /// path; none of them is a placeholder for an unimplemented capability.
+    CaptureBusy,
+    CaptureBackpressure,
+    CaptureTargetLost,
+    CaptureTopologyChanged,
+    CaptureFocusUnavailable,
+    CaptureUnavailable,
+    CaptureGdiFailed,
+    ImageLimitExceeded,
+    CanonicalSizeUnsupported,
+    AssetIntegrityFailed,
+    AssetNotFound,
+    StorageFull,
+    /// S02: the bundled codec refused to encode or decode the accepted image.
+    CodecFailed,
+    /// S02: the pixel buffer handed to the codec was not a usable image.
+    ImageInputInvalid,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]

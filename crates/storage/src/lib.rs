@@ -11,8 +11,8 @@ mod tests;
 use async_trait::async_trait;
 use rusqlite::{Connection, OpenFlags};
 use sm_application::storage::{
-    CommitImageCapture, CommittedImage, FoundationRepository, Page, Record, RecordPageQuery,
-    SchemaSnapshot, StorageError,
+    AssetChunk, CommitImageCapture, CommittedImage, FoundationRepository, Page, Record,
+    RecordPageQuery, SchemaSnapshot, StorageError,
 };
 use sm_isolation::{HostLease, LeaseError};
 use std::{
@@ -40,6 +40,7 @@ enum Request {
     SqliteVersion(Response<String>),
     CommitImage(Response<CommittedImage>, Box<CommitImageCapture>),
     PageRecords(Response<Page<Record>>, RecordPageQuery),
+    ReadAssetChunk(Response<AssetChunk>, String, u64, u32),
     #[cfg(test)]
     Pragmas(Response<(String, i64, i64, i64)>),
     #[cfg(test)]
@@ -183,6 +184,11 @@ fn run(
             Request::PageRecords(tx, query) => {
                 let _ = tx.send(images::page_records(&db, query));
             }
+            Request::ReadAssetChunk(tx, asset_id, offset, length) => {
+                let _ = tx.send(images::read_asset_chunk(
+                    &db, &assets, &asset_id, offset, length,
+                ));
+            }
             #[cfg(test)]
             Request::Pragmas(tx) => {
                 let result = (|| -> Result<_, StorageError> {
@@ -244,6 +250,17 @@ impl FoundationRepository for StorageWorker {
     }
     async fn page_records(&self, query: RecordPageQuery) -> Result<Page<Record>, StorageError> {
         self.ask(|tx| Request::PageRecords(tx, query)).await
+    }
+    async fn read_asset_chunk(
+        &self,
+        asset_id: sm_domain::AssetId,
+        offset: u64,
+        length: u32,
+    ) -> Result<AssetChunk, StorageError> {
+        // Only the canonical UUID text of the named asset reaches the worker.
+        let raw = asset_id.as_uuid().to_string();
+        self.ask(|tx| Request::ReadAssetChunk(tx, raw, offset, length))
+            .await
     }
 }
 #[cfg(test)]

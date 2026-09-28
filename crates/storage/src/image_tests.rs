@@ -4,8 +4,8 @@ use super::*;
 use rusqlite::{Connection, OpenFlags};
 use sha2::{Digest, Sha256};
 use sm_application::storage::{
-    CaptureContext, CaptureTarget, CommitImageCapture, PhysicalBounds, Provenance, RecordPageQuery,
-    StorageError,
+    AssetChunk, CaptureContext, CaptureTarget, CommitImageCapture, FoundationRepository,
+    PhysicalBounds, Provenance, RecordPageQuery, StorageError, ASSET_CHUNK_BYTES,
 };
 use sm_codec::{encode_exact_lossless_verified, RgbaImage};
 use sm_domain::{AssetId, RecordId};
@@ -806,4 +806,91 @@ fn write_foundation_library(fixture: &Fixture) -> Uuid {
     .unwrap();
     drop(db);
     library_id
+}
+
+#[test]
+fn s02_images_11_bounded_read_returns_only_the_verified_committed_bytes() {
+    let f = Fixture::new();
+    let lease = f.lease();
+    let worker = StorageWorker::start(lease).unwrap();
+    let record_id = record_uuid(21);
+    let asset_id = record_uuid(121);
+    let bytes = canonical(640, 480, 0x51);
+    let committed = f
+        .rt(worker.commit_image_capture(draft(&record_id, &asset_id, bytes.clone())))
+        .unwrap();
+    assert_eq!(committed.size_bytes, bytes.len() as u64);
+    let id = AssetId::new(Uuid::parse_str(&asset_id).unwrap());
+    // The whole file arrives in bounded chunks that reassemble byte for byte.
+    let mut collected: Vec<u8> = Vec::new();
+    let mut offset = 0u64;
+    loop {
+        let chunk: AssetChunk = f
+            .rt(worker.read_asset_chunk(id, offset, ASSET_CHUNK_BYTES))
+            .unwrap();
+        assert!(chunk.bytes.len() <= ASSET_CHUNK_BYTES as usize);
+        assert_eq!(
+            chunk.format,
+            sm_application::storage::CANONICAL_FORMAT_WEBP_LOSSLESS
+        );
+        assert_eq!(chunk.sha256, committed.sha256);
+        assert_eq!(chunk.total_size, bytes.len() as u64);
+        assert_eq!(chunk.offset, offset);
+        collected.extend_from_slice(&chunk.bytes);
+        if chunk.eof {
+            assert_eq!(chunk.next_offset, chunk.total_size);
+            break;
+        }
+        offset = chunk.next_offset;
+    }
+    assert_eq!(collected, bytes);
+    // An offset beyond the file is a refused query, not an empty success.
+    assert_eq!(
+        f.rt(worker.read_asset_chunk(id, bytes.len() as u64 + 1, 16)),
+        Err(StorageError::InvalidQuery)
+    );
+    // An unknown asset is reported as missing.
+    assert_eq!(
+        f.rt(worker.read_asset_chunk(AssetId::new(Uuid::from_u128(0xbad)), 0, 16)),
+        Err(StorageError::AssetNotFound)
+    );
+    f.close(&worker);
+}
+
+#[test]
+fn s02_images_12_substituted_or_truncated_canonical_file_is_refused() {
+    let f = Fixture::new();
+    let lease = f.lease();
+    let worker = StorageWorker::start(lease).unwrap();
+    let record_id = record_uuid(22);
+    let asset_id = record_uuid(122);
+    let bytes = canonical(320, 200, 0x52);
+    f.rt(worker.commit_image_capture(draft(&record_id, &asset_id, bytes.clone())))
+        .unwrap();
+    let id = AssetId::new(Uuid::parse_str(&asset_id).unwrap());
+    assert!(f.rt(worker.read_asset_chunk(id, 0, 64)).is_ok());
+    let published = f.published_files();
+    assert_eq!(published.len(), 1);
+    // Same length, different bytes: the committed digest must catch the substitution.
+    let mut substituted = bytes.clone();
+    let last = substituted.len() - 1;
+    substituted[last] ^= 0xff;
+    fs::write(&published[0], &substituted).unwrap();
+    assert_eq!(
+        f.rt(worker.read_asset_chunk(id, 0, 64)),
+        Err(StorageError::AssetIntegrityFailed)
+    );
+    // Truncated file: refused by the committed size before any digest claim.
+    fs::write(&published[0], &bytes[..bytes.len() - 4]).unwrap();
+    assert_eq!(
+        f.rt(worker.read_asset_chunk(id, 0, 64)),
+        Err(StorageError::AssetIntegrityFailed)
+    );
+    // A deleted canonical file is reported as missing, never as an empty document.
+    fs::remove_file(&published[0]).unwrap();
+    assert_eq!(
+        f.rt(worker.read_asset_chunk(id, 0, 64)),
+        Err(StorageError::AssetNotFound)
+    );
+    f.close(&worker);
 }

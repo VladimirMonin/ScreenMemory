@@ -19,12 +19,16 @@ pub use exec::{
 };
 pub use launcher::{HostLauncher, LaunchError, LaunchedHost, ProcessLauncher};
 
-/// Exit codes inherited from master/S01 §10.3.
+/// Exit codes inherited from master/S01 §10.3 plus the S02 §11.5 table.
 pub const EXIT_OK: u8 = 0;
 pub const EXIT_USAGE: u8 = 2;
+/// A named record/asset/operation is not found while the state is known.
+pub const EXIT_NOT_FOUND: u8 = 3;
 pub const EXIT_HOST: u8 = 4;
 pub const EXIT_POLICY: u8 = 6;
 pub const EXIT_STORAGE: u8 = 7;
+/// Capture, GDI, canonical save or integrity failure.
+pub const EXIT_CAPTURE: u8 = 7;
 pub const EXIT_WAIT: u8 = 8;
 /// Bounded discovery window for an explicitly authorized host autostart.
 pub const START_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);

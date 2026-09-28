@@ -6,7 +6,9 @@ use sm_application::credentials::{
 };
 use sm_domain::LibraryId;
 use sm_framing::BufferBudget;
-use sm_host::{bootstrap, BootstrapMode, BootstrapOptions, HostError, DEFAULT_DRAIN};
+use sm_host::{
+    bootstrap, BootstrapMode, BootstrapOptions, CaptureOptions, HostError, DEFAULT_DRAIN,
+};
 use sm_isolation::{HostLease, LibraryRootResolver, RootSource};
 use sm_pipe::{Endpoint, Listener, TrustedServerImage};
 use sm_protocol::application::{BridgeState, CheckOutcome, HostState};
@@ -101,6 +103,9 @@ fn options(
         root: root.to_path_buf(),
         mode,
         store,
+        // The foundation composition itself owns no capture adapter; the S02 capture
+        // composition is exercised by its own integration test with an injected adapter.
+        capture: CaptureOptions::Disabled,
     }
 }
 
@@ -430,6 +435,7 @@ fn s01_host_cli_04_unprepared_root_is_refused_without_creation() {
             root: missing.clone(),
             mode: BootstrapMode::Serve,
             store,
+            capture: CaptureOptions::Disabled,
         })
         .await;
         assert!(matches!(refused, Err(HostError::Root(_))));
