@@ -37,6 +37,8 @@
 | [DATA.storage_owner](instructions/DATA.storage_owner.instructions.md) | Foundation SQLite worker, миграции, DB entries и владение HostLease |
 | [SEC.credentials](instructions/SEC.credentials.instructions.md) | Локальные credentials, Windows Credential Manager и host principal/scopes перед secure listener |
 | [SEC.pipe_endpoint](instructions/SEC.pipe_endpoint.instructions.md) | Windows named-pipe ACL, sealed pool, peer identity и trusted server image |
+| [CAPTURE.native](instructions/CAPTURE.native.instructions.md) | Win32 capture, region picker, overlay, hotkey, GDI/DIB |
+| [CODEC.webp](instructions/CODEC.webp.instructions.md) | WebP codec (bundled libwebp), exact lossless, bounds/отказы |
 
 - **Каждую новую инструкцию обязательно добавляй сюда рабочей ссылкой с условием чтения.**
   При переименовании, разделении или удалении обновляй ссылки и маршруты.
@@ -80,6 +82,11 @@ cases → review → evidence → commit. Не включай чужие пра�
 Проверки выбирай по реальным manifests; плановые Cargo/pnpm/scripts, которых ещё нет,
 не выдавай за исполненные. Сохраняй raw exit codes;
 `NOT_RUN`/`BLOCKED` не равны `PASS`, code commit не равен принятому этапу.
+
+**Схема:** пишет `ollama-cloud/deepseek-v4.1-flash`, Sol6 (`openai-codex/gpt-6-sol`) проверяет
+важные этапы/сложности; parent оркестрирует, принимает, коммитит.
+Workflow: `.pi/orchestration/screenmemory.milestone.workflow.js` (args.writerModel/reviewModel).
+Fallback при квоте: `polza/deepseek-v4.1-flash` → `openai-codex/gpt-6-astra`.
 
 Делегирование — только при разрешении пользователя/применимых инструкций;
 один writer на worktree, независимый reviewer — read-only, commits — у интегратора.
