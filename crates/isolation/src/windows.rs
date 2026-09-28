@@ -83,6 +83,9 @@ struct Overlapped {
     event: Handle,
 }
 struct OwnedHandle(Handle);
+// Kernel HANDLE values are process-wide and may be moved to a single owner thread;
+// no borrowed thread-affine state or concurrent mutable access crosses this edge.
+unsafe impl Send for OwnedHandle {}
 impl Drop for OwnedHandle {
     fn drop(&mut self) {
         unsafe {
@@ -262,6 +265,70 @@ impl Directory {
             file,
             ancestors,
             _handles: handles,
+        })
+    }
+}
+
+/// Pinned existing entries prevent replacement between preflight and SQLite open.
+/// No name supplied by a caller can become a database/sidecar write target.
+pub(super) struct DatabaseEntry {
+    pub path: PathBuf,
+    pub existed: bool,
+    _pins: Vec<OwnedHandle>,
+}
+impl DatabaseEntry {
+    pub(super) fn inspect(root: &Directory) -> Result<Self, crate::LeaseError> {
+        let path = root.path.join("library.sqlite3");
+        let mut pins = Vec::new();
+        let mut existed = false;
+        for (index, suffix) in ["", "-wal", "-shm", "-journal"].iter().enumerate() {
+            let name = wide(
+                root.path
+                    .join(format!("library.sqlite3{suffix}"))
+                    .as_os_str(),
+            );
+            let raw = unsafe {
+                CreateFileW(
+                    name.as_ptr(),
+                    FILE_READ_ATTRIBUTES,
+                    SHARE_PINNED,
+                    std::ptr::null(),
+                    OPEN_EXISTING,
+                    OPEN_REPARSE_POINT,
+                    std::ptr::null_mut(),
+                )
+            };
+            if raw == INVALID {
+                if std::io::Error::last_os_error().raw_os_error() == Some(2) {
+                    continue;
+                }
+                return Err(crate::LeaseError::UnsafeEntry);
+            }
+            let handle = OwnedHandle(raw);
+            let mut info = std::mem::MaybeUninit::<FileInfo>::uninit();
+            if unsafe { GetFileInformationByHandle(handle.0, info.as_mut_ptr()) } == 0 {
+                return Err(crate::LeaseError::UnsafeEntry);
+            }
+            let info = unsafe { info.assume_init() };
+            if info.dwFileAttributes & (REPARSE_POINT | DIRECTORY) != 0
+                || info.nNumberOfLinks != 1
+                || info.dwVolumeSerialNumber != root.volume
+            {
+                return Err(crate::LeaseError::UnsafeEntry);
+            }
+            if index == 0 {
+                existed = true;
+            }
+            pins.push(handle);
+        }
+        // Stray sidecars are not a valid fresh initialization state.
+        if !existed && !pins.is_empty() {
+            return Err(crate::LeaseError::UnsafeEntry);
+        }
+        Ok(Self {
+            path,
+            existed,
+            _pins: pins,
         })
     }
 }

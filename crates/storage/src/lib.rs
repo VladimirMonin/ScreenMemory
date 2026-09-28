@@ -1,0 +1,209 @@
+//! SQLite worker holds one OS lease and a single connection; no SQL escape hatch.
+#[cfg(not(all(windows, target_pointer_width = "64")))]
+compile_error!("sm-storage requires the audited Windows x64 root adapter");
+mod migration;
+#[cfg(test)]
+mod tests;
+
+use async_trait::async_trait;
+use rusqlite::{Connection, OpenFlags};
+use sm_application::storage::{FoundationRepository, SchemaSnapshot, StorageError};
+use sm_isolation::{HostLease, LeaseError};
+use std::{
+    sync::mpsc::{self, Receiver, SyncSender, TrySendError},
+    time::Duration,
+};
+use tokio::sync::oneshot;
+
+type Response<T> = oneshot::Sender<Result<T, StorageError>>;
+enum Request {
+    Snapshot(Response<SchemaSnapshot>),
+    AiEnabled(Response<bool>),
+    SqliteVersion(Response<String>),
+    #[cfg(test)]
+    Pragmas(Response<(String, i64, i64, i64)>),
+    #[cfg(test)]
+    Pause(Response<()>, Duration),
+    Stop(Response<()>),
+}
+
+/// Cloneable bounded command endpoint, never a cloneable connection or lease.
+#[derive(Clone)]
+pub struct StorageWorker {
+    sender: SyncSender<Request>,
+}
+impl StorageWorker {
+    /// Consumes a real acquired OS lease. No database filename/path input.
+    pub fn start(lease: HostLease) -> Result<Self, StorageError> {
+        Self::start_inner(lease, false)
+    }
+    fn start_inner(lease: HostLease, inject_failure: bool) -> Result<Self, StorageError> {
+        let (sender, receiver) = mpsc::sync_channel(32);
+        let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+        std::thread::Builder::new()
+            .name("sm-sqlite-worker".into())
+            .spawn(move || {
+                let entry = match lease.database_entry() {
+                    Ok(entry) => entry,
+                    Err(e) => {
+                        drop(lease);
+                        let _ = ready_tx.send(Err(map_entry(e)));
+                        return;
+                    }
+                };
+                let result = open(&entry, inject_failure);
+                match result {
+                    Ok(db) => {
+                        if ready_tx.send(Ok(())).is_ok() {
+                            let stopped = run(db, receiver);
+                            // All SQLite handles close before entry pins and lease.
+                            drop(entry);
+                            drop(lease);
+                            if let Some(tx) = stopped {
+                                let _ = tx.send(Ok(()));
+                            }
+                        } else {
+                            drop(db);
+                            drop(entry);
+                            drop(lease);
+                        }
+                    }
+                    Err(error) => {
+                        drop(entry);
+                        drop(lease);
+                        let _ = ready_tx.send(Err(error));
+                    }
+                }
+            })
+            .map_err(|_| StorageError::Unavailable)?;
+        ready_rx.recv().map_err(|_| StorageError::Unavailable)??;
+        Ok(Self { sender })
+    }
+    async fn ask<T>(&self, build: impl FnOnce(Response<T>) -> Request) -> Result<T, StorageError> {
+        let (tx, rx) = oneshot::channel();
+        match self.sender.try_send(build(tx)) {
+            Ok(()) => rx.await.map_err(|_| StorageError::Unavailable)?,
+            Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => {
+                Err(StorageError::Unavailable)
+            }
+        }
+    }
+    /// Timeout is unknown/still-owned, never a declaration of Stopped.
+    pub async fn shutdown(&self, deadline: Duration) -> Result<(), StorageError> {
+        tokio::time::timeout(deadline, self.ask(Request::Stop))
+            .await
+            .map_err(|_| StorageError::Unavailable)?
+    }
+    /// Actual bundled SQLite runtime version; NOT a sqlite-vec query proof.
+    pub async fn sqlite_version(&self) -> Result<String, StorageError> {
+        self.ask(Request::SqliteVersion).await
+    }
+}
+fn map_entry(err: LeaseError) -> StorageError {
+    match err {
+        LeaseError::Busy => StorageError::LockConflict,
+        LeaseError::UnsafeEntry => StorageError::RootRejected,
+    }
+}
+fn open(entry: &sm_isolation::DatabaseEntry, fail: bool) -> Result<Connection, StorageError> {
+    let fresh = migration::preflight(entry.path(), entry.existed())?;
+    let mut db = Connection::open_with_flags(
+        entry.path(),
+        OpenFlags::SQLITE_OPEN_READ_WRITE
+            | OpenFlags::SQLITE_OPEN_CREATE
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|_| StorageError::PermissionDenied)?;
+    if !entry.existed() {
+        // Durable provenance precedes WAL and the transactional migration. A
+        // failure before this point leaves an unclaimed file: fail closed later.
+        migration::mark_new_file(&db)?;
+    }
+    migration::pragmas(&db)?;
+    migration::initialize(&mut db, fresh, fail)?;
+    Ok(db)
+}
+fn run(db: Connection, receiver: Receiver<Request>) -> Option<Response<()>> {
+    for request in receiver {
+        match request {
+            Request::Snapshot(tx) => {
+                let _ = tx.send(migration::validate(&db));
+            }
+            Request::AiEnabled(tx) => {
+                let _ = tx.send(migration::validate(&db).map(|_| false));
+            }
+            Request::SqliteVersion(tx) => {
+                let _ = tx.send(migration::sqlite_version(&db));
+            }
+            #[cfg(test)]
+            Request::Pragmas(tx) => {
+                let result = (|| -> Result<_, StorageError> {
+                    Ok((
+                        db.query_row("PRAGMA journal_mode", [], |r| r.get(0))
+                            .map_err(|_| StorageError::Unavailable)?,
+                        db.query_row("PRAGMA foreign_keys", [], |r| r.get(0))
+                            .map_err(|_| StorageError::Unavailable)?,
+                        db.query_row("PRAGMA synchronous", [], |r| r.get(0))
+                            .map_err(|_| StorageError::Unavailable)?,
+                        db.query_row("PRAGMA busy_timeout", [], |r| r.get(0))
+                            .map_err(|_| StorageError::Unavailable)?,
+                    ))
+                })();
+                let _ = tx.send(result);
+            }
+            #[cfg(test)]
+            Request::Pause(tx, duration) => {
+                std::thread::sleep(duration);
+                let _ = tx.send(Ok(()));
+            }
+            Request::Stop(tx) => {
+                close_confirmed(db);
+                return Some(tx);
+            }
+        }
+    }
+    close_confirmed(db);
+    None
+}
+/// sqlite3_close may return BUSY together with the *still-open* connection.
+/// Retain both the connection and the worker-owned HostLease until closure succeeds;
+/// never translate a failed close into a released writer lock or Stopped.
+fn close_confirmed(mut db: Connection) {
+    loop {
+        match db.close() {
+            Ok(()) => return,
+            Err((still_open, _)) => {
+                db = still_open;
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
+}
+#[async_trait]
+impl FoundationRepository for StorageWorker {
+    async fn schema_snapshot(&self) -> Result<SchemaSnapshot, StorageError> {
+        self.ask(Request::Snapshot).await
+    }
+    async fn read_ai_enabled(&self) -> Result<bool, StorageError> {
+        self.ask(Request::AiEnabled).await
+    }
+}
+#[cfg(test)]
+impl StorageWorker {
+    pub(crate) fn start_with_fault(lease: HostLease) -> Result<Self, StorageError> {
+        Self::start_inner(lease, true)
+    }
+    pub(crate) async fn read_pragmas(&self) -> Result<(String, i64, i64, i64), StorageError> {
+        self.ask(Request::Pragmas).await
+    }
+    pub(crate) fn pause_for_test(
+        &self,
+        duration: Duration,
+    ) -> oneshot::Receiver<Result<(), StorageError>> {
+        let (tx, rx) = oneshot::channel();
+        self.sender
+            .try_send(Request::Pause(tx, duration))
+            .unwrap_or_else(|_| panic!("test queue empty"));
+        rx
+    }
+}

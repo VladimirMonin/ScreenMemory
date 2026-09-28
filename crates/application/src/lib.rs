@@ -1,5 +1,6 @@
 //! Application seams only: host-created authority and ports; no concrete adapters.
 pub mod observability;
+pub mod storage;
 
 use async_trait::async_trait;
 use sm_domain::{CorrelationId, PrincipalId, RequestId};
@@ -90,11 +91,6 @@ pub trait FoundationControlApi: Send + Sync {
 }
 
 /// Outbound ports expose capabilities without implementing storage, SDK, or policy here.
-#[async_trait]
-pub trait LibraryRepository: Send + Sync {
-    async fn identity(&self) -> Result<sm_domain::LibraryId, AppError>;
-    async fn schema_version(&self) -> Result<u32, AppError>;
-}
 #[async_trait]
 pub trait RuntimeProbePort: Send + Sync {
     async fn probe(

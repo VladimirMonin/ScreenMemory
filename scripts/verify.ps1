@@ -62,6 +62,7 @@ try {
             @('RUST-CLIPPY',$tools.rust,@('clippy','--workspace','--all-targets','--locked','--','-D','warnings')),
             @('RUST-TEST',$tools.rust,@('test','--workspace','--locked')),
             @('HOST-LEASE',$tools.rust,@('test','--locked','-p','sm-isolation','--test','host_lease')),
+            @('STORAGE-FOUNDATION',$tools.rust,@('test','--locked','-p','sm-storage')),
             @('PNPM-TYPECHECK',$tools.node,@($tools.pnpm,'typecheck')),
             @('PNPM-LINT',$tools.node,@($tools.pnpm,'lint')),
             @('PNPM-TEST',$tools.node,@($tools.pnpm,'test'))

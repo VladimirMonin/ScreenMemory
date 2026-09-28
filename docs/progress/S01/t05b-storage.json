@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "stage": "S01",
+  "slice": "S01-T05b-ownership",
+  "status": "CANDIDATE_REVIEW_PENDING",
+  "base_accepted_commit": "4d09c61b9909e355b7ec9f2ec86bdda51070a32e",
+  "accepted_commit": null,
+  "plan_files_changed": false,
+  "source_snapshot_sha256": {
+    "crates/storage/src/lib.rs": "707f3e342f3c6681afeed1696109ed62538c4c9efebc40a982fd020dc4352181",
+    "crates/storage/src/migration.rs": "7164a1d9422e60b6cbd8059634dbdc893c9ee3048812499a2382e49d98739dc1",
+    "crates/storage/src/tests.rs": "ad3dda23dc8971f1180df0e3a7ccfddc9db7c9d4436e7db26811861f39853848"
+  },
+  "test_ids": ["S01-DB-01", "S01-DB-02"],
+  "storage_case_count": 12,
+  "new_cases": ["s01_db_02_foreign_empty_schema_and_unclaimed_files_never_adopted", "s01_db_02_missing_main_with_foreign_sidecar_is_not_fresh"],
+  "checks": [
+    {"command": "powershell.exe -NoProfile -NonInteractive -File .pi/temporary/t05b-ownership-targeted.ps1 (pinned MSVC/Rust env; cargo test --locked -p sm-storage s01_db_0 -- --nocapture --test-threads=1)", "origin": "independent reviewer f1e155f9-886a-4d8f-81ee-61f4465fb1f0", "outer_exit": 0, "native_exit": 0, "exit_provenance": "attested by independent reviewer; log itself records 12 passing cases, not process exits", "cases_passed": 12, "private_log": ".pi/t05b-reviewer-evidence-0c5d745ed5864e688649a80c994611b2/ownership-targeted.log", "log_sha256": "fdec17737a1f500cfc66afeccf10084d530f6cf01dfbd1e5c3cb96d41c8bbf10"},
+    {"command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify.ps1", "outer_exit": 0, "private_result": ".pi/verify-aa195e91bad34ddc85a43ea3b854423d/result.json", "result_sha256": "feca433f28a7b5f81c45b83b2ffcf834f5700eade08a997452ed24bb4d7846da", "native_steps": "RUST-FMT/CLIPPY/TEST, HOST-LEASE, STORAGE-FOUNDATION, PNPM-* and CONTRACTS native exit 0; PLAN-HASH-PRE/POST and SOURCE-INTEGRITY-PRE/POST PASS"},
+    {"command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify-contracts.ps1", "outer_exit": 0, "private_result": ".pi/contracts-ec25d2a1422843e0bd3b98d7b8d141a3/result.json", "result_sha256": "634a8afbcd59059770d739c39b76432e909b20e7f9893c8398a3c2a72e573080", "native_steps": "SCHEMA-GENERATE/CHECK, TS-GENERATE, PNPM-CONTRACTS, BOUNDARIES, SCHEMA-FIXTURES native exit 0; PLAN-HASH-PRE/POST and SOURCE-INTEGRITY-PRE/POST PASS"},
+    {"command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify.ps1", "origin": "independent reviewer f1e155f9-886a-4d8f-81ee-61f4465fb1f0", "outer_exit": 0, "private_result": ".pi/verify-a7348eeae3da421287c5b4bc807b7a81/result.json", "result_sha256": "9aed520800c5999ed7e010ad2073543dce1d4760909e5ba0c1f31c944bdcaf16", "native_steps": "STORAGE-FOUNDATION and workspace steps native exit 0; PLAN-HASH-PRE/POST and SOURCE-INTEGRITY-PRE/POST PASS"},
+    {"command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify-contracts.ps1", "origin": "independent reviewer f1e155f9-886a-4d8f-81ee-61f4465fb1f0", "outer_exit": 0, "private_result": ".pi/contracts-98fe8d58f881401f843780c55c674a2f/result.json", "result_sha256": "6b4946cc82b07a19f583ecf86ef8a38790569ec920edba6c4b33f4dec6645d2e", "native_steps": "contract steps native exit 0; PLAN-HASH-PRE/POST and SOURCE-INTEGRITY-PRE/POST PASS"},
+    {"command": "git diff --check; git diff --cached --name-only", "outer_exit": 0, "no_staged_files": true}
+  ],
+  "historical_runs": "Original writer targeted log SHA-256 4f7d4aaa4f0ecdeb8932a203f76744a8575146c29f697d97bb86c454194df537 was overwritten at .pi/temporary/t05b-ownership-targeted.log by independent reviewer rerun; historical and unavailable as a verifiable current artifact. The new immutable private copy contains reviewer bytes, not original writer bytes. Original writer verify and contracts result.json artifacts remain available with matching cited hashes and retain writer provenance. Pre-fix private outputs are superseded; failed fmt/compile trials and first targeted PowerShell stderr-wrapper failure are not current PASS.",
+  "not_run": ["actual inaccessible ACL denial (no user/global ACL modification)", "host/IPC/GUI, donor/runtime/model/live/package, S01-T09 vec/FTS, S08 backup/restore, full T05/S01 acceptance"],
+  "risks": ["marker is not authentication against malicious same-user; marked corrupt WAL may involve SQLite read-only shared-memory effects", "no automatic repair/adoption of unmarked old candidate DB", "reviewer/parent disposition pending"],
+  "no_staged_files": true
+}

@@ -124,6 +124,25 @@ impl HostLease {
             _layout: layout,
         })
     }
+
+    /// Only the fixed database and SQLite's fixed sidecars are permitted. Hold
+    /// existing entries against replacement for the complete connection lifetime.
+    pub fn database_entry(&self) -> Result<DatabaseEntry, LeaseError> {
+        windows::DatabaseEntry::inspect(&self._layout.data.native)
+            .map(|native| DatabaseEntry { native })
+    }
+}
+
+pub struct DatabaseEntry {
+    native: windows::DatabaseEntry,
+}
+impl DatabaseEntry {
+    pub fn path(&self) -> &Path {
+        &self.native.path
+    }
+    pub fn existed(&self) -> bool {
+        self.native.existed
+    }
 }
 
 pub struct NamespaceLayout {

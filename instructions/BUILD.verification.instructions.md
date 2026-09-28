@@ -11,6 +11,9 @@ description: "Читай при изменении offline verify, фиксир�
 `powershell.exe -NoProfile -NonInteractive -File scripts/verify-contracts.ps1`.
 `-OutputRoot` задаёт **новый, ещё не существующий** каталог строго под `.pi/` checkout;
 по умолчанию выбирается новый UUID. Повторное использование откажет без перезаписи.
+Targeted runs тоже получают отдельный уникальный output directory под `.pi/`.
+Процитированные evidence artifacts неизменны: reviewer не использует writer output
+path как destination и не повторяет команды, перезаписывающие старые логи.
 `result.json` — UTF-8/LF/no BOM, `native-*.log[.stderr]` и ошибки MSVC — приватные
 артефакты только `.pi/`; их нельзя автоматически upload, вставлять в публичный
 отчёт или выводить произвольный stderr, exception, compiler payload. Сохраняй
@@ -36,8 +39,8 @@ env, сохраняет cargo outputs под `.pi/`. Если prerequisite/versi
 изменивший workspace owner обновляет обязательный suite и каталог.
 
 Сегодня `PASS` означает только **implemented contract subset**: Rust fmt/clippy/
-test (включая S01-LOG-01/02 test-support, logger и synthetic HostLease),
-отдельный `HOST-LEASE` cargo test -p sm-isolation --test host_lease/schema; pnpm
+test (включая S01-LOG-01/02 test-support, logger, synthetic HostLease и S01-DB-01/02 storage),
+отдельные `HOST-LEASE` cargo test -p sm-isolation --test host_lease и `STORAGE-FOUNDATION` cargo test -p sm-storage (синтетические файловые DB); pnpm
 typecheck/lint/test/contracts:check; Python boundary/schema fixtures и source bytes.
 `FRONTEND`, `BRIDGE`, полный `HOST`, `HOST-LOG-INTEGRATION` и остальные будущие gates
 остаются `NOT_IMPLEMENTED`/`NOT_RUN`;
