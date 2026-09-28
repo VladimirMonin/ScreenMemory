@@ -5,14 +5,15 @@ import tomllib
 
 root = Path(__file__).resolve().parents[2]
 workspace = tomllib.loads((root / 'Cargo.toml').read_text(encoding='utf-8'))['workspace']
-assert set(workspace['members']) == {'crates/domain', 'crates/protocol', 'crates/application', 'crates/observability', 'crates/isolation', 'crates/storage', 'crates/credentials', 'crates/framing', 'crates/pipe', 'crates/session', 'crates/host', 'crates/cli', 'crates/gui'}
+assert set(workspace['members']) == {'crates/domain', 'crates/protocol', 'crates/application', 'crates/observability', 'crates/isolation', 'crates/storage', 'crates/codec', 'crates/credentials', 'crates/framing', 'crates/pipe', 'crates/session', 'crates/host', 'crates/cli', 'crates/gui'}
 allowed = {
     'domain': {'serde', 'uuid', 'schemars'},
     'protocol': {'sm-domain', 'serde', 'serde_json', 'schemars', 'time'},
-    'application': {'sm-domain', 'sm-protocol', 'async-trait', 'tokio-util', 'serde', 'uuid', 'getrandom', 'sha2', 'subtle', 'zeroize'},
+    'application': {'sm-domain', 'sm-protocol', 'async-trait', 'tokio-util', 'serde', 'serde_json', 'uuid', 'getrandom', 'sha2', 'subtle', 'zeroize'},
     'observability': {'sm-application', 'serde', 'serde_json'},
     'isolation': {'sm-application'},
-    'storage': {'sm-application', 'sm-isolation', 'async-trait', 'rusqlite', 'sha2', 'serde_json', 'uuid', 'tokio'},
+    'storage': {'sm-application', 'sm-domain', 'sm-isolation', 'async-trait', 'rusqlite', 'sha2', 'serde_json', 'uuid', 'tokio'},
+    'codec': {'libwebp-sys'},
     'credentials': {'sm-application', 'sm-isolation', 'windows-sys', 'zeroize'},
     'framing': {'serde', 'serde_json', 'tokio', 'zeroize'},
     'pipe': {'sm-isolation', 'sha2', 'tokio', 'windows-sys'},
@@ -25,6 +26,13 @@ for crate, expected in allowed.items():
     manifest = tomllib.loads((root / 'crates' / crate / 'Cargo.toml').read_text(encoding='utf-8'))
     assert set(manifest['dependencies']) == expected, crate
     assert manifest['package']['name'] == 'sm-' + crate
+    if crate == 'storage':
+        assert set(manifest['dev-dependencies']) == {'sm-codec'}
+    if crate == 'codec':
+        assert 'dev-dependencies' not in manifest
+        assert manifest['dependencies']['libwebp-sys']['version'] == '=0.14.4'
+        assert manifest['dependencies']['libwebp-sys']['default-features'] is False
+        assert manifest['dependencies']['libwebp-sys']['features'] == ['std']
     if crate == 'isolation':
         assert set(manifest['dev-dependencies']) == {'sm-observability', 'uuid'}
     if crate == 'pipe':
@@ -44,6 +52,10 @@ for crate, expected in allowed.items():
         if crate == 'gui':
             # The window speaks only the shared client; it never opens storage or the wire.
             forbidden_modules = ('rusqlite::', 'sm_storage::', 'winapi::', 'lmstudio::', 'std::net::')
+        if crate == 'codec':
+            # The codec is pure in-memory pixel work: no storage, no filesystem, no
+            # environment, no network and no log sink of its own.
+            forbidden_modules = ('rusqlite::', 'sm_storage::', 'std::fs::', 'std::net::', 'std::env::', 'winapi::', 'windows::', 'tauri::', 'lmstudio::', 'println!', 'eprintln!', 'log::', 'tracing::')
         for forbidden in forbidden_modules:
             assert forbidden not in text, (crate, source.name, forbidden)
         if crate not in ('observability', 'isolation', 'storage', 'credentials', 'pipe', 'session', 'host', 'cli', 'gui'):
@@ -86,6 +98,33 @@ storage_manifest = tomllib.loads((root / 'crates/storage/Cargo.toml').read_text(
 assert storage_manifest['dependencies']['rusqlite']['features'] == ['bundled']
 assert storage_manifest['dependencies']['rusqlite']['version'].startswith('=')
 assert 'rusqlite::' not in (root / 'crates/application/src/storage.rs').read_text(encoding='utf-8')
+# S02 images storage: the owner keeps its single writer, the canonical file layout and
+# the closed canonical-format vocabulary; the codec never reaches the filesystem.
+storage_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/storage/src').rglob('*.rs')}
+assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'tests.rs', 'image_tests.rs'}
+assert {path.name for path in (root / 'crates/storage/migrations').glob('*.sql')} == {'0001_foundation.sql', '0002_images.sql'}
+images_sql = (root / 'crates/storage/migrations/0002_images.sql').read_text(encoding='utf-8')
+assert "format IN ('webp_lossless')" in images_sql and "'avif'" not in images_sql
+assert "asset_type IN ('original', 'preview', 'edited')" in images_sql
+assert 'PRIMARY KEY AUTOINCREMENT' in images_sql, 'bounded pages need the ordering key'
+assert '"assets/{file_relative}"' in storage_sources['images.rs']
+assert '"{month}/{record_id}/{asset_type}.webp"' in storage_sources['images.rs']
+assert 'BEGIN IMMEDIATE' not in images_sql and 'TransactionBehavior::Immediate' in storage_sources['images.rs']
+application_storage = (root / 'crates/application/src/storage.rs').read_text(encoding='utf-8')
+assert 'sm_domain::{AssetId, RecordId}' in application_storage
+assert 'Page<Record>' in application_storage and 'RecordPageQuery' in application_storage
+assert 'CANONICAL_FORMAT_WEBP_LOSSLESS' in application_storage
+assert "'avif'" not in application_storage, 'the images vocabulary has no AVIF value'
+codec_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/codec/src').rglob('*.rs')}
+assert set(codec_sources) == {'lib.rs', 'error.rs', 'limits.rs', 'native.rs'}
+assert {path.name for path in (root / 'crates/codec/tests').glob('*.rs')} == {'guards.rs', 'roundtrip.rs'}
+for name, text in codec_sources.items():
+    for forbidden in ('println!', 'eprintln!', 'log::', 'tracing::', 'std::fs::', 'std::env::'):
+        assert forbidden not in text, ('codec', name, forbidden)
+assert 'exact = 1;' in codec_sources['native.rs'], 'exact lossless is the encoded profile'
+assert 'WEBP_EXACT_LOSSLESS_PROFILE' in codec_sources['lib.rs']
+assert 'CodecCapability::NotImplemented' in codec_sources['error.rs'], 'AVIF is reported unimplemented'
+assert 'system-dylib' not in codec_sources['lib.rs']
 # S01-T06d boundaries: the diagnostic window is one client of the shared session owner.
 gui_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/gui/src').rglob('*.rs')}
 assert set(gui_sources) == {'config.rs', 'lib.rs', 'main.rs', 'model.rs', 'open.rs', 'selfcheck.rs', 'session.rs', 'shell.rs'}
@@ -121,4 +160,4 @@ assert set(frontend) == {'App.tsx', 'main.tsx', 'model.ts', 'model.test.ts'}
 for name, text in frontend.items():
     for forbidden in ('@lmstudio/sdk', 'better-sqlite3', 'sqlite', 'child_process', 'XMLHttpRequest'):
         assert forbidden not in text, ('gui-frontend', name, forbidden)
-print('S01-DEP-01 PASS: thirteen crates, exact dependency allowlists, bundled SQLite in storage and native credentials in adapter; host/CLI composition and the diagnostic-window client boundary retained')
+print('S01-DEP-01/S02-DEP-02 PASS: fourteen crates, exact dependency allowlists, bundled SQLite in storage, bundled static libwebp in the codec, closed images schema vocabulary and the diagnostic-window client boundary retained')

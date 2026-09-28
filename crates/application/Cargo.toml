@@ -11,6 +11,8 @@ sm-protocol = { path = "../protocol" }
 async-trait.workspace = true
 tokio-util.workspace = true
 serde.workspace = true
+# Typed capture-context/provenance payloads stay JSON-compatible without any SQL.
+serde_json.workspace = true
 uuid.workspace = true
 getrandom.workspace = true
 sha2.workspace = true

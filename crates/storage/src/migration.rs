@@ -1,12 +1,25 @@
-use rusqlite::{Connection, ErrorCode, OpenFlags};
+use rusqlite::{Connection, ErrorCode, OpenFlags, TransactionBehavior};
 use sha2::{Digest, Sha256};
-use sm_application::storage::{SchemaSnapshot, StorageError};
+use sm_application::storage::{
+    ImagesSchema, SchemaSnapshot, StorageError, CANONICAL_FORMAT_WEBP_LOSSLESS,
+};
 use std::{io::Read, path::Path};
 use uuid::Uuid;
 
-const MIGRATION: &str = include_str!("../migrations/0001_foundation.sql");
+/// Shipped migrations in application order. `0001` owns the foundation tables;
+/// `0002` adds the S02 images schema (`records`, `assets`). Both are applied in a
+/// single transaction on a fresh file, and an interrupted upgrade rolls back the
+/// schema change together with its migration row.
+const SHIPPED: [(&str, &str); 2] = [
+    (
+        "0001_foundation",
+        include_str!("../migrations/0001_foundation.sql"),
+    ),
+    ("0002_images", include_str!("../migrations/0002_images.sql")),
+];
+/// Applied images schema version, reported by `SchemaSnapshot::images`.
+const IMAGES_VERSION: u32 = 2;
 pub(super) const BOOTSTRAP: &str = "CREATE TABLE schema_migrations (\n    version       INTEGER PRIMARY KEY CHECK (version > 0),\n    name          TEXT NOT NULL,\n    checksum      TEXT NOT NULL,\n    applied_at    TEXT NOT NULL\n)";
-const NAME: &str = "0001_foundation";
 // Candidate-only foundation format. Written on a newly created file, before WAL
 // and before the atomic schema migration; never stamped onto an existing DB.
 pub(super) const OWNER_ID: u32 = 0x534D_4631; // "SMF1"; not an authentication secret.
@@ -44,28 +57,77 @@ fn objects(db: &Connection) -> Result<Vec<(String, String)>, StorageError> {
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|_| StorageError::SchemaIncompatible)
 }
-fn expected() -> Vec<(String, String)> {
-    let mut names = vec![("schema_migrations".to_owned(), BOOTSTRAP.to_owned())];
-    for ddl in MIGRATION
+
+/// Object name created by one shipped DDL statement.
+fn object_name(statement: &str) -> String {
+    let mut tokens = statement.split_whitespace();
+    while let Some(token) = tokens.next() {
+        if matches!(token, "TABLE" | "INDEX" | "TRIGGER" | "VIEW") {
+            if let Some(name) = tokens.next() {
+                return name.to_owned();
+            }
+        }
+    }
+    panic!("shipped migration syntax");
+}
+
+fn statements(migration: &str) -> impl Iterator<Item = &str> {
+    migration
         .split(";\n")
         .map(str::trim)
         .filter(|s| !s.is_empty())
-    {
-        let table = ddl
-            .split_whitespace()
-            .nth(2)
-            .expect("shipped migration syntax");
-        names.push((table.to_owned(), ddl.to_owned()));
+}
+
+/// Exact objects a library must contain after the first `version` migrations.
+fn expected_objects(version: usize) -> Vec<(String, String)> {
+    let mut names = vec![("schema_migrations".to_owned(), BOOTSTRAP.to_owned())];
+    for (_, migration) in SHIPPED.iter().take(version) {
+        for statement in statements(migration) {
+            names.push((object_name(statement), statement.to_owned()));
+        }
     }
     names.sort();
     names
 }
+
 fn table_only() -> Vec<(String, String)> {
     vec![("schema_migrations".to_owned(), BOOTSTRAP.to_owned())]
 }
-fn checksum() -> String {
-    format!("{:x}", Sha256::digest(MIGRATION.as_bytes()))
+
+fn checksum_of(migration: &str) -> String {
+    format!("{:x}", Sha256::digest(migration.as_bytes()))
 }
+
+/// Migration rows must be exactly the shipped prefix, in order, with shipped names.
+fn applied_version(db: &Connection) -> Result<usize, StorageError> {
+    let rows = db
+        .prepare("SELECT version, name, checksum FROM schema_migrations ORDER BY version")
+        .and_then(|mut stmt| {
+            stmt.query_map([], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()
+        })
+        .map_err(|_| StorageError::SchemaIncompatible)?;
+    if rows.is_empty() || rows.len() > SHIPPED.len() {
+        return Err(StorageError::SchemaIncompatible);
+    }
+    for (index, (version, name, checksum)) in rows.iter().enumerate() {
+        let (expected_name, migration) = SHIPPED[index];
+        if *version != index as i64 + 1
+            || name != expected_name
+            || checksum != &checksum_of(migration)
+        {
+            return Err(StorageError::SchemaIncompatible);
+        }
+    }
+    Ok(rows.len())
+}
+
 fn validate_settings(db: &Connection) -> Result<bool, StorageError> {
     let mut stmt = db
         .prepare("SELECT key, value_json, revision FROM library_settings ORDER BY key")
@@ -98,26 +160,8 @@ fn validate_settings(db: &Connection) -> Result<bool, StorageError> {
     Ok(false)
 }
 
-pub(super) fn validate(db: &Connection) -> Result<SchemaSnapshot, StorageError> {
-    let migrations = db
-        .prepare("SELECT version, name, checksum FROM schema_migrations ORDER BY version")
-        .and_then(|mut stmt| {
-            stmt.query_map([], |r| {
-                Ok((
-                    r.get::<_, i64>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
-                ))
-            })?
-            .collect::<Result<Vec<_>, _>>()
-        })
-        .map_err(|_| StorageError::SchemaIncompatible)?;
-    if migrations.len() != 1 || migrations[0].0 != 1 || migrations[0].1 != NAME {
-        return Err(StorageError::SchemaIncompatible);
-    }
-    if migrations[0].2 != checksum() || objects(db)? != expected() {
-        return Err(StorageError::IntegrityFailed);
-    }
+/// Identity and settings checks shared by every accepted version.
+fn validate_identity(db: &Connection) -> Result<Uuid, StorageError> {
     let metas = db
         .prepare("SELECT singleton, library_id, format_major, created_at FROM library_meta")
         .and_then(|mut stmt| {
@@ -140,10 +184,32 @@ pub(super) fn validate(db: &Connection) -> Result<SchemaSnapshot, StorageError> 
         return Err(StorageError::IntegrityFailed);
     }
     validate_settings(db)?;
+    Ok(library_id)
+}
+
+/// Structural check of exactly the applied version: object set and identity.
+fn validate_applied(db: &Connection, version: usize) -> Result<Uuid, StorageError> {
+    if objects(db)? != expected_objects(version) {
+        return Err(StorageError::IntegrityFailed);
+    }
+    validate_identity(db)
+}
+
+/// Full validation of an opened library; every shipped migration must be applied.
+pub(super) fn validate(db: &Connection) -> Result<SchemaSnapshot, StorageError> {
+    let version = applied_version(db)?;
+    if version != SHIPPED.len() {
+        return Err(StorageError::SchemaIncompatible);
+    }
+    let library_id = validate_applied(db, version)?;
     Ok(SchemaSnapshot {
         library_id,
-        schema_version: 1,
+        schema_version: version as u32,
         format_major: 1,
+        images: ImagesSchema {
+            migration_version: IMAGES_VERSION,
+            canonical_format: CANONICAL_FORMAT_WEBP_LOSSLESS,
+        },
     })
 }
 
@@ -192,19 +258,28 @@ pub(super) fn preflight(path: &Path, existed: bool) -> Result<bool, StorageError
             return Ok(true);
         }
     }
-    if found != expected() {
+    // A valid library is either the accepted foundation version awaiting its
+    // upgrade or the fully migrated version; anything else is refused here.
+    let applied = applied_version(&db)?;
+    if found != expected_objects(applied) {
         return Err(StorageError::SchemaIncompatible);
     }
-    validate(&db)?;
+    validate_applied(&db, applied)?;
     Ok(false)
 }
 
+/// Apply every shipped migration to an owned schema-empty database or upgrade an
+/// accepted earlier version. DDL and its migration row share one transaction.
 pub(super) fn initialize(
     db: &mut Connection,
     fresh: bool,
     fail_before_commit: bool,
 ) -> Result<SchemaSnapshot, StorageError> {
     if !fresh {
+        let current = applied_version(db)?;
+        if current < SHIPPED.len() {
+            upgrade(db, current, fail_before_commit)?;
+        }
         return validate(db);
     }
     let tx = db
@@ -217,8 +292,10 @@ pub(super) fn initialize(
     } else if found != table_only() {
         return Err(StorageError::SchemaIncompatible);
     }
-    tx.execute_batch(MIGRATION)
-        .map_err(|_| StorageError::MigrationFailed)?;
+    for (_, migration) in SHIPPED {
+        tx.execute_batch(migration)
+            .map_err(|_| StorageError::MigrationFailed)?;
+    }
     let library_id = Uuid::new_v4();
     tx.execute(
         "INSERT INTO library_meta VALUES (1, ?1, 1, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
@@ -233,16 +310,48 @@ pub(super) fn initialize(
         .map_err(|_| StorageError::MigrationFailed)?;
     }
     validate_settings(&tx)?;
-    tx.execute(
-        "INSERT INTO schema_migrations VALUES (1, ?1, ?2, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
-        (NAME, checksum()),
-    )
-    .map_err(|_| StorageError::MigrationFailed)?;
+    record_migrations(&tx, 0)?;
     if fail_before_commit {
         return Err(StorageError::MigrationFailed);
     }
     tx.commit().map_err(|_| StorageError::MigrationFailed)?;
     validate(db)
+}
+
+/// Upgrade an accepted earlier version inside one transaction; a failure leaves
+/// the previous schema, its rows and its file bytes untouched.
+fn upgrade(
+    db: &mut Connection,
+    current: usize,
+    fail_before_commit: bool,
+) -> Result<(), StorageError> {
+    let tx = db
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|_| StorageError::MigrationFailed)?;
+    if applied_version(&tx)? != current {
+        return Err(StorageError::SchemaIncompatible);
+    }
+    for (_, migration) in SHIPPED.iter().skip(current) {
+        tx.execute_batch(migration)
+            .map_err(|_| StorageError::MigrationFailed)?;
+    }
+    record_migrations(&tx, current)?;
+    if fail_before_commit {
+        return Err(StorageError::MigrationFailed);
+    }
+    tx.commit().map_err(|_| StorageError::MigrationFailed)
+}
+
+/// Register the shipped migration rows that are not applied yet, in order.
+fn record_migrations(tx: &rusqlite::Transaction<'_>, from: usize) -> Result<(), StorageError> {
+    for (index, (name, migration)) in SHIPPED.iter().enumerate().skip(from) {
+        tx.execute(
+            "INSERT INTO schema_migrations VALUES (?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+            (index as i64 + 1, name, checksum_of(migration)),
+        )
+        .map_err(|_| StorageError::MigrationFailed)?;
+    }
+    Ok(())
 }
 
 pub(super) fn pragmas(db: &Connection) -> Result<(), StorageError> {

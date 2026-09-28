@@ -44,7 +44,9 @@ identity!(
     CorrelationId,
     ReportId,
     ConsentId,
-    EvidenceId
+    EvidenceId,
+    RecordId,
+    AssetId
 );
 
 /// Decimal-string u64; JSON numbers cannot roundtrip through JavaScript beyond 2^53.

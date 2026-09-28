@@ -1,25 +1,45 @@
 //! SQLite worker holds one OS lease and a single connection; no SQL escape hatch.
 #[cfg(not(all(windows, target_pointer_width = "64")))]
 compile_error!("sm-storage requires the audited Windows x64 root adapter");
+#[cfg(test)]
+mod image_tests;
+mod images;
 mod migration;
 #[cfg(test)]
 mod tests;
 
 use async_trait::async_trait;
 use rusqlite::{Connection, OpenFlags};
-use sm_application::storage::{FoundationRepository, SchemaSnapshot, StorageError};
+use sm_application::storage::{
+    CommitImageCapture, CommittedImage, FoundationRepository, Page, Record, RecordPageQuery,
+    SchemaSnapshot, StorageError,
+};
 use sm_isolation::{HostLease, LeaseError};
 use std::{
+    path::PathBuf,
     sync::mpsc::{self, Receiver, SyncSender, TrySendError},
     time::Duration,
 };
 use tokio::sync::oneshot;
 
 type Response<T> = oneshot::Sender<Result<T, StorageError>>;
+
+/// Test-only fault channel between the file write and its commit. The production
+/// path always uses `Fault::None`.
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Fault {
+    None,
+    MigrationCommit,
+    ImageCommit,
+}
+
 enum Request {
     Snapshot(Response<SchemaSnapshot>),
     AiEnabled(Response<bool>),
     SqliteVersion(Response<String>),
+    CommitImage(Response<CommittedImage>, Box<CommitImageCapture>),
+    PageRecords(Response<Page<Record>>, RecordPageQuery),
     #[cfg(test)]
     Pragmas(Response<(String, i64, i64, i64)>),
     #[cfg(test)]
@@ -35,9 +55,9 @@ pub struct StorageWorker {
 impl StorageWorker {
     /// Consumes a real acquired OS lease. No database filename/path input.
     pub fn start(lease: HostLease) -> Result<Self, StorageError> {
-        Self::start_inner(lease, false)
+        Self::start_inner(lease, Fault::None)
     }
-    fn start_inner(lease: HostLease, inject_failure: bool) -> Result<Self, StorageError> {
+    fn start_inner(lease: HostLease, fault: Fault) -> Result<Self, StorageError> {
         let (sender, receiver) = mpsc::sync_channel(32);
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         std::thread::Builder::new()
@@ -51,11 +71,21 @@ impl StorageWorker {
                         return;
                     }
                 };
-                let result = open(&entry, inject_failure);
+                // The canonical assets directory is derived from the leased entry only.
+                let assets = match images::assets_root(entry.path()) {
+                    Ok(assets) => assets,
+                    Err(error) => {
+                        drop(entry);
+                        drop(lease);
+                        let _ = ready_tx.send(Err(error));
+                        return;
+                    }
+                };
+                let result = open(&entry, fault == Fault::MigrationCommit);
                 match result {
                     Ok(db) => {
                         if ready_tx.send(Ok(())).is_ok() {
-                            let stopped = run(db, receiver);
+                            let stopped = run(db, receiver, assets, fault);
                             // All SQLite handles close before entry pins and lease.
                             drop(entry);
                             drop(lease);
@@ -123,7 +153,13 @@ fn open(entry: &sm_isolation::DatabaseEntry, fail: bool) -> Result<Connection, S
     migration::initialize(&mut db, fresh, fail)?;
     Ok(db)
 }
-fn run(db: Connection, receiver: Receiver<Request>) -> Option<Response<()>> {
+fn run(
+    db: Connection,
+    receiver: Receiver<Request>,
+    assets: PathBuf,
+    fault: Fault,
+) -> Option<Response<()>> {
+    let mut db = db;
     for request in receiver {
         match request {
             Request::Snapshot(tx) => {
@@ -134,6 +170,18 @@ fn run(db: Connection, receiver: Receiver<Request>) -> Option<Response<()>> {
             }
             Request::SqliteVersion(tx) => {
                 let _ = tx.send(migration::sqlite_version(&db));
+            }
+            Request::CommitImage(tx, command) => {
+                let result = images::commit_image_capture(
+                    &mut db,
+                    &assets,
+                    *command,
+                    fault == Fault::ImageCommit,
+                );
+                let _ = tx.send(result);
+            }
+            Request::PageRecords(tx, query) => {
+                let _ = tx.send(images::page_records(&db, query));
             }
             #[cfg(test)]
             Request::Pragmas(tx) => {
@@ -187,11 +235,24 @@ impl FoundationRepository for StorageWorker {
     async fn read_ai_enabled(&self) -> Result<bool, StorageError> {
         self.ask(Request::AiEnabled).await
     }
+    async fn commit_image_capture(
+        &self,
+        command: CommitImageCapture,
+    ) -> Result<CommittedImage, StorageError> {
+        self.ask(|tx| Request::CommitImage(tx, Box::new(command)))
+            .await
+    }
+    async fn page_records(&self, query: RecordPageQuery) -> Result<Page<Record>, StorageError> {
+        self.ask(|tx| Request::PageRecords(tx, query)).await
+    }
 }
 #[cfg(test)]
 impl StorageWorker {
     pub(crate) fn start_with_fault(lease: HostLease) -> Result<Self, StorageError> {
-        Self::start_inner(lease, true)
+        Self::start_inner(lease, Fault::MigrationCommit)
+    }
+    pub(crate) fn start_with_image_fault(lease: HostLease) -> Result<Self, StorageError> {
+        Self::start_inner(lease, Fault::ImageCommit)
     }
     pub(crate) async fn read_pragmas(&self) -> Result<(String, i64, i64, i64), StorageError> {
         self.ask(Request::Pragmas).await

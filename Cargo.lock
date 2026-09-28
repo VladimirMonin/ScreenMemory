@@ -1754,6 +1754,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "libwebp-sys"
+version = "0.14.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b3a87b44e34d17161e4f17d92a463d596cb13825dcd1758ed18fd3a721e189c"
+dependencies = [
+ "cc",
+ "glob",
+ "pkg-config",
+]
+
+[[package]]
 name = "litemap"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3070,6 +3081,7 @@ dependencies = [
  "async-trait",
  "getrandom 0.4.3",
  "serde",
+ "serde_json",
  "sha2",
  "sm-domain",
  "sm-observability",
@@ -3099,6 +3111,13 @@ dependencies = [
  "tokio-util",
  "uuid",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "sm-codec"
+version = "0.1.0"
+dependencies = [
+ "libwebp-sys",
 ]
 
 [[package]]
@@ -3246,6 +3265,8 @@ dependencies = [
  "serde_json",
  "sha2",
  "sm-application",
+ "sm-codec",
+ "sm-domain",
  "sm-isolation",
  "tokio",
  "uuid",

@@ -64,7 +64,12 @@ fn s01_db_01_fresh_reopen_uuid_seeds_pragmas_and_bundled_sqlite() {
     let f = Fixture::new();
     let worker = StorageWorker::start(f.lease()).unwrap();
     let first = f.rt(worker.schema_snapshot()).unwrap();
-    assert_eq!(first.schema_version, 1);
+    assert_eq!(first.schema_version, 2);
+    assert_eq!(first.images.migration_version, 2);
+    assert_eq!(
+        first.images.canonical_format,
+        sm_application::storage::CANONICAL_FORMAT_WEBP_LOSSLESS
+    );
     assert_eq!(first.format_major, 1);
     assert!(!f.rt(worker.read_ai_enabled()).unwrap());
     let version = f.rt(worker.sqlite_version()).unwrap();
@@ -83,7 +88,7 @@ fn s01_db_01_fresh_reopen_uuid_seeds_pragmas_and_bundled_sqlite() {
     f.close(&worker);
     let db = Connection::open_with_flags(f.db(), OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
     let value = |sql| db.query_row(sql, [], |row| row.get::<_, i64>(0)).unwrap();
-    assert_eq!(value("SELECT count(*) FROM schema_migrations"), 1);
+    assert_eq!(value("SELECT count(*) FROM schema_migrations"), 2);
     assert_eq!(value("SELECT count(*) FROM library_settings"), 2);
     drop(db);
     let worker = StorageWorker::start(f.lease()).unwrap();
@@ -95,8 +100,8 @@ fn s01_db_01_fresh_reopen_uuid_seeds_pragmas_and_bundled_sqlite() {
 fn s01_db_02_preflight_corrupt_metadata_settings_checksum_future_and_foreign() {
     for statement in [
         "UPDATE schema_migrations SET checksum='corrupt'",
-        "UPDATE schema_migrations SET version=3",
-        "INSERT INTO schema_migrations VALUES (2,'unknown','x','now')",
+        "UPDATE schema_migrations SET version=9 WHERE version=2",
+        "INSERT INTO schema_migrations VALUES (3,'unknown','x','now')",
         "UPDATE library_meta SET library_id='not-a-uuid'",
         "UPDATE library_meta SET format_major=3",
         "UPDATE library_settings SET value_json='not-json' WHERE key='ai.enabled'",
@@ -201,7 +206,9 @@ fn s01_db_02_fault_rollback_and_interrupted_empty_table() {
     db.execute_batch(super::migration::BOOTSTRAP).unwrap();
     drop(db);
     let worker = StorageWorker::start(f.lease()).unwrap();
-    assert_eq!(f.rt(worker.schema_snapshot()).unwrap().schema_version, 1);
+    // Both shipped migrations are applied by one transaction on a fresh file; the
+    // interrupted attempt left an owned, schema-empty database with durable intent.
+    assert_eq!(f.rt(worker.schema_snapshot()).unwrap().schema_version, 2);
     f.close(&worker);
     let retry = Fixture::new();
     assert!(matches!(
@@ -212,7 +219,7 @@ fn s01_db_02_fault_rollback_and_interrupted_empty_table() {
     let worker = StorageWorker::start(retry.lease()).unwrap();
     assert_eq!(
         retry.rt(worker.schema_snapshot()).unwrap().schema_version,
-        1
+        2
     );
     retry.close(&worker);
 }

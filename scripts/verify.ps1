@@ -64,6 +64,8 @@ try {
             @('RUST-TEST',$tools.rust,@('test','--workspace','--locked')),
             @('HOST-LEASE',$tools.rust,@('test','--locked','-p','sm-isolation','--test','host_lease')),
             @('STORAGE-FOUNDATION',$tools.rust,@('test','--locked','-p','sm-storage')),
+            @('TESTS-CODEC',$tools.rust,@('test','--locked','-p','sm-codec')),
+            @('TESTS-STORAGE-IMAGES',$tools.rust,@('test','--locked','-p','sm-storage','image_tests')),
             @('CREDENTIALS-POLICY',$tools.rust,@('test','--locked','-p','sm-application','--test','credentials')),
             @('CREDENTIALS-NATIVE',$tools.rust,@('test','--locked','-p','sm-credentials')),
             @('FRAMING',$tools.rust,@('test','--locked','-p','sm-framing')),

@@ -1,0 +1,12 @@
+[package]
+name = "sm-codec"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# Bundled, statically compiled libwebp (vendor sources ship inside the crate; the
+# `system-dylib` path is never enabled). Native provenance is recorded in the crate
+# fingerprint, not in ordinary logs.
+[dependencies]
+libwebp-sys = { version = "=0.14.4", default-features = false, features = ["std"] }

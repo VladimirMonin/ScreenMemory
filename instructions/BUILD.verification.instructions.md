@@ -40,7 +40,7 @@ env, сохраняет cargo outputs под `.pi/`. Если prerequisite/versi
 
 Сегодня `PASS` означает только **implemented contract subset**: Rust fmt/clippy/
 test (включая S01-LOG-01/02 test-support, logger, synthetic HostLease и S01-DB-01/02 storage),
-отдельные `HOST-LEASE` cargo test -p sm-isolation --test host_lease, `STORAGE-FOUNDATION` cargo test -p sm-storage (синтетические файловые DB) и `FRAMING` cargo test -p sm-framing (синтетические AsyncRead/AsyncWrite потоки), `SESSION-NATIVE` cargo test -p sm-session (owned native pipe + synthetic in-memory verifiers/handlers); pnpm
+отдельные `HOST-LEASE` cargo test -p sm-isolation --test host_lease, `STORAGE-FOUNDATION` cargo test -p sm-storage (синтетические файловые DB), `TESTS-CODEC` cargo test -p sm-codec (реальный bundled libwebp exact-lossless round-trip) и `TESTS-STORAGE-IMAGES` cargo test -p sm-storage image_tests (schema 0002, канонический файл и откат), и `FRAMING` cargo test -p sm-framing (синтетические AsyncRead/AsyncWrite потоки), `SESSION-NATIVE` cargo test -p sm-session (owned native pipe + synthetic in-memory verifiers/handlers); pnpm
 typecheck/lint/test/contracts:check; Python boundary/schema fixtures и source bytes.
 `FRONTEND`, `BRIDGE`, полный `HOST`/`IPC` (session subset не означает готовый host), `HOST-LOG-INTEGRATION` и остальные будущие gates
 остаются `NOT_IMPLEMENTED`/`NOT_RUN`;

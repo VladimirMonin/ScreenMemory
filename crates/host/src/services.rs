@@ -61,6 +61,12 @@ fn storage_error(error: StorageError) -> AppError {
             ErrorCode::PermissionDenied,
             "Library storage is not accessible.",
         ),
+        // A typed payload or page request that fails product validation is a client
+        // request error, not a broken library.
+        StorageError::InvalidPayload | StorageError::InvalidQuery => app_error(
+            ErrorCode::InvalidRequest,
+            "Library record or query was rejected.",
+        ),
         StorageError::MigrationFailed | StorageError::Unavailable => app_error(
             ErrorCode::RuntimeUnavailable,
             "Library storage is unavailable.",

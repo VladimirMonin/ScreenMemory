@@ -477,7 +477,10 @@ fn s01_cli_03_status_doctor_and_stop_share_one_real_host_identity() {
         assert_eq!(status["state"], "ready");
         assert_eq!(status["ai_enabled"], false);
         assert_eq!(status["bridge_state"], "stopped");
-        assert_eq!(status["schema_version"], 1);
+        assert_eq!(
+            status["schema_version"], 2,
+            "the real host reports the fully migrated library schema"
+        );
 
         let mut out = Vec::new();
         let mut err = Vec::new();

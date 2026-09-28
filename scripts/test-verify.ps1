@@ -51,6 +51,8 @@ try {
         'RUST-CLIPPY' = @('cargo',@('clippy','--workspace','--all-targets','--locked','--','-D','warnings'))
         'RUST-TEST' = @('cargo',@('test','--workspace','--locked'))
         'HOST-LEASE' = @('cargo',@('test','--locked','-p','sm-isolation','--test','host_lease'))
+        'TESTS-CODEC' = @('cargo',@('test','--locked','-p','sm-codec'))
+        'TESTS-STORAGE-IMAGES' = @('cargo',@('test','--locked','-p','sm-storage','image_tests'))
         'FRAMING' = @('cargo',@('test','--locked','-p','sm-framing'))
         'PIPE-NATIVE' = @('cargo',@('test','--locked','-p','sm-pipe'))
         'SESSION-NATIVE' = @('cargo',@('test','--locked','-p','sm-session'))
@@ -89,7 +91,7 @@ try {
         }
         $ids = @($positive.steps | ForEach-Object { $_.check_id })
         foreach ($id in $expected.Keys) {
-            if ($id -in @('PREREQ-pnpm') -or ($suite -eq 'verify' -and $id -in @('GUI-FRONTEND-BUILD','RUST-FMT','RUST-CLIPPY','RUST-TEST','HOST-LEASE','FRAMING','PIPE-NATIVE','SESSION-NATIVE','HOST-COMPOSITION','CLI-SURFACE','GUI-RUST-TEST','GUI-FRONTEND-TYPECHECK','GUI-FRONTEND-LINT','GUI-FRONTEND-TEST','PNPM-TYPECHECK','PNPM-LINT','PNPM-TEST','CONTRACTS')) -or
+            if ($id -in @('PREREQ-pnpm') -or ($suite -eq 'verify' -and $id -in @('GUI-FRONTEND-BUILD','RUST-FMT','RUST-CLIPPY','RUST-TEST','HOST-LEASE','TESTS-CODEC','TESTS-STORAGE-IMAGES','FRAMING','PIPE-NATIVE','SESSION-NATIVE','HOST-COMPOSITION','CLI-SURFACE','GUI-RUST-TEST','GUI-FRONTEND-TYPECHECK','GUI-FRONTEND-LINT','GUI-FRONTEND-TEST','PNPM-TYPECHECK','PNPM-LINT','PNPM-TEST','CONTRACTS')) -or
                 ($suite -eq 'verify-contracts' -and $id -in @('SCHEMA-GENERATE','SCHEMA-CHECK','TS-GENERATE','PNPM-CONTRACTS','BOUNDARIES','SCHEMA-FIXTURES'))) {
                 if ($id -notin $ids) { throw "Missing fixed check evidence: $id" }
             }
