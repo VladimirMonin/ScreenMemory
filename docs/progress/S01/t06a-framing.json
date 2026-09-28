@@ -1,0 +1,46 @@
+{
+  "slice": "S01-T06a-writer-admission",
+  "stage": "S01",
+  "status": "IN_PROGRESS",
+  "base": "860aba2688539d4e550337f4045849c26298222d",
+  "nine_source_plans": "unchanged; PLAN-HASH-PRE/POST PASS in corrected verify and contracts",
+  "scope": "bounded generic async framed-byte core with 8-slot non-waiting writer admission; historical credential diagnostic bytes unchanged by this correction; no secure pipe or host composition",
+  "tests": {
+    "framing": "13 synthetic tests (1 private allocation hook + 12 integration), including 3 writer admission/release tests; S01-IPC-01/02 byte-layer subset, not full IPC",
+    "credentials": "5 native cases including S01-CRED-11 injected cleanup branches without native keys; policy suite 6 cases",
+    "runner": "full test-verify.ps1 regression outer 0, both real positive suites PASS; fixture success outer 0 / exit7 outer 1, child native 7 and fail-fast"
+  },
+  "evidence": [
+    {"id":"FRAMING-ADMISSION-TARGETED","command":".pi/contract-run.cmd cargo test --locked --offline -p sm-framing","exit_code":0,"cases":13},
+    {"id":"VERIFY-ADMISSION-CLIPPY-RED","command":"powershell.exe -NoProfile -NonInteractive -File scripts/verify.ps1 -OutputRoot .pi/verify-admission-9b8b52bde3da4754856b65f6f30dc846","exit_code":1,"native_exit":101,"reason":"test-only Clippy type complexity/redundant async; corrected","result":".pi/verify-admission-9b8b52bde3da4754856b65f6f30dc846/result.json","sha256":"4be02f0072a27512b4756646c9e1e989fc38ecebb2ad7120a6b04cf0efa0e567"},
+    {"id":"VERIFY-ADMISSION-CORRECTED","command":"powershell.exe -NoProfile -NonInteractive -File scripts/verify.ps1 -OutputRoot .pi/verify-admission-fixed-a52dbb71445a4f3ca8ec8bbf328732bd","exit_code":0,"result":".pi/verify-admission-fixed-a52dbb71445a4f3ca8ec8bbf328732bd/result.json","sha256":"0f44e36e1179e8f19b158efa7be87b5ac6899eea1d13674755e907a157ae29cf"},
+    {"id":"CONTRACTS-ADMISSION","command":"powershell.exe -NoProfile -NonInteractive -File scripts/verify-contracts.ps1 -OutputRoot .pi/contracts-admission-414a51aba6b943e39ff69f5c1b733feb","exit_code":0,"result":".pi/contracts-admission-414a51aba6b943e39ff69f5c1b733feb/result.json","sha256":"c6415ce02b36ecc6363c62a2842a8b00d8e623d9ea7160acf5dee10e7054fd19"},
+    {"id":"TEST-VERIFY-ADMISSION","command":"powershell.exe -NoProfile -NonInteractive -File scripts/test-verify.ps1","exit_code":0,"private_root":".pi/test-verify-6e515f712eb045cb8473931536b1f36f"},
+    {"id":"CREDENTIALS-CONTROLLED","command":"powershell.exe -NoProfile -NonInteractive -File .pi/t06a-credentials-run-0e7ebc27512d4b42994ae0df104f2662/run.ps1","exit_code":0,"result":".pi/t06a-credentials-evidence-296765d8f84749b199690d4d4dfb4f90/result.json","sha256":"e1d1923468c93252ceb0f1fe9c5d2d91c371230090bdd3c7b9be9958cfe4d776"},
+    {"id":"VERIFY-CORRECTED","command":"powershell.exe -NoProfile -NonInteractive -File scripts/verify.ps1 -OutputRoot .pi/verify-t06a-corrected-d429d57e34c4490b9d20468c575e5a36","exit_code":0,"result":".pi/verify-t06a-corrected-d429d57e34c4490b9d20468c575e5a36/result.json","sha256":"66b02762c74a4c718b66fc2b5d2b4970c2db5d50a947dd3de4e3e8b7c36b16dd"},
+    {"id":"CONTRACTS-CORRECTED","command":"powershell.exe -NoProfile -NonInteractive -File scripts/verify-contracts.ps1 -OutputRoot .pi/contracts-t06a-5bf18698c11e4e5cbf380028619e202c","exit_code":0,"result":".pi/contracts-t06a-5bf18698c11e4e5cbf380028619e202c/result.json","sha256":"9f3432fd18acb505830f6ccdc55a04a168add5a25d649d94bbf9dd6476475d6f"},
+    {"id":"HISTORICAL-NATIVE-RED","command":"powershell.exe -NoProfile -NonInteractive -File scripts/verify.ps1 -OutputRoot .pi/verify-t06a-6c109c9f6d1741478a7ee0a2d1ee572c; wrapper exit not captured in first shell","exit_code":null,"native_exit":101,"result":".pi/verify-t06a-6c109c9f6d1741478a7ee0a2d1ee572c/result.json","sha256":"e4cf6dc5f51ed2b23b0390a046fb55171df2ee5e3b302355554cdcf0fb630b39","reason":"S01-CRED-05 guard cleanup failed; historical delete-vs-verification branch and Win32 code were not captured"},
+    {"id":"FIRST-FULL-BOUNDARY-RED","command":"powershell.exe -NoProfile -NonInteractive -File scripts/verify.ps1 -OutputRoot .pi/verify-t06a-1d9bc0b08ef04686b946750d485df7be","exit_code":1,"native_exit":1,"result":".pi/verify-t06a-1d9bc0b08ef04686b946750d485df7be/result.json","sha256":"cfcc210c0dedc52d0c0e3521801c54532d87f91777f4e3be4d9a69de4ada7faa","reason":"BOUNDARIES old seven-crate allowlist; corrected for exact eighth framing crate"},
+    {"id":"EXACT-ORPHAN-QUERY","command":"one authorized exact test-target CredReadW; private helper","exit_code":10,"outcome":"Exists","private_log":".pi/t06a-reconcile-01cb5d5c42dc4c90a31c7b470927dd38/existence.log","sha256":"bd228149c303a82a29c6b81e5058cf1dc39df2c19860159f728c4393dafb40e7"},
+    {"id":"EXACT-ORPHAN-CLEANUP","command":"one authorized exact test-target CredDeleteW then CredReadW; private helper","exit_code":0,"outcome":"Delete Success; Verify Missing(ERROR_NOT_FOUND=1168)","private_log":".pi/t06a-cleanup-0bff439d97a944e1b59f7b216a84945f/exact-cleanup.log","sha256":"031c6ce63cc2ff9af5ac7b6dd6c5a7ed0776b225380372bcf1436f5ac1b4f89f"}
+  ],
+  "source_hashes_sha256": {
+    "AGENTS.md":"e7146b25ba010a9d344c9a4d4041d10fdddca01999d13827c55fb6c7868ef727",
+    "Cargo.toml":"8e9b465a0c8800870ce470c159d51105ddefd24fdda74e3b08545c3e509b003e",
+    "Cargo.lock":"dd5517f53718a62c33fe38aae929b64e3afe3e69dd1ecba1d589942ec5c5b474",
+    "crates/framing/Cargo.toml":"b9334e5cade68abb1db72a40e497a83d6602f5ca3c28646654ee2a3681e04eff",
+    "crates/framing/src/lib.rs":"ddf6134cd18f91960d847372f34ca97854870bc4d27d93c3f99206c49779f2d8",
+    "crates/framing/tests/transport.rs":"53eac7eb6206671dc2a4dd7bc63991536b33d811051d44209ffa1847da38bf8e",
+    "crates/credentials/src/lib.rs":"5ba1c450780ca31feef7399b02eed5d130097ed3aa5ba0ea02c838f1df1dc909",
+    "crates/credentials/src/native_tests.rs":"5c192cc0eece3cc54b7e6be530c6566e31a23c5e2a6876650ab0bab83de6e063",
+    "scripts/verify.ps1":"e7add0f55f1603d6c50514dcf9cda7df21c9c4d469342503ca596ef7dc604ec6",
+    "scripts/test-verify.ps1":"76c96c9bb7cb43974b56469eff20bf2be45c2b7e3a9599e4aaad379e4f5b9cbc",
+    "tests/contracts/check_boundaries.py":"42bcdc09b60fb82e1fb43783bae1f17e0f0394979dd4e38286353cdebf04b5db",
+    "instructions/BUILD.framing.instructions.md":"3e06c65449ecde6fe1e9f3a342c9fceb98847c98979a94f5dfb81b3dd4cb70b1",
+    "instructions/BUILD.verification.instructions.md":"2ce538677bd6933367623e901f41b718d92d8b4e0dc48fd8c9fd3f3e142a4ca0",
+    "instructions/SEC.credentials.instructions.md":"30c94ff5f28a2e3312bbbf21748945bfd264a19ccd7c7db808f4ea7e57d6431b",
+    "docs/adr/006-framing.md":"6f38e1458993965edc09cd6e8f663ec9b68b906f7db511b5291a9d72230500db"
+  },
+  "risks": ["Historical credential cleanup root cause UNKNOWN: original guard conflated delete/absence failure and raw Win32 code was lost; later green runs do not prove its resolution", "Framing tests do not prove authenticated Windows pipe/host integration, 16-client/8-request limits or full S01-IPC-01/02", "Raw buffer permit is not RSS or parsed JSON AST limit", "Unpolled caller-owned futures are outside writer's internal admission count"],
+  "not_implemented": ["pipe ACL and peer checks", "handshake authentication/negotiation", "host writer ownership and composition", "16 clients/8 active requests", "request-ID and cancellation dispatch", "backend cancellation guarantee", "full IPC/S01 acceptance"]
+}

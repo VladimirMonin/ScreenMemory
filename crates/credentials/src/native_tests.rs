@@ -1,4 +1,4 @@
-use crate::WindowsSecretStore;
+use crate::{AbsenceFailure, WindowsSecretStore};
 use sm_application::credentials::{
     Authenticator, CredentialEnvironment, CredentialError, CredentialKey, Secret, SecretStore,
     StoreError,
@@ -7,6 +7,34 @@ use sm_domain::LibraryId;
 use sm_isolation::Environment;
 use std::cell::Cell;
 use uuid::Uuid;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CleanupFailure {
+    Delete(Option<u32>),
+    Verify(AbsenceFailure),
+}
+impl CleanupFailure {
+    fn safe_status(self) -> String {
+        match self {
+            Self::Delete(code) => format!("delete failure; win32_code={code:?}"),
+            Self::Verify(AbsenceFailure::StillExists) => {
+                "absence verification failed; still exists".into()
+            }
+            Self::Verify(AbsenceFailure::Unavailable(code)) => {
+                format!("absence verification failed; win32_code={code:?}")
+            }
+        }
+    }
+}
+// Real guard and synthetic error injections exercise the same fail-closed classifier.
+// A failed delete never reports success and never performs a verification call.
+fn cleanup_owned(
+    delete: impl FnOnce() -> Result<(), Option<u32>>,
+    verify: impl FnOnce() -> Result<(), AbsenceFailure>,
+) -> Result<(), CleanupFailure> {
+    delete().map_err(CleanupFailure::Delete)?;
+    verify().map_err(CleanupFailure::Verify)
+}
 
 // A private SecretStore seam observes *successful* native create_new completion.
 // The guard exists before enrollment and owns only the exact key written by this attempt.
@@ -55,18 +83,60 @@ impl Drop for OwnedTestKey<'_> {
         if !self.owned.get() {
             return;
         }
-        let cleaned = self.store.delete_created_test_key(&self.key).is_ok()
-            && matches!(self.store.read(&self.key), Err(StoreError::Missing));
-        if !cleaned {
+        let result = cleanup_owned(
+            || self.store.delete_created_test_key(&self.key),
+            || self.store.verify_absent_test_key(&self.key),
+        );
+        if let Err(failure) = result {
             let target = self.key.target();
-            eprintln!("exact synthetic credential cleanup failed for {target}: CREDENTIAL_STORE_UNAVAILABLE");
-            // Preserve the original panic on unwind; the bounded diagnostic identifies
-            // the possibly remaining own key for manual investigation.
+            let status = failure.safe_status();
+            eprintln!("exact synthetic credential cleanup failed for {target}: {status}");
+            // Preserve the original panic on unwind; exact own identity permits
+            // manual reconciliation if cleanup did not confirm native absence.
             if !std::thread::panicking() {
-                panic!("exact synthetic credential cleanup failed for {target}: CREDENTIAL_STORE_UNAVAILABLE");
+                panic!("exact synthetic credential cleanup failed for {target}: {status}");
             }
         }
     }
+}
+
+#[test]
+fn s01_cred_11_injected_cleanup_branches_safe_and_no_native_keys() {
+    let mut verified = false;
+    let failed = cleanup_owned(
+        || Err(Some(5)),
+        || {
+            verified = true;
+            Ok(())
+        },
+    );
+    assert_eq!(failed, Err(CleanupFailure::Delete(Some(5))));
+    assert!(!verified, "failed delete must not claim confirmed absence");
+    assert_eq!(
+        failed.unwrap_err().safe_status(),
+        "delete failure; win32_code=Some(5)"
+    );
+    let failed = cleanup_owned(|| Ok(()), || Err(AbsenceFailure::Unavailable(Some(87))));
+    assert_eq!(
+        failed,
+        Err(CleanupFailure::Verify(AbsenceFailure::Unavailable(Some(
+            87
+        ))))
+    );
+    assert_eq!(
+        failed.unwrap_err().safe_status(),
+        "absence verification failed; win32_code=Some(87)"
+    );
+    assert_eq!(
+        cleanup_owned(|| Ok(()), || Err(AbsenceFailure::StillExists)),
+        Err(CleanupFailure::Verify(AbsenceFailure::StillExists))
+    );
+    assert_eq!(cleanup_owned(|| Ok(()), || Ok(())), Ok(()));
+    let canary = "synthetic-secret-canary";
+    assert!(!CleanupFailure::Delete(None).safe_status().contains(canary));
+    assert!(!CleanupFailure::Verify(AbsenceFailure::StillExists)
+        .safe_status()
+        .contains(canary));
 }
 
 fn new_key() -> CredentialKey {

@@ -5,7 +5,7 @@ import tomllib
 
 root = Path(__file__).resolve().parents[2]
 workspace = tomllib.loads((root / 'Cargo.toml').read_text(encoding='utf-8'))['workspace']
-assert set(workspace['members']) == {'crates/domain', 'crates/protocol', 'crates/application', 'crates/observability', 'crates/isolation', 'crates/storage', 'crates/credentials'}
+assert set(workspace['members']) == {'crates/domain', 'crates/protocol', 'crates/application', 'crates/observability', 'crates/isolation', 'crates/storage', 'crates/credentials', 'crates/framing'}
 allowed = {
     'domain': {'serde', 'uuid', 'schemars'},
     'protocol': {'sm-domain', 'serde', 'serde_json', 'schemars', 'time'},
@@ -14,6 +14,7 @@ allowed = {
     'isolation': {'sm-application'},
     'storage': {'sm-application', 'sm-isolation', 'async-trait', 'rusqlite', 'sha2', 'serde_json', 'uuid', 'tokio'},
     'credentials': {'sm-application', 'sm-isolation', 'windows-sys', 'zeroize'},
+    'framing': {'serde', 'serde_json', 'tokio'},
 }
 for crate, expected in allowed.items():
     manifest = tomllib.loads((root / 'crates' / crate / 'Cargo.toml').read_text(encoding='utf-8'))
@@ -47,4 +48,4 @@ storage_manifest = tomllib.loads((root / 'crates/storage/Cargo.toml').read_text(
 assert storage_manifest['dependencies']['rusqlite']['features'] == ['bundled']
 assert storage_manifest['dependencies']['rusqlite']['version'].startswith('=')
 assert 'rusqlite::' not in (root / 'crates/application/src/storage.rs').read_text(encoding='utf-8')
-print('S01-DEP-01 PASS: seven crates, exact dependency allowlists, bundled SQLite in storage and native credentials in adapter; root boundary retained')
+print('S01-DEP-01 PASS: eight crates, exact dependency allowlists, bundled SQLite in storage and native credentials in adapter; root boundary retained')

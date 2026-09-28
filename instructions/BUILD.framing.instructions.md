@@ -1,0 +1,11 @@
+---
+applyTo: "crates/framing/**,scripts/verify.ps1,scripts/test-verify.ps1,docs/progress/S01/t06a-framing.*,docs/adr/006-framing.md"
+name: "BUILD.Framing"
+description: "Читай при изменении bounded async IPC framing, общего buffer budget, deadline, writer poison и S01-T06a synthetic tests."
+---
+
+# BUILD — Framed-byte transport
+
+Источник: S01 §5.3/5.5, master §5.4; решение [ADR-006](../docs/adr/006-framing.md). `sm-framing` — Rust async `AsyncRead`/`AsyncWrite` transport, не host/session/auth owner и не альтернатива `sm-protocol` DTO. Trusted session owner выбирает `Phase`; не определять handshake/application phase из wire JSON. Один `BufferBudget` на host нужно клонировать для **всех** connections и writer paths; создание бюджета на каждое соединение нарушает общий предел. Raw owned buffers держат permits до drop; parsed AST и RSS за пределом этого raw budget. При нарушенном кадре, IO error, cancellation или handshake timeout reader/writer не переиспользуют stream; после начала writer IO cancellation/error путь poisoned, но queued sender cancel до первого байта не poison. Один serialized writer допускает не более 8 одновременно polled sends (active + queued) через немедленный try-admission до mutex; переполнение — typed `WRITER_QUEUE_FULL`, без сериализации/записи. RAII освобождает slot при success/error/cancel/drop. Caller-owned futures до первого poll не входят во внутреннюю очередь. `Semaphore.acquire().await` для admission недопустим: неограниченные ожидающие лишь переедут в semaphore. Лимит writer не заменяет host-wide 16 MiB raw budget или session limits 16 clients/8 requests; не трактовать timeout как backend cancellation. Payload не передавать в обычный Debug/log/error.
+
+Mandatory `FRAMING` в `scripts/verify.ps1`: `cargo test --locked -p sm-framing`; workspace fmt/clippy/tests и отдельный `scripts/verify-contracts.ps1`. Использовать только synthetic streams и уникальные `.pi/` output roots. S01-IPC-01/02 — лишь byte-core subset; session negotiation, Win32 pipe ACL/peer, credential auth, 16 clients, 8 active requests, correlation, request cancellation и dispatch остаются NOT_IMPLEMENTED. Полный S01 IPC и host acceptance не заявлять по результату этого suite.

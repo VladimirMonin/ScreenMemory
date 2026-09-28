@@ -13,6 +13,21 @@ use windows_sys::Win32::Security::Credentials::{
 };
 use zeroize::Zeroize;
 
+// Internal error detail is discarded at the production SecretStore boundary.
+// Test-only cleanup may report a Win32 code for the *same* native call.
+enum NativeReadFailure {
+    Missing,
+    // Raw native detail is consumed only by the private test cleanup diagnostic.
+    #[cfg_attr(not(test), allow(dead_code))]
+    Unavailable(Option<u32>),
+}
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AbsenceFailure {
+    StillExists,
+    Unavailable(Option<u32>),
+}
+
 /// A constructed key must use the environment of the already-resolved library layout.
 /// The caller cannot provide an arbitrary Credential Manager target.
 pub struct WindowsSecretStore {
@@ -40,16 +55,57 @@ impl WindowsSecretStore {
     /// Native test harness only: deletes EXACT previously-created test target;
     /// never scans the vault and refuses production/dev namespaces.
     #[cfg(test)]
-    fn delete_created_test_key(&self, key: &CredentialKey) -> Result<(), StoreError> {
+    fn delete_created_test_key(&self, key: &CredentialKey) -> Result<(), Option<u32>> {
         use windows_sys::Win32::Security::Credentials::CredDeleteW;
         if self.environment != Environment::Test {
-            return Err(StoreError::Unavailable);
+            return Err(None);
         }
-        let target = self.target(key)?;
+        let target = self.target(key).map_err(|_| None)?;
+        // `target` remains allocated and NUL-terminated throughout the native call.
         if unsafe { CredDeleteW(target.as_ptr(), CRED_TYPE_GENERIC, 0) } == 0 {
-            return Err(StoreError::Unavailable);
+            return Err(Some(unsafe { GetLastError() }));
         }
         Ok(())
+    }
+    #[cfg(test)]
+    fn verify_absent_test_key(&self, key: &CredentialKey) -> Result<(), AbsenceFailure> {
+        match self.read_native(key) {
+            Err(NativeReadFailure::Missing) => Ok(()),
+            Err(NativeReadFailure::Unavailable(code)) => Err(AbsenceFailure::Unavailable(code)),
+            Ok(_) => Err(AbsenceFailure::StillExists),
+        }
+    }
+    fn read_native(&self, key: &CredentialKey) -> Result<Secret, NativeReadFailure> {
+        let target = self
+            .target(key)
+            .map_err(|_| NativeReadFailure::Unavailable(None))?;
+        let mut raw = std::ptr::null_mut();
+        if unsafe { CredReadW(target.as_ptr(), CRED_TYPE_GENERIC, 0, &mut raw) } == 0 {
+            let code = unsafe { GetLastError() }; // immediately after the failing native call
+            return Err(if code == ERROR_NOT_FOUND {
+                NativeReadFailure::Missing
+            } else {
+                NativeReadFailure::Unavailable(Some(code))
+            });
+        }
+        if raw.is_null() {
+            return Err(NativeReadFailure::Unavailable(None));
+        }
+        let owned = OwnedCredential(raw);
+        let credential = unsafe { &*owned.0 };
+        if credential.Type != CRED_TYPE_GENERIC
+            || credential.CredentialBlobSize != 33
+            || credential.CredentialBlob.is_null()
+        {
+            return Err(NativeReadFailure::Unavailable(None));
+        }
+        let bytes = unsafe {
+            std::slice::from_raw_parts(
+                credential.CredentialBlob,
+                credential.CredentialBlobSize as usize,
+            )
+        };
+        Ok(Secret::from_bytes(bytes.to_vec()))
     }
 }
 struct OwnedCredential(*mut CREDENTIALW);
@@ -70,34 +126,10 @@ impl Drop for OwnedCredential {
 }
 impl SecretStore for WindowsSecretStore {
     fn read(&self, key: &CredentialKey) -> Result<Secret, StoreError> {
-        let target = self.target(key)?;
-        let mut raw = std::ptr::null_mut();
-        if unsafe { CredReadW(target.as_ptr(), CRED_TYPE_GENERIC, 0, &mut raw) } == 0 {
-            // Only exact missing code means absent; other failures never create secrets.
-            return Err(if unsafe { GetLastError() } == ERROR_NOT_FOUND {
-                StoreError::Missing
-            } else {
-                StoreError::Unavailable
-            });
-        }
-        if raw.is_null() {
-            return Err(StoreError::Unavailable);
-        }
-        let owned = OwnedCredential(raw);
-        let credential = unsafe { &*owned.0 };
-        if credential.Type != CRED_TYPE_GENERIC
-            || credential.CredentialBlobSize != 33
-            || credential.CredentialBlob.is_null()
-        {
-            return Err(StoreError::Unavailable);
-        }
-        let bytes = unsafe {
-            std::slice::from_raw_parts(
-                credential.CredentialBlob,
-                credential.CredentialBlobSize as usize,
-            )
-        };
-        Ok(Secret::from_bytes(bytes.to_vec()))
+        self.read_native(key).map_err(|error| match error {
+            NativeReadFailure::Missing => StoreError::Missing,
+            NativeReadFailure::Unavailable(_) => StoreError::Unavailable,
+        })
     }
     fn create_new(&self, key: &CredentialKey, value: &Secret) -> Result<(), StoreError> {
         let target = self.target(key)?;
