@@ -31,6 +31,7 @@
 | [INFRA.observability](instructions/INFRA.observability.instructions.md) | SafeEvent, bounded logger, sinks, rotation и S01-LOG проверки |
 | [INFRA.root_isolation](instructions/INFRA.root_isolation.instructions.md) | Identity продукта, explicit root, Windows native root resolver и pre-host isolation |
 | [DATA.storage_owner](instructions/DATA.storage_owner.instructions.md) | Foundation SQLite worker, миграции, DB entries и владение HostLease |
+| [SEC.credentials](instructions/SEC.credentials.instructions.md) | Локальные credentials, Windows Credential Manager и host principal/scopes перед secure listener |
 
 - **Каждую новую инструкцию обязательно добавляй сюда рабочей ссылкой с условием чтения.**
   При переименовании, разделении или удалении обновляй ссылки и маршруты.

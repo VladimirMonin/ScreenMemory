@@ -63,6 +63,8 @@ try {
             @('RUST-TEST',$tools.rust,@('test','--workspace','--locked')),
             @('HOST-LEASE',$tools.rust,@('test','--locked','-p','sm-isolation','--test','host_lease')),
             @('STORAGE-FOUNDATION',$tools.rust,@('test','--locked','-p','sm-storage')),
+            @('CREDENTIALS-POLICY',$tools.rust,@('test','--locked','-p','sm-application','--test','credentials')),
+            @('CREDENTIALS-NATIVE',$tools.rust,@('test','--locked','-p','sm-credentials')),
             @('PNPM-TYPECHECK',$tools.node,@($tools.pnpm,'typecheck')),
             @('PNPM-LINT',$tools.node,@($tools.pnpm,'lint')),
             @('PNPM-TEST',$tools.node,@($tools.pnpm,'test'))
@@ -93,5 +95,5 @@ try {
         } catch { Add-VerificationGuardStep $state 'SOURCE-INTEGRITY-POST' 'SOURCE_INVENTORY_ERROR' }
     }
 }
-if ($state) { exit (Complete-Verification $state @('FRONTEND','BRIDGE','HOST','HOST-LOG-INTEGRATION','T02-ISOLATION-MENU','LIVE-RUNTIME','WINDOWS-PACKAGE')) }
+if ($state) { exit (Complete-Verification $state @('FRONTEND','BRIDGE','HOST','IPC','S01-SEC-01','S01-SEC-02','S01-SEC-03','HOST-LOG-INTEGRATION','T02-ISOLATION-MENU','LIVE-RUNTIME','WINDOWS-PACKAGE')) }
 exit 1

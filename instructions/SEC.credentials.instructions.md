@@ -1,0 +1,13 @@
+---
+applyTo: "crates/application/src/credentials.rs,crates/credentials/**,crates/application/tests/credentials.rs"
+name: "SEC.Credentials"
+description: "Читай при изменении локального enrollment, Windows Credential Manager, профилей host и секретных handshake-байтов."
+---
+
+# SEC — локальные credentials перед secure listener
+
+S01 §5.4 и [ADR-005](../docs/adr/005-local-credentials.md) задают границу: `sm-application::credentials` объявляет `SecretStore`, ключи и host policy; `sm-credentials` — единственный Win32 Credential Manager adapter. `Environment` из `sm-isolation` обязателен для native adapter; target строится только из своего namespace, typed library UUID и фиксированного profile. Никакого произвольного target, enumeration, Inspector vault, ENV/settings/plaintext/DPAPI-file fallback. TestReadOnly — только явное synthetic Test enrollment, не схема выдачи MCP-токенов.
+
+Host сначала удерживает библиотечный `HostLease` и выполняет **явный** enrollment; обычная аутентификация только проверяет уже загруженный verifier. Любой missing/invalid/Win32 failure даёт отказ, не privileged context. `CredWriteW` не поддерживает atomic create-if-absent: pre-read предотвращает обычное случайное overwrite, exclusive library lease обязателен для своего host, злонамеренный same-user process не изолирован. Не логировать secret bytes, не передавать их в argv/URL/params/исключения; read-only kind=gui не получает owner scopes. Transport peer ACL/session/framing и application handler gate ещё НЕ реализованы.
+
+Нативные тесты допускаются только с новым уникальным UUID под `ScreenMemory.Test.V1` и синтетическим значением: exact target collision → refusal без delete; cleanup только созданного точного target; при ошибке report bounded target identity и операцию без bytes. Guard живёт до начала fallible enrollment, вооружается сразу после успешного native write (не после readback) и на unwind удаляет только собственный exact target; collision не передаёт ownership. После удаления проверить native absence; если cleanup отказал, сообщить безопасную точную identity, не скрывать ошибку и не делать prefix sweep. Проверки: обязательные `CREDENTIALS-POLICY`, `CREDENTIALS-NATIVE` в `scripts/verify.ps1`, contract boundary test и новый output root под `.pi/`; `verify-contracts.ps1` отдельно. Stage остаётся `IN_PROGRESS`, HOST/IPC/SEC01 NOT_RUN. Не распространять тестовый cleanup на живые credentials.

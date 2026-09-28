@@ -1,4 +1,5 @@
 //! Application seams only: host-created authority and ports; no concrete adapters.
+pub mod credentials;
 pub mod observability;
 pub mod storage;
 

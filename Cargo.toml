@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/domain", "crates/protocol", "crates/application", "crates/observability", "crates/isolation", "crates/storage"]
+members = ["crates/domain", "crates/protocol", "crates/application", "crates/observability", "crates/isolation", "crates/storage", "crates/credentials"]
 resolver = "2"
 
 [workspace.package]
@@ -14,3 +14,8 @@ uuid = { version = "=1.23.1", features = ["serde"] }
 schemars = "=1.2.1"
 async-trait = "=0.1.89"
 tokio-util = "=0.7.18"
+getrandom = "=0.4.3"
+sha2 = "=0.10.9"
+subtle = "=2.6.1"
+zeroize = "=1.8.2"
+windows-sys = { version = "=0.61.2", features = ["Win32_Security_Credentials", "Win32_Foundation"] }

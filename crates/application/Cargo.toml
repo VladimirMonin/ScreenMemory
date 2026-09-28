@@ -12,3 +12,10 @@ async-trait.workspace = true
 tokio-util.workspace = true
 serde.workspace = true
 uuid.workspace = true
+getrandom.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+sm-observability = { path = "../observability" }
