@@ -5,7 +5,7 @@ import tomllib
 
 root = Path(__file__).resolve().parents[2]
 workspace = tomllib.loads((root / 'Cargo.toml').read_text(encoding='utf-8'))['workspace']
-assert set(workspace['members']) == {'crates/domain', 'crates/protocol', 'crates/application', 'crates/observability', 'crates/isolation', 'crates/storage', 'crates/credentials', 'crates/framing'}
+assert set(workspace['members']) == {'crates/domain', 'crates/protocol', 'crates/application', 'crates/observability', 'crates/isolation', 'crates/storage', 'crates/credentials', 'crates/framing', 'crates/pipe'}
 allowed = {
     'domain': {'serde', 'uuid', 'schemars'},
     'protocol': {'sm-domain', 'serde', 'serde_json', 'schemars', 'time'},
@@ -15,6 +15,7 @@ allowed = {
     'storage': {'sm-application', 'sm-isolation', 'async-trait', 'rusqlite', 'sha2', 'serde_json', 'uuid', 'tokio'},
     'credentials': {'sm-application', 'sm-isolation', 'windows-sys', 'zeroize'},
     'framing': {'serde', 'serde_json', 'tokio'},
+    'pipe': {'sm-isolation', 'sha2', 'tokio', 'windows-sys'},
 }
 for crate, expected in allowed.items():
     manifest = tomllib.loads((root / 'crates' / crate / 'Cargo.toml').read_text(encoding='utf-8'))
@@ -22,11 +23,13 @@ for crate, expected in allowed.items():
     assert manifest['package']['name'] == 'sm-' + crate
     if crate == 'isolation':
         assert set(manifest['dev-dependencies']) == {'sm-observability'}
+    if crate == 'pipe':
+        assert set(manifest['dev-dependencies']) == {'sm-framing', 'serde_json', 'tokio'}
     for source in (root / 'crates' / crate / 'src').rglob('*.rs'):
         text = source.read_text(encoding='utf-8')
         for forbidden in (('tauri::', 'winapi::', 'lmstudio::', 'std::net::') if crate == 'storage' else ('tauri::', 'rusqlite::', 'winapi::', 'lmstudio::', 'std::net::')):
             assert forbidden not in text, (crate, source.name, forbidden)
-        if crate not in ('observability', 'isolation', 'storage', 'credentials'):
+        if crate not in ('observability', 'isolation', 'storage', 'credentials', 'pipe'):
             for forbidden in ('windows::', 'std::fs::'):
                 assert forbidden not in text, (crate, source.name, forbidden)
 manifest = json.loads((root / 'tests/fixtures/s01/root-isolation-manifest.json').read_text(encoding='utf-8'))
@@ -48,4 +51,4 @@ storage_manifest = tomllib.loads((root / 'crates/storage/Cargo.toml').read_text(
 assert storage_manifest['dependencies']['rusqlite']['features'] == ['bundled']
 assert storage_manifest['dependencies']['rusqlite']['version'].startswith('=')
 assert 'rusqlite::' not in (root / 'crates/application/src/storage.rs').read_text(encoding='utf-8')
-print('S01-DEP-01 PASS: eight crates, exact dependency allowlists, bundled SQLite in storage and native credentials in adapter; root boundary retained')
+print('S01-DEP-01 PASS: nine crates, exact dependency allowlists, bundled SQLite in storage and native credentials in adapter; root boundary retained')

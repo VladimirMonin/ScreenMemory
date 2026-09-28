@@ -1,0 +1,47 @@
+{
+  "slice": "S01-T06b-native-pipe",
+  "stage": "S01",
+  "status": "IN_PROGRESS; candidate awaiting independent review",
+  "base": "ca1f154d18f6f399cc5bdaad6fdf40b9a878dfd0",
+  "assignment_sha256": "35b2ed3917bfb11f9b3d273223543b4b6ba3030dd1b7ec74e68aa13687686a50",
+  "scope": "sealed native Test/installed namespace pipe endpoint and OS peer checks; not host/session/credential handshake/dispatch",
+  "tests": [
+    "S01-PIPE-01: 16 simultaneous clients with bidirectional sm-framing frames, 17th rejected 231, mapped disconnect/reconnect with other 15 handles alive",
+    "S01-PIPE-02: two own Test roots, namespace prefix distinction, collision 5, native identity alias, cancelled accept, server image mismatch before framed/credential data",
+    "S01-PIPE-03: partial bootstrap failure after 3 own handles and exact name reacquisition, all 16 final DACL readbacks (logon 0x00100083, OWNER_RIGHTS 0), server-info byte-mode readback/16 instances, forbidden server creation and client control masks fail 5"
+  ],
+  "checks": [
+    {"id":"ASSIGNMENT-HASH", "command":"sha256sum .pi/orchestration/t06b-native-pipe-task.txt", "exit":0, "observed":"35b2ed3917bfb11f9b3d273223543b4b6ba3030dd1b7ec74e68aa13687686a50"},
+    {"id":"NATIVE-TARGETED", "command":".pi/contract-run.cmd cargo test --offline -p sm-pipe", "exit":0, "cases":3, "private_log":".pi/temporary/t06b-probe-cc4d3e62/pipe-test12.log"},
+    {"id":"NATIVE-CLIPPY", "command":".pi/contract-run.cmd cargo clippy --offline -p sm-pipe --all-targets -- -D warnings", "exit":0, "private_log":".pi/temporary/t06b-probe-cc4d3e62/clippy4.log"},
+    {"id":"FINAL-FOCUSED", "command":".pi/contract-run.cmd cargo test --locked --offline -p sm-pipe; cargo clippy --locked --offline -p sm-pipe --all-targets -- -D warnings", "exit":0, "private_logs":[".pi/temporary/t06b-probe-cc4d3e62/pipe-test-final.log",".pi/temporary/t06b-probe-cc4d3e62/clippy-final.log"], "reason":"post-verify test-only byte-mode readback and second-root coverage; no production/runner changes"},
+    {"id":"BOUNDARIES", "command":"python tests/contracts/check_boundaries.py", "exit":0, "private_log":".pi/temporary/t06b-probe-cc4d3e62/boundaries.log"},
+    {"id":"FEASIBILITY-FROZEN-RIGHTS", "command":".pi/contract-run.cmd cargo run --locked --offline --manifest-path .pi/temporary/t06b-probe-cc4d3e62/Cargo.toml", "exit":0, "private_log":".pi/temporary/t06b-probe-cc4d3e62/frozen-rights.log", "sha256":"22fda904f83ea7852ea457731c6c53679bf9bfb3fa30f9fe3c0d0908b847113c"},
+    {"id":"FEASIBILITY-FROZEN-CONCURRENT", "command":".pi/contract-run.cmd cargo run --locked --offline --manifest-path .pi/temporary/t06b-probe-cc4d3e62/Cargo.toml -- concurrent", "exit":0, "private_log":".pi/temporary/t06b-probe-cc4d3e62/frozen-concurrent.log", "sha256":"3a276924929ee492e0722c051c28a791e2a78d4a012dac3426ac0dbb7e32ed70"},
+    {"id":"FEASIBILITY-SOURCE-LOCK-FROZEN", "command":"sha256sum --check .pi/temporary/t06b-probe-cc4d3e62/frozen-sha256.txt", "exit":0, "source_sha256":"d53c30b0d07e72101dcd263db5248c2169b39f09a132c894a9a5eef5939cb2db", "lock_sha256":"6bde60ba9d0b12802969256ec937ffa547170876da8cbf0df57c0810dc8fb716"},
+    {"id":"VERIFY", "command":"powershell.exe -NoProfile -NonInteractive -File scripts/verify.ps1 -OutputRoot .pi/verify-t06b-03a2c642e8f24ab4932177e72cdce022", "exit":0, "result":".pi/verify-t06b-03a2c642e8f24ab4932177e72cdce022/result.json", "sha256":"bcf9cb6d3343f3a5f60be0cf343b3d9f7654f7c404530721c0f37146afb22c15", "checks":"RUST-FMT/CLIPPY/TEST, PIPE-NATIVE, CREDENTIALS-NATIVE, FRAMING, SOURCE/PLAN-PRE/POST all PASS, native exits 0"},
+    {"id":"CONTRACTS", "command":"powershell.exe -NoProfile -NonInteractive -File scripts/verify-contracts.ps1 -OutputRoot .pi/contracts-t06b-522a1fe03c234739b0b6c8cae9ae1144", "exit":0, "result":".pi/contracts-t06b-522a1fe03c234739b0b6c8cae9ae1144/result.json", "sha256":"395148f04659f093e6b7ba7af00a45885e6473466f980f6dd4e6993bf6a2bf60"},
+    {"id":"TEST-VERIFY", "command":"powershell.exe -NoProfile -NonInteractive -File scripts/test-verify.ps1", "exit":0, "private_log":".pi/temporary/t06b-probe-cc4d3e62/test-verify-outer.log", "assertion":"real positive fixed PIPE-NATIVE argv, exit7/red fixtures/fail-fast PASS"},
+    {"id":"DIFF-CHECK", "command":"git diff --check; git diff --cached --name-only", "exit":0, "staged_count":0}
+  ],
+  "probe_historical_red_not_reclassified": [
+    "bootstrap narrow 0x00140007 second instance Win32 5: build-run4.log exit 1",
+    "initial full bootstrap 0x001f01ff without server WRITE_DAC: sealing Win32 5: build-run5.log exit 1",
+    "first 0x00100083 client roundtrip before synchronize adjustment: client_rw Win32 5: build-run6.log exit 1",
+    "build-run12.log exit 1: reconnect probe reset before pending Connect left no open slots; corrected independent frozen concurrent proof",
+    "native adapter first recycled read returned Win32 233 and immediate second read succeeded: reconnect-diagnostic.log exit 101; bounded one-time transport first-read correction passes subsequent checks"
+  ],
+  "source_hashes_sha256": {
+    "Cargo.toml":"6c76bead34644efccb53dce6da0a9ea5944545ee16aab23331560f067ce46fa4",
+    "Cargo.lock":"caff8e21acdf98987ea57cefe3613b465ad1690e43deb2ce7670db2b91fa0f0b",
+    "crates/pipe/src/lib.rs":"fe4c375b9a63494b8e48a2e10285fe4dcd475dfb152c3360d71e105723497c51",
+    "crates/pipe/src/native.rs":"b3db7414d561e06c12d6afddd041d541f954220e14412a53af0010bcb921ed46",
+    "crates/pipe/src/security_tests.rs":"97061a236278cb4c81f0588fd557f36698dac35c36abb6d3829a660d8e48302a",
+    "crates/pipe/tests/native_pipe.rs":"bce04476c2b370473700517acf4158f2e1b934cc42aa53c4de7c225e1a7b754c"
+  },
+  "not_run": ["actual different-logon-session S01-SEC-01", "restricted-token synthetic AccessCheck", "real remote-client denial (Win32 GetNamedPipeHandleStateW does not expose remote bit)", "host.ready, credential handshake, application dispatch, CLI/GUI, 8-request cap"],
+  "risks": ["same-user/admin is not sandboxed; transient 233 first-read handling is narrow and needs independent lifecycle review", "historical credential cleanup101 UNKNOWN remains unrelated and not resolved by current PASS", "no actual different-logon or remote peer fixture; reviewer must not infer these from descriptor/anonymous proof", "installed trusted executable path must be supplied by future composition owner; current tests use own fixed test executable"],
+  "nine_source_plans": "unchanged, PLAN-HASH-PRE/POST PASS",
+  "staged": 0,
+  "commit": "none"
+}

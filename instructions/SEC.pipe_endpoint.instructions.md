@@ -1,0 +1,13 @@
+---
+applyTo: "crates/pipe/**,scripts/verify.ps1,scripts/test-verify.ps1,tests/contracts/check_boundaries.py,docs/adr/007-native-pipe.md,docs/progress/S01/t06b-native-pipe.*"
+name: "SEC.PipeEndpoint"
+description: "Читай при изменении Windows named-pipe endpoint, logon-SID ACL, sealed pool, peer PID/token/session, trusted server image и native pipe tests."
+---
+
+# SEC — Native named-pipe endpoint
+
+Источник: S01 §6.2, [ADR-007](../docs/adr/007-native-pipe.md). `sm-pipe` — native transport/OS peer boundary, не credential handshake, application dispatcher или host.ready. `sm-isolation::NamespaceLayout` предоставляет закреплённую root identity; имя не строится из path, CWD, PATH или wire. Только Windows x64, byte mode, `reject_remote_clients(true)`, первый instance с `first_pipe_instance(true)`.
+
+Перед публикацией listener создаёт **ровно 16** собственных server handles под bootstrap descriptor: только текущий logon SID mask `0x0016019f`, OWNER_RIGHTS ACE `0`, явный `WRITE_DAC` на server handle. Затем все 16 получают и подтверждают readback final descriptor: logon SID `0x00100083` (data read/write, read attributes, synchronize), OWNER_RIGHTS `0`; никакого FILE_CREATE_PIPE_INSTANCE `0x4`, WRITE_DAC или broad user-SID/Everyone/anonymous ACE. Иначе закрыть только приобретённые собственные handles, не обслуживать данные. При reconnect переиспользовать ранее созданный handle; не создавать instance после sealing и не открывать временно DACL. Slot failure → fail-closed, без скрытого восстановления. Успех client CreateFile mask `4` сам по себе не значит успешный server CreateNamedPipe: настоящий forbidden CreateNamedPipe и изменение DACL проверять отдельно. Production client открывает explicit mask `0x00100083`, никогда `GENERIC_WRITE`.
+
+Peer PID/session и process token user+logon SID берутся из OS handle; client сравнивает canonical process image с заранее доверенным absolute expected executable resource path из composition configuration, не из wire/PATH/CWD. Нет await под impersonation (её нет), никаких SecretStore вызовов в pipe. Эти checks не sandbox от malicious same-user/admin. Другой реальный logon session остаётся отдельной обязательной S01-SEC-01 проверкой, local descriptor tests её не подменяют. Native tests используют только собственные новые `.pi/temporary` roots/pipe names; fixtures очищают только свои roots. Не делать global ACL/account/session setup или поиск чужих endpoints. Mandatory suite `PIPE-NATIVE` в `scripts/verify.ps1` (`cargo test --locked -p sm-pipe`), workspace fmt/clippy/test, отдельные contracts и `test-verify` при runner change. Unexpected native credential cleanup → STOP и supervisor, никакого rerun/sweep.

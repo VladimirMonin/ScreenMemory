@@ -66,6 +66,7 @@ try {
             @('CREDENTIALS-POLICY',$tools.rust,@('test','--locked','-p','sm-application','--test','credentials')),
             @('CREDENTIALS-NATIVE',$tools.rust,@('test','--locked','-p','sm-credentials')),
             @('FRAMING',$tools.rust,@('test','--locked','-p','sm-framing')),
+            @('PIPE-NATIVE',$tools.rust,@('test','--locked','-p','sm-pipe')),
             @('PNPM-TYPECHECK',$tools.node,@($tools.pnpm,'typecheck')),
             @('PNPM-LINT',$tools.node,@($tools.pnpm,'lint')),
             @('PNPM-TEST',$tools.node,@($tools.pnpm,'test'))
