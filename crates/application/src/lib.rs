@@ -30,6 +30,7 @@ pub struct RequestContext {
     correlation_id: CorrelationId,
     principal_id: PrincipalId,
     granted_scopes: Vec<Scope>,
+    connection_id: Option<uuid::Uuid>,
 }
 impl RequestContext {
     /// Host-only call site must first establish peer identity and authenticated scopes.
@@ -44,6 +45,23 @@ impl RequestContext {
             correlation_id,
             principal_id,
             granted_scopes,
+            connection_id: None,
+        }
+    }
+    /// Bind an authenticated principal to the OS-verified transport session.
+    pub fn bind_connection(mut self, connection_id: uuid::Uuid) -> Self {
+        self.connection_id = Some(connection_id);
+        self
+    }
+    pub fn connection_id(&self) -> Option<uuid::Uuid> {
+        self.connection_id
+    }
+    /// Derive a request from an already authenticated, connection-bound context.
+    pub fn for_request(&self, request_id: RequestId, correlation_id: CorrelationId) -> Self {
+        Self {
+            request_id,
+            correlation_id,
+            ..self.clone()
         }
     }
     pub fn request_id(&self) -> RequestId {

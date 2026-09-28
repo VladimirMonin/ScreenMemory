@@ -458,6 +458,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "sm-cli"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sm-application",
+ "sm-credentials",
+ "sm-domain",
+ "sm-framing",
+ "sm-host",
+ "sm-isolation",
+ "sm-pipe",
+ "sm-protocol",
+ "sm-session",
+ "tokio",
+ "tokio-util",
+ "uuid",
+ "windows-sys",
+]
+
+[[package]]
 name = "sm-credentials"
 version = "0.1.0"
 dependencies = [
@@ -485,6 +506,29 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "zeroize",
+]
+
+[[package]]
+name = "sm-host"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "sm-application",
+ "sm-credentials",
+ "sm-domain",
+ "sm-framing",
+ "sm-isolation",
+ "sm-observability",
+ "sm-pipe",
+ "sm-protocol",
+ "sm-session",
+ "sm-storage",
+ "tokio",
+ "tokio-util",
+ "uuid",
 ]
 
 [[package]]
@@ -493,6 +537,7 @@ version = "0.1.0"
 dependencies = [
  "sm-application",
  "sm-observability",
+ "uuid",
 ]
 
 [[package]]
@@ -525,6 +570,24 @@ dependencies = [
  "serde_json",
  "sm-domain",
  "time",
+]
+
+[[package]]
+name = "sm-session"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "sm-application",
+ "sm-domain",
+ "sm-framing",
+ "sm-isolation",
+ "sm-pipe",
+ "sm-protocol",
+ "tokio",
+ "tokio-util",
+ "uuid",
 ]
 
 [[package]]

@@ -26,6 +26,8 @@
 | [DOCS.instructions_style](instructions/DOCS.instructions_style.instructions.md) | Создание, обновление, переименование или разделение инструкций и AGENTS.md |
 | [DOCS.commit_messages](instructions/DOCS.commit_messages.instructions.md) | Группировка изменений, staging, проверки и создание commit |
 | [CORE.code_intelligence](instructions/CORE.code_intelligence.instructions.md) | Поиск реализации, символов, связей, структурных паттернов и оценка влияния |
+| [APP.session](instructions/APP.session.instructions.md) | Authenticated RPC session, shared Rust client, authorization, bounded dispatch/cancellation |
+| [HOST.composition](instructions/HOST.composition.instructions.md) | Реальные shotd/shot, bootstrap/shutdown-порядок, trusted preview configuration, CLI JSON/exit codes, autostart и developer preview |
 | [BUILD.protocol_contracts](instructions/BUILD.protocol_contracts.instructions.md) | Изменение Rust DTO/ports, схем, fixtures и проверка совместимости протокола |
 | [BUILD.verification](instructions/BUILD.verification.instructions.md) | Offline verify, Windows runner, шаги и synthetic verification fixtures |
 | [BUILD.framing](instructions/BUILD.framing.instructions.md) | Bounded async framing, shared buffer budget, deadline и writer poison |

@@ -10,3 +10,4 @@ sm-application = { path = "../application" }
 
 [dev-dependencies]
 sm-observability = { path = "../observability" }
+uuid = { workspace = true, features = ["v4"] }

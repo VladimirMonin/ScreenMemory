@@ -52,6 +52,9 @@ try {
         'HOST-LEASE' = @('cargo',@('test','--locked','-p','sm-isolation','--test','host_lease'))
         'FRAMING' = @('cargo',@('test','--locked','-p','sm-framing'))
         'PIPE-NATIVE' = @('cargo',@('test','--locked','-p','sm-pipe'))
+        'SESSION-NATIVE' = @('cargo',@('test','--locked','-p','sm-session'))
+        'HOST-COMPOSITION' = @('cargo',@('test','--locked','-p','sm-host'))
+        'CLI-SURFACE' = @('cargo',@('test','--locked','-p','sm-cli'))
         'PNPM-TYPECHECK' = @('node',@('@PNPM_CLI','typecheck'))
         'PNPM-LINT' = @('node',@('@PNPM_CLI','lint'))
         'PNPM-TEST' = @('node',@('@PNPM_CLI','test'))
@@ -81,12 +84,21 @@ try {
         }
         $ids = @($positive.steps | ForEach-Object { $_.check_id })
         foreach ($id in $expected.Keys) {
-            if ($id -in @('PREREQ-pnpm') -or ($suite -eq 'verify' -and $id -in @('RUST-FMT','RUST-CLIPPY','RUST-TEST','HOST-LEASE','FRAMING','PIPE-NATIVE','PNPM-TYPECHECK','PNPM-LINT','PNPM-TEST','CONTRACTS')) -or
+            if ($id -in @('PREREQ-pnpm') -or ($suite -eq 'verify' -and $id -in @('RUST-FMT','RUST-CLIPPY','RUST-TEST','HOST-LEASE','FRAMING','PIPE-NATIVE','SESSION-NATIVE','HOST-COMPOSITION','CLI-SURFACE','PNPM-TYPECHECK','PNPM-LINT','PNPM-TEST','CONTRACTS')) -or
                 ($suite -eq 'verify-contracts' -and $id -in @('SCHEMA-GENERATE','SCHEMA-CHECK','TS-GENERATE','PNPM-CONTRACTS','BOUNDARIES','SCHEMA-FIXTURES'))) {
                 if ($id -notin $ids) { throw "Missing fixed check evidence: $id" }
             }
         }
     }
+    # The owned-preview cleanup guards are mandatory: every refusal must be a real non-zero
+    # exit that deletes nothing, so a foreign root, an injected library id, a missing marker,
+    # a live owned child, an unverified stop and a reparse point are all exercised for real.
+    $safetyOut = Join-Path $temp 'preview-safety'
+    & $ps -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'test-preview-safety.ps1') -OutputRoot $safetyOut | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Preview cleanup safety suite failed with wrapper exit $LASTEXITCODE" }
+    $safety = ConvertFrom-Json ([System.IO.File]::ReadAllText((Join-Path $safetyOut 'result.json')))
+    if ($safety.outcome -ne 'PASS' -or @($safety.steps | Where-Object { $_.outcome -ne 'PASS' }).Count -ne 0) { throw 'Preview cleanup safety evidence is not all PASS' }
+    if (@($safety.steps).Count -lt 30) { throw 'Preview cleanup safety evidence is unexpectedly small' }
     foreach ($case in @('success','exit7','missing','spawn','timeout','stderr','prerequisite')) {
         $expect = @{ success = @(0,'OK'); exit7 = @(1,'NATIVE_EXIT'); missing = @(1,'MISSING_EXECUTABLE');
             spawn = @(1,'SPAWN_ERROR'); timeout = @(1,'TIMEOUT'); stderr = @(0,'OK'); prerequisite = @(1,'MISSING_PREREQUISITE') }[$case]

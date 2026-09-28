@@ -5,7 +5,7 @@ import tomllib
 
 root = Path(__file__).resolve().parents[2]
 workspace = tomllib.loads((root / 'Cargo.toml').read_text(encoding='utf-8'))['workspace']
-assert set(workspace['members']) == {'crates/domain', 'crates/protocol', 'crates/application', 'crates/observability', 'crates/isolation', 'crates/storage', 'crates/credentials', 'crates/framing', 'crates/pipe'}
+assert set(workspace['members']) == {'crates/domain', 'crates/protocol', 'crates/application', 'crates/observability', 'crates/isolation', 'crates/storage', 'crates/credentials', 'crates/framing', 'crates/pipe', 'crates/session', 'crates/host', 'crates/cli'}
 allowed = {
     'domain': {'serde', 'uuid', 'schemars'},
     'protocol': {'sm-domain', 'serde', 'serde_json', 'schemars', 'time'},
@@ -14,24 +14,51 @@ allowed = {
     'isolation': {'sm-application'},
     'storage': {'sm-application', 'sm-isolation', 'async-trait', 'rusqlite', 'sha2', 'serde_json', 'uuid', 'tokio'},
     'credentials': {'sm-application', 'sm-isolation', 'windows-sys', 'zeroize'},
-    'framing': {'serde', 'serde_json', 'tokio'},
+    'framing': {'serde', 'serde_json', 'tokio', 'zeroize'},
     'pipe': {'sm-isolation', 'sha2', 'tokio', 'windows-sys'},
+    'session': {'sm-application', 'sm-domain', 'sm-protocol', 'sm-framing', 'sm-pipe', 'serde', 'serde_json', 'uuid', 'tokio-util', 'tokio'},
+    'host': {'sm-application', 'sm-credentials', 'sm-domain', 'sm-framing', 'sm-isolation', 'sm-observability', 'sm-pipe', 'sm-protocol', 'sm-session', 'sm-storage', 'async-trait', 'serde', 'serde_json', 'tokio', 'tokio-util', 'uuid'},
+    'cli': {'sm-application', 'sm-credentials', 'sm-domain', 'sm-framing', 'sm-isolation', 'sm-pipe', 'sm-protocol', 'sm-session', 'serde', 'serde_json', 'tokio', 'windows-sys'},
 }
 for crate, expected in allowed.items():
     manifest = tomllib.loads((root / 'crates' / crate / 'Cargo.toml').read_text(encoding='utf-8'))
     assert set(manifest['dependencies']) == expected, crate
     assert manifest['package']['name'] == 'sm-' + crate
     if crate == 'isolation':
-        assert set(manifest['dev-dependencies']) == {'sm-observability'}
+        assert set(manifest['dev-dependencies']) == {'sm-observability', 'uuid'}
     if crate == 'pipe':
         assert set(manifest['dev-dependencies']) == {'sm-framing', 'serde_json', 'tokio'}
+    if crate == 'session':
+        assert set(manifest['dev-dependencies']) == {'async-trait', 'sm-isolation'}
+    if crate == 'host':
+        assert 'dev-dependencies' not in manifest, 'host composition tests use the production ports only'
+    if crate == 'cli':
+        assert set(manifest['dev-dependencies']) == {'sm-host', 'tokio-util', 'uuid'}
     for source in (root / 'crates' / crate / 'src').rglob('*.rs'):
         text = source.read_text(encoding='utf-8')
         for forbidden in (('tauri::', 'winapi::', 'lmstudio::', 'std::net::') if crate == 'storage' else ('tauri::', 'rusqlite::', 'winapi::', 'lmstudio::', 'std::net::')):
             assert forbidden not in text, (crate, source.name, forbidden)
-        if crate not in ('observability', 'isolation', 'storage', 'credentials', 'pipe'):
+        if crate not in ('observability', 'isolation', 'storage', 'credentials', 'pipe', 'session', 'host', 'cli'):
             for forbidden in ('windows::', 'std::fs::'):
                 assert forbidden not in text, (crate, source.name, forbidden)
+# S01-T05d boundaries: the CLI never opens the library database, never links the storage
+# owner and can never name a host image other than the configured trusted executable.
+cli_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/cli/src').rglob('*.rs')}
+for name, text in cli_sources.items():
+    for forbidden in ('sm_storage::', 'rusqlite::', 'Connection::open', 'sqlite'):
+        assert forbidden not in text, ('cli', name, forbidden)
+assert set(cli_sources) == {'args.rs', 'config.rs', 'exec.rs', 'launcher.rs', 'lib.rs', 'main.rs', 'output.rs'}
+assert 'Command::new' in cli_sources['launcher.rs']
+for name, text in cli_sources.items():
+    if name != 'launcher.rs':
+        assert 'Command::new' not in text, ('cli', name)
+host_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/host/src').rglob('*.rs')}
+for name, text in host_sources.items():
+    for forbidden in ('Command::new', 'std::net::', 'tauri::', 'lmstudio::'):
+        assert forbidden not in text, ('host', name, forbidden)
+for crate, binary in (('host', 'shotd'), ('cli', 'shot')):
+    manifest = tomllib.loads((root / 'crates' / crate / 'Cargo.toml').read_text(encoding='utf-8'))
+    assert manifest['bin'][0]['name'] == binary, crate
 manifest = json.loads((root / 'tests/fixtures/s01/root-isolation-manifest.json').read_text(encoding='utf-8'))
 assert manifest['schema_version'] == 1
 assert manifest['fixture_scope'].startswith('.pi/temporary/')
@@ -51,4 +78,4 @@ storage_manifest = tomllib.loads((root / 'crates/storage/Cargo.toml').read_text(
 assert storage_manifest['dependencies']['rusqlite']['features'] == ['bundled']
 assert storage_manifest['dependencies']['rusqlite']['version'].startswith('=')
 assert 'rusqlite::' not in (root / 'crates/application/src/storage.rs').read_text(encoding='utf-8')
-print('S01-DEP-01 PASS: nine crates, exact dependency allowlists, bundled SQLite in storage and native credentials in adapter; root boundary retained')
+print('S01-DEP-01 PASS: twelve crates, exact dependency allowlists, bundled SQLite in storage and native credentials in adapter; host/CLI composition boundaries retained')

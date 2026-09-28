@@ -10,6 +10,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
+use uuid::Uuid;
 
 struct Fixture(PathBuf);
 impl Fixture {
@@ -18,17 +19,13 @@ impl Fixture {
         fs::create_dir_all(&parent).unwrap();
         let parent = fs::canonicalize(parent).unwrap();
         let parent = PathBuf::from(parent.to_string_lossy().trim_start_matches(r"\\?\"));
-        let name = format!(
-            "t02b-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        );
-        let root = parent.join(name);
-        fs::create_dir(&root).unwrap();
-        Self(root)
+        // Cryptographic UUID naming avoids PID reuse and coarse wall-clock granularity.
+        // create_dir remains atomic: collision is an error, never adoption or cleanup.
+        Self::create_exact(parent.join(format!("t02b-{}", Uuid::new_v4()))).unwrap()
+    }
+    fn create_exact(root: PathBuf) -> io::Result<Self> {
+        fs::create_dir(&root)?;
+        Ok(Self(root))
     }
     fn dir(&self, name: &str) -> PathBuf {
         let path = self.0.join(name);
@@ -62,6 +59,34 @@ fn dirs(f: &Fixture, env: Environment) -> [PathBuf; 4] {
         fs::create_dir(&path).unwrap();
         path
     })
+}
+
+#[test]
+fn t02b_09_uuid_fixture_concurrency_and_collision_refusal() {
+    let fixtures = std::thread::scope(|scope| {
+        let tasks = (0..24)
+            .map(|_| scope.spawn(Fixture::new))
+            .collect::<Vec<_>>();
+        tasks
+            .into_iter()
+            .map(|task| task.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    let names = fixtures
+        .iter()
+        .map(|f| f.0.clone())
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(names.len(), 24);
+    let owned = &fixtures[0];
+    let sentinel = owned.0.join("owned-sentinel.txt");
+    fs::write(&sentinel, b"SYNTHETIC-OWNED").unwrap();
+    assert_eq!(
+        Fixture::create_exact(owned.0.clone()).err().unwrap().kind(),
+        io::ErrorKind::AlreadyExists
+    );
+    assert_eq!(fs::read(&sentinel).unwrap(), b"SYNTHETIC-OWNED");
+    assert!(owned.0.exists());
+    drop(fixtures); // only successfully created own guards remove their exact roots
 }
 
 #[test]

@@ -1,0 +1,62 @@
+{
+  "stage": "S01",
+  "slice": "S01-T06c",
+  "state": "IN_PROGRESS",
+  "base": "bfb2f486e843d89b0b9a415dfa1305cb86514e97",
+  "scope": "native authenticated RPC session and shared Rust application-client only",
+  "tests": [
+    "s01_ipc_03_authenticated_native_owner_readonly_and_reconnect",
+    "s01_ipc_03_rejects_bad_identity_and_secret_before_handlers",
+    "s01_ipc_03_typed_error_cancel_and_host_binding",
+    "s01_ipc_03_parallel_delay_keeps_fast_status_and_bounds_active",
+    "s01_ipc_03_native_rejects_wrong_library_major_capabilities_credential_and_malformed",
+    "s01_ipc_03_duplicate_cancel_connection_scope_and_reconnect",
+    "s01_ipc_03_ninth_request_fails_closed_and_disconnect_preserves_host",
+    "s01_ipc_03_absolute_handshake_deadline_closes_partial_native_frame"
+  ],
+  "checks": [
+    {"id":"targeted-session", "native_exit":0, "artifact":".pi/temporary/t06c-tests-06-e910ac.log"},
+    {"id":"workspace-clippy", "native_exit":0, "artifact":".pi/temporary/t06c-clippy-129e10.log"},
+    {"id":"contracts", "outer_exit":0, "artifact":".pi/contracts-t06c-a68397d54b4e4ac5a063660c515d9407/result.json"},
+    {"id":"verify-initial-boundary-RED", "outer_exit":1, "artifact":".pi/verify-t06c-53786a35fc9f42c2adc9b891fc09373b/result.json"},
+    {"id":"focused-boundary-after-fix", "native_exit":0},
+    {"id":"verify-preexisting-isolation-fixture-RED", "outer_exit":1, "artifact":".pi/verify-t06c-3366598c4bad4f1991fa60fa47bfe9cf/result.json"},
+    {"id":"verify-preexisting-isolation-fixture-second-RED", "outer_exit":1, "artifact":".pi/verify-t06c-05df072be72c45e1a22c0ed9f5f65e6c/result.json"},
+    {"id":"targeted-isolation-after-approved-fix", "native_exit":0, "artifact":".pi/temporary/t06c-isolation-fixture-1-74a7de.log"},
+    {"id":"corrected-verify", "outer_exit":0, "artifact":".pi/verify-t06c-2cc2d2043f734699a3fa2bbe2d650003/result.json"},
+    {"id":"corrected-contracts", "outer_exit":0, "artifact":".pi/contracts-t06c-509e988a8a8f464f8b24c6aee9e4af35/result.json"},
+    {"id":"harness-regression", "outer_exit":0, "artifact":".pi/test-verify-c095c558cc9c4371818adf0b0f07e780/positive-verify/result.json"},
+    {"id":"final-targeted-session-gui-claim", "native_exit":0, "artifact":".pi/temporary/t06c-tests-final-46a1df.log"},
+    {"id":"final-verify", "outer_exit":0, "artifact":".pi/verify-t06c-af8b2425345c4b19811b3faa08d06c58/result.json"},
+    {"id":"final-contracts", "outer_exit":0, "artifact":".pi/contracts-t06c-406c6c6a5d4146f1914440e2c966c4f8/result.json"},
+    {"id":"framing-targeted-after-p2", "native_exit":0, "artifact":".pi/temporary/t06c-p2-framing-targeted-f1d07088494f.log"},
+    {"id":"session-targeted-after-p2", "native_exit":0, "artifact":".pi/temporary/t06c-p2-session-targeted-a3400881e951.log"},
+    {"id":"boundaries-after-p2", "native_exit":0},
+    {"id":"verify-after-p2", "outer_exit":0, "artifact":".pi/verify-t06c-p2-635aab0c1acdf86a6e7e0b67dfd67b1e/result.json"},
+    {"id":"contracts-after-p2", "outer_exit":0, "artifact":".pi/contracts-t06c-p2-00ac31f87cc5ac69d87e6da5def3917b/result.json"},
+    {"id":"harness-after-p2", "outer_exit":0, "artifact":".pi/test-verify-61d566c1a708494a826166f68a3ae351/positive-verify/result.json"}
+  ],
+  "receive_wipe_correction": {
+    "review_finding": "P2",
+    "file": "crates/framing/src/lib.rs",
+    "sha256": "355784e4f82496521216c8c093ae68c64ff382502351ddaf5fd6765fb5868267",
+    "mechanism": "private RAII FrameBuffer owns raw Vec<u8> plus its shared-budget permit; Drop wipes with zeroize (volatile write + fence) before the allocation is released, on partial/truncated read, IO error, invalid UTF-8/JSON, handshake deadline, caller cancellation and ordinary drop; ownership transfers into Frame",
+    "primitive": "zeroize = 1.8.2 workspace pin (same as application/credentials); no plain fill(0) wipe path remains",
+    "invariants_preserved": ["buffer budget acquired before allocation", "permit released on every error/cancel path", "reader poison on incomplete frame", "Frame public API unchanged (as_bytes)"],
+    "framing_cases": 17,
+    "framing_case_breakdown": {"transport_integration": 12, "lib_unit": 5},
+    "session_cases": 8,
+    "regressions": [
+      "s01_ipc_handshake_canary_wiped_on_every_rejected_read",
+      "s01_ipc_handshake_canary_wiped_on_partial_receive_deadline",
+      "s01_ipc_handshake_canary_wiped_on_partial_receive_cancel",
+      "s01_ipc_delivered_canary_frame_wiped_only_on_drop"
+    ],
+    "instrumentation": "private cfg(test) per-harness-thread counters record wipes and assert all-zero bytes inside Drop while the allocation is still live; no freed memory is read and the synthetic canary is never printed; this proves a per-path wipe before release, while non-elision comes from zeroize (not from the debug-build check)",
+    "wiring": {"crates/framing/Cargo.toml": "a7aa283bde5d702e53e3e67428d62201fed7f4f9fb44d77c24586123a84d7ede", "Cargo.lock": "3504ba8d6395306d5aab10346216e53455fb9966058208b92d2ca3c53cbc7fde", "tests/contracts/check_boundaries.py": "d2e6db27dbdca89a7f841423c8d773965160876409a862e375f2622edc380b99"},
+    "documented_limitation": "transient serde/allocator/OS copies (IgnoredAny parse, swap/crash dumps) are outside the raw buffer and are not claimed as wiped"
+  },
+  "approved_fixture_delta": {"file":"crates/isolation/tests/root_isolation.rs", "original_sha256":"ac7578f0f1c0bfaaad00d0715fd04c49a93bc3ea484ec541099f0b55eaa2ff42", "corrected_sha256":"79128279aa350695ed9afc3f6ac637bc744a2bbf4962475b177d99e812ecedad", "scope":"test-only UUIDv4 own root naming and collision refusal regression"},
+  "not_accepted": ["full IPC", "host/CLI/GUI integration", "other logon/remote/restricted token", "S01 stage"],
+  "secrets": "No native credential keys created in session tests; private raw logs stay under ignored .pi."
+}

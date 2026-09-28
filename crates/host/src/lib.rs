@@ -1,0 +1,21 @@
+//! `shotd` composition root: one explicit root, one writer, real services, secure listener.
+//!
+//! This crate owns the S01 §6.3 bootstrap order and the §6.5 shutdown order. It never
+//! creates roots, never adopts a foreign tree and never resolves a path from CWD, PATH
+//! or an environment variable: the only accepted root is the explicit `--root` argument.
+mod args;
+mod bootstrap;
+mod services;
+
+pub use args::{parse_bootstrap_args, ArgError, BootstrapArgs, BootstrapMode};
+pub use bootstrap::{bootstrap, emit_pre_root_failure, BootstrapOptions, BootstrappedHost};
+pub use bootstrap::{HostError, ShutdownOutcome, DEFAULT_DRAIN, SHUTDOWN_BUDGET};
+pub use services::FoundationServices;
+
+/// Process exit codes of `shotd`; the same contract the CLI uses for host/runtime errors.
+pub const EXIT_OK: u8 = 0;
+pub const EXIT_USAGE: u8 = 2;
+pub const EXIT_HOST: u8 = 4;
+pub const EXIT_POLICY: u8 = 6;
+pub const EXIT_STORAGE: u8 = 7;
+pub const EXIT_WAIT: u8 = 8;

@@ -1,0 +1,197 @@
+{
+  "stage": "S01",
+  "slice": "S01-T05d",
+  "state": "IN_PROGRESS",
+  "base": "bfb2f486e843d89b0b9a415dfa1305cb86514e97",
+  "scope": "real shotd host composition and thin shot CLI over the accepted session/application-client, plus the explicit developer preview root; GUI/logon/remote/live-SDK/packaging excluded",
+  "contract": {
+    "adr": "docs/adr/009-host-cli-composition.md",
+    "instruction": "instructions/HOST.composition.instructions.md",
+    "trusted_config": "explicit absolute --config JSON {schema_version:1, environment:test, absolute root, canonical library_id, absolute host_executable}; no CWD/ENV/PATH fallback; product/dev namespaces refused",
+    "init_report": "shotd --init --root <abs> prints one JSON {library_id, schema_version, format_major} after creating/enrolling the library under the lease",
+    "cli_surface": ["--version", "status [--no-start] --json", "doctor --json", "host stop --json"],
+    "exit_codes": {"success": 0, "arguments_config": 2, "host_runtime": 4, "policy_credentials": 6, "storage_processing": 7, "bounded_wait": 8},
+    "autostart": "one launch of the configured fixed absolute image, bounded 100ms retry/discovery for 5s, no retry on credential/identity error, terminate only the CLI's own unreached child",
+    "shutdown": "receipt=stopping; stop admission; bounded 750ms drain for admitted connections; listener close; confirmed SQLite close releasing the lease; bounded log flush inside 5s",
+    "host_stdio": "CLI detaches its standard handles before the single spawn and captures pre-root host diagnostics in <root>/cache/host-stderr.log (truncated per launch)"
+  },
+  "tests": [
+    "crates/host/tests/composition.rs: s01_host_cli_01_status_doctor_stop_and_lease_release",
+    "crates/host/tests/composition.rs: s01_host_cli_02_second_writer_is_refused_for_one_root",
+    "crates/host/tests/composition.rs: s01_host_cli_03_initialize_enrolls_owner_without_a_listener",
+    "crates/host/tests/composition.rs: s01_host_cli_04_unprepared_root_is_refused_without_creation",
+    "crates/host/tests/composition.rs: s01_host_cli_05_owner_enrollment_precedes_the_logger (review fix C: the logger starts only after a successful owner enrollment)",
+    "crates/cli/tests/cli_surface.rs: s01_cli_01_version_usage_and_config_refusal",
+    "crates/cli/tests/cli_surface.rs: s01_cli_02_no_start_never_starts_or_creates_a_host",
+    "crates/cli/tests/cli_surface.rs: s01_cli_03_status_doctor_and_stop_share_one_real_host_identity",
+    "crates/cli/tests/cli_surface.rs: s01_cli_04_autostart_uses_the_configured_image_once",
+    "crates/cli/tests/cli_surface.rs: s01_cli_05_doctor_exit_mapping_is_strict",
+    "crates/session/tests/native_session.rs: s01_host_cli_stop_drain_preserves_in_flight_response"
+  ],
+  "session_hook": {
+    "api": "sm_session::run_draining(listener, host, stop, drain); run delegates with Duration::ZERO",
+    "file": "crates/session/src/lib.rs",
+    "sha256": "a72fc712675f72e9f126a3ac5d0f8603722539810aa7f056b773a7f3e4fac7af",
+    "test_file_sha256": "a18cdd1fe7f6dfae23c89b011a67b713767d9dafe4f5e4bf6cddee2db4470cfe",
+    "native_cases": {"before": 4, "after": 5, "wire_cases": 4},
+    "purpose": "deliver an in-flight authorized response (for example a stopping receipt) before an admitted connection task is aborted"
+  },
+  "checks": [
+    { "id": "host-composition", "command": "cargo test --locked -p sm-host --offline", "cases": "5/5 (4/4 before the review fix added s01_host_cli_05)", "native_exit": 0, "artifact": ".pi/review-fixes-dffcefe5-0bd8-42fe-8db9-0216a8257a8e/sm-host.log", "earlier_artifact": ".pi/temporary/host-cli-test-host-3.log" },
+    { "id": "cli-surface", "command": "cargo test -p sm-cli --offline", "cases": "5/5", "native_exit": 0, "artifact": ".pi/temporary/host-cli-test-cli-5.log" },
+    { "id": "session-native", "command": "cargo test --locked -p sm-session --offline -- --test-threads=1", "cases": "5 native + 4 wire", "native_exit": 0, "artifact": ".pi/temporary/host-cli-test-session-4.log" },
+    { "id": "rust-fmt", "command": "cargo fmt --all -- --check", "native_exit": 0, "artifact": "green source: RUST-FMT step (native exit 0, empty output) of .pi/verify-240ab4bf7b2545839ef2ce66bd344eed/result.json; the cited .pi/temporary/final-fmt.log is an earlier RED artifact (rustfmt diff in crates/cli/src/launcher.rs) and was not overwritten" },
+    { "id": "rust-clippy", "command": "cargo clippy --workspace --all-targets --locked -- -D warnings", "native_exit": 0, "artifact": ".pi/temporary/final-clippy2.log" },
+    { "id": "rust-test", "command": "cargo test --workspace --locked", "native_exit": 0, "artifact": ".pi/temporary/final-ws-test.log" },
+    { "id": "boundaries", "command": "python tests/contracts/check_boundaries.py", "native_exit": 0, "artifact": ".pi/temporary/final-contracts.log" },
+    { "id": "verify-outer", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify.ps1", "outer_exit": 0, "steps": 26, "final_tree": true, "previous_same_code_runs": [".pi/verify-98c27a121d7544cda54bd019dba78bb5/result.json", ".pi/verify-74ed539c75574346b765c76a6fe23b4f/result.json"], "artifact": ".pi/verify-240ab4bf7b2545839ef2ce66bd344eed/result.json" },
+    { "id": "verify-contracts-outer", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify-contracts.ps1", "outer_exit": 0, "steps": 15, "artifact": ".pi/contracts-6ac313bb56914fcdad2889c754127f1e/result.json" },
+    { "id": "test-verify-outer", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/test-verify.ps1", "outer_exit": 0, "artifact": ".pi/temporary/final-testverify.log" },
+    { "id": "executable-smoke", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/smoke-host-cli.ps1", "outer_exit": 0, "steps": 53, "assertions": 42, "executable_steps": 11, "artifact": ".pi/smoke-host-cli-374a31c0808d4740bd7b5a1e202236a0/result.json", "review_fix_artifact": ".pi/smoke-host-cli-8f2420b39f6746bdae99aeba43f419f0/result.json" },
+    { "id": "helper-exit-isolation", "command": "powershell.exe -NoProfile -NonInteractive -File .pi/temporary/exit-isolation-probe.ps1", "outer_exit": 0, "cases": "10/10: native exit 0 stays Int32 0, native exit 7 stays 7, quoted argv with spaces, 20000-line stdout+stderr flood drained without deadlock, bounded timeout -> null/TIMEOUT, missing executable -> null/MISSING_EXECUTABLE, spaces-path wrapper via the /s-safe raw command line -> 0 and 7, production Invoke-PinnedCargo -> Int32 0/OK", "artifact": ".pi/temporary/exit-isolation-26136b4dc87f42edad4db8d63eb979d4/result.json" },
+    { "id": "developer-preview", "command": "powershell.exe -NoProfile -File scripts/preview.ps1 (then -Action cleanup)", "outer_exit": 0, "artifact": ".pi/temporary/host-cli-preview-run-2.log" },
+    { "id": "source-format-red-then-green", "failed_outer_exit": 1, "reason": "two files written through a CRLF text-mode round trip", "fixed": ["crates/cli/Cargo.toml", "scripts/preview.ps1"], "rerun": 0, "artifact": ".pi/temporary/final-verify.log" }
+  ],
+  "smoke_assertions": [
+    "first-run library identity and schema version",
+    "CLI status library id equals the first-run identity",
+    "status ready / ai_enabled false / bridge stopped",
+    "second CLI status reaches the same single owner and library",
+    "doctor host+library identity equal to status, mandatory checks PASSED, no FAILED, runtime NOT_RUN, bridge UNSUPPORTED",
+    "duplicate shotd --root refused with exit 4 and safe host_lock_conflict, owner unchanged",
+    "--no-start absent host: one error object, exit 4, no host.lock, no library.sqlite3, no process",
+    "host stop receipt state=stopping with the same host instance, process gone within 5s, endpoint gone",
+    "restart keeps the durable library id and reports a new host instance",
+    "no child process of the owned host, AI off and bridge stopped",
+    "final stop, exact credential delete plus absence verification, owned roots removed"
+  ],
+  "review_fixes": {
+    "source": ".pi/orchestration/checkpoints/t05d-host-cli/milestone-review-312173dc.json",
+    "candidate": "kept; no rework or rollback of the accepted 49-path delta, nine source plans unchanged",
+    "A_high_preview_cleanup": {
+      "change": "cleanup only on a self-created root: direct child of <repo>/.pi/preview, canonical UUIDv4 name, ownership marker with the same UUID (created only by preview create), canonical library_id, no reparse point; refusal is a safe message plus non-zero exit with no side effect; before any delete a checked stop, a bounded Wait-OwnedShotdGone and an absence check of this root own shotd.exe; the exact synthetic credential is deleted by invoking cmdkey.exe directly with an argument list (never cmd /c) and its absence confirmed before the ownership-rechecked root removal",
+      "suite": "scripts/test-preview-safety.ps1 (40 checks at the Sol6 fix revision; extended to 62 checks with the focused fix below; exit 0 at both revisions)",
+      "artifacts": [".pi/preview-safety-888a3b64-5ec8-46aa-a280-afb6f10320c7/result.json", ".pi/test-verify-2e3ce2eaed8f4c7c81dff87372961f71/preview-safety/result.json"],
+      "cases": ["foreign directory outside .pi/preview (valid marker and id) refused and preserved", "directory with a similar name but no marker refused and preserved", "marker naming another uuid refused", "library_id with & (canary file that an injection would create never appears), with a trailing dot and with a trailing space refused before any process is started", "live own synthetic shotd.exe: quiescence false, bounded wait false, cleanup refused", "existing but failing stop image (raw exit 2) and the real shot.exe (raw exit 4, no host reachable) both refused with the root kept", "credential outcome that does not confirm absence (exact target asserted) keeps root and marker", "removal refused after the marker disappears", "junction inside the owned tree refused instead of followed", "reparse point below the previous depth bound (root/data/a/b/link to an external synthetic sentinel) refused by the whole-tree walk; case files, marker, configuration and the external sentinel preserved (focused fix HIGH-1)", "tree inspection bounded by the explicit element limit: an over-limit tree is refused with reason 'limit' and nothing is deleted", "native credential readback control: a target that does not exist reports ERROR_NOT_FOUND 1168 and a really existing synthetic credential reports success 0 before it is deleted", "readback 'exists' (the credential is still there) refuses with stage credential-absence and keeps the owned root", "readback 1168 is the only accepted absence: the cleanup completes with stage=removed and credential_stage=verified", "readback error codes 2 and 5 refuse with stage credential-absence-error and keep the owned root for reconciliation"],
+      "live_end_to_end": {
+        "root": ".pi/preview/f81c3216-0797-4c92-bea9-5101e3beadfb",
+        "library_id": "5e114d38-86d4-4fe6-8c33-30674bd5b9b1",
+        "result": "prepare exit 0, status exit 0 (real owned host running), cleanup exit 0: stage=removed stop_exit=0 credential_stage=verified; no shotd.exe left",
+        "artifacts": [".pi/review-fixes-dffcefe5-0bd8-42fe-8db9-0216a8257a8e/preview-prepare.log", ".pi/review-fixes-dffcefe5-0bd8-42fe-8db9-0216a8257a8e/preview-status.log", ".pi/review-fixes-dffcefe5-0bd8-42fe-8db9-0216a8257a8e/preview-cleanup.log"]
+      }
+    },
+    "B_medium_build_log": {
+      "change": "Build-PreviewBinaries allocates a new UUID path before the build (.pi/preview-build-logs/<uuid>/build.log), refuses an existing path and never writes .pi/temporary/preview-build.log again; preview/smoke output roots stay per-run UUIDs",
+      "artifact": ".pi/preview-build-logs/77c8db5c-8ca1-47ad-be0c-784ec798b248/build.log",
+      "proof": "smoke exit 0 with the new log; .pi/temporary/preview-build.log untouched (size 89) and both commands re-runnable"
+    },
+    "C_medium_bootstrap_order": {
+      "change": "owner enrollment/reopen before BoundedLogger::start in crates/host/src/bootstrap.rs; listener and the rest unmoved; error semantics unchanged (a refused enrollment returns exit 6 and creates no file logger)",
+      "test": "s01_host_cli_05_owner_enrollment_precedes_the_logger",
+      "artifacts": [".pi/review-fixes-dffcefe5-0bd8-42fe-8db9-0216a8257a8e/sm-host.log"]
+    },
+    "D_low_report_claims": {
+      "change": "final-fmt.log named as the earlier RED artifact with the RUST-FMT verify step as the green source; smoke counter unified to 53 PASS steps (42 assertions + 11 executable steps) in both report files; no other mention of the old counter left",
+      "proof": "both cited smoke result.json files contain 53 steps (42 assertions + 11 executable steps)"
+    },
+    "checks": [
+      { "id": "boundaries-review-fix", "command": "python tests/contracts/check_boundaries.py", "native_exit": 0, "artifact": ".pi/review-fixes-dffcefe5-0bd8-42fe-8db9-0216a8257a8e/contracts-boundaries.log" },
+      { "id": "sm-cli-review-fix", "command": "cargo test --locked --offline -p sm-cli -- --test-threads=1", "cases": "5/5", "native_exit": 0, "artifact": ".pi/review-fixes-dffcefe5-0bd8-42fe-8db9-0216a8257a8e/sm-cli.log" },
+      { "id": "sm-session-review-fix", "command": "cargo test --locked --offline -p sm-session -- --test-threads=1", "cases": "5 native + 4 wire", "native_exit": 0, "artifact": ".pi/review-fixes-dffcefe5-0bd8-42fe-8db9-0216a8257a8e/sm-session.log" },
+      { "id": "fmt-review-fix", "command": "cargo fmt --all -- --check", "native_exit": 0, "artifact": ".pi/review-fixes-dffcefe5-0bd8-42fe-8db9-0216a8257a8e/fmt-check.log" },
+      { "id": "clippy-host-review-fix", "command": "cargo clippy --locked --offline -p sm-host --all-targets -- -D warnings", "native_exit": 0, "artifact": ".pi/review-fixes-dffcefe5-0bd8-42fe-8db9-0216a8257a8e/clippy-host.log" },
+      { "id": "preview-safety-mandatory", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/test-preview-safety.ps1 (also invoked by scripts/test-verify.ps1)", "outer_exit": 0, "cases": "40/40 PASS", "artifact": ".pi/preview-safety-888a3b64-5ec8-46aa-a280-afb6f10320c7/result.json" },
+      { "id": "executable-smoke-review-fix", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/smoke-host-cli.ps1", "outer_exit": 0, "steps": 53, "artifact": ".pi/smoke-host-cli-8f2420b39f6746bdae99aeba43f419f0/result.json" },
+      { "id": "verify-review-fix", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify.ps1", "outer_exit": 0, "steps": 26, "final_tree": true, "artifact": ".pi/verify-1e57aa4fb6044591b2804cb0bbfb4b3e/result.json" },
+      { "id": "verify-contracts-review-fix", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify-contracts.ps1", "outer_exit": 0, "steps": 15, "artifact": ".pi/contracts-a75d72dd5f904a1daaf5343a62aee1fb/result.json" },
+      { "id": "test-verify-review-fix", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/test-verify.ps1", "outer_exit": 0, "note": "new mandatory preview-safety step included", "artifact": ".pi/review-fixes-dffcefe5-0bd8-42fe-8db9-0216a8257a8e/test-verify.log" }
+    ],
+    "not_touched": "framing/session/storage/session-test logic, the nine immutable source plans, other agents' edits; no Git write"
+  },
+  "focused_fix": {
+    "source": ".pi/orchestration/checkpoints/t05d-host-cli/focused-fix-confirmation-fada888c.json",
+    "verdict": "fix: B/C/D and the rest of the cleanup guards confirmed; two HIGH items of fix A remained open",
+    "candidate": "kept; only scripts/preview-common.ps1, scripts/test-preview-safety.ps1 and the progress/README documents were touched; no Rust product code, no nine-plan edit, no Git write",
+    "high_1_whole_tree_reparse": {
+      "change": "Test-OwnedPreviewTreeSafe replaced by an explicit System.Collections.Stack walk of the whole tree with no depth bound: every directory is listed non-recursively (Get-ChildItem without -Recurse, which lists a reparse point instead of descending through it, also on Windows PowerShell 5.1), each entry's Attributes are tested for ReparsePoint before the entry is used as a path, and no link is ever followed. Any reparse point anywhere in the tree refuses as stage 'reparse'; an enumeration error refuses as 'tree-read'; more entries than the single explicit limit (Get-PreviewTreeElementLimit = 10000) refuses as 'size'. In every refusal nothing is deleted.",
+      "tests": ["DEEP-JUNCTION-CREATED", "DEEP-JUNCTION-REFUSED (stage=reparse)", "DEEP-JUNCTION-PRESERVED", "DEEP-JUNCTION-TARGET-PRESERVED", "TREE-INSPECTION-DEFAULT-ACCEPTS (counted=8 limit=10000)", "TREE-ELEMENT-LIMIT-REFUSED (reason=limit counted=3)", "TREE-ELEMENT-LIMIT-PRESERVED"],
+      "artifacts": [".pi/probe-7c1f2a54-2e9b-4a11-9c8d-1f0b2a6d4e77/deep-junction-delta-probe.ps1"],
+      "reproduction": "deep-junction-delta-probe.ps1 raw exit 0: the copied previous depth-3 algorithm returns old_depth_bounded_walk_safe=True for a junction at root/data/a/b/link, the new walk returns safe=False reason=reparse counted=8, and the external sentinel was intact after the case removal"
+    },
+    "high_2_native_credential_readback": {
+      "change": "The second cmdkey /delete heuristic is gone. The exact delete stays a direct cmdkey.exe invocation with an argument list (never a shell); absence is then proven only by a minimal Add-Type P/Invoke advapi32!CredReadW(target, CRED_TYPE_GENERIC=1, 0) with CredFree on success. Success (credential still exists) refuses as stage 'absence', GetLastError 1168 ERROR_NOT_FOUND is the only accepted absence ('verified'), any other code refuses as 'absence-error'; the credential blob and user name are never read or printed. A test-only script-scope seam (PreviewCredentialReadbackSeam) substitutes only the readback verdict for the safety suite; production never sets it, and an unset seam always uses the real readback.",
+      "tests": ["CREDENTIAL-NATIVE-READBACK-ABSENT (code=1168)", "CREDENTIAL-NATIVE-READBACK-EXISTS (code=0)", "CREDENTIAL-READBACK-EXISTS-REFUSED (stage=credential-absence, root kept)", "CREDENTIAL-READBACK-EXISTS-PRESERVED", "CREDENTIAL-READBACK-EXISTS-TARGET-ABSENT", "CREDENTIAL-READBACK-ABSENT-ACCEPTED (stage=removed credential_stage=verified)", "CREDENTIAL-READBACK-ACCEPTED-ROOT-GONE", "CREDENTIAL-SEAM-RESTORED", "CREDENTIAL-READBACK-ABSENT-TARGET-ABSENT", "CREDENTIAL-READBACK-ERROR-2-REFUSED/PRESERVED/TARGET-ABSENT", "CREDENTIAL-READBACK-ERROR-5-REFUSED/PRESERVED/TARGET-ABSENT"],
+      "artifacts": [".pi/probe-7c1f2a54-2e9b-4a11-9c8d-1f0b2a6d4e77/credread-probe.ps1"],
+      "native_probe": "credread-probe.ps1 raw exit 0: add_type_compiled=True absent_code=1168 add_exit=0 present_code=0 delete_exit=0 after_delete_code=1168"
+    },
+    "suite_self_cleanup": "The suite drops its own junction links with [System.IO.Directory]::Delete($link, $false) instead of Remove-Item -Force, because a non-interactive PowerShell host cannot answer the junction confirmation prompt; junction-delete-probe.ps1 (raw exit 0) shows that this call removes only the link, that Remove-Item -Recurse -Force on a directory containing a junction does not follow it, and that Remove-Item -Force without -Recurse fails on a junction in a non-interactive host.",
+    "checks": [
+      { "id": "preview-safety-focused", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/test-preview-safety.ps1", "outer_exit": 0, "cases": "62/62 PASS, 0 notes", "artifact": ".pi/test-preview-safety-7c63a8e2e6be4562b293ff2b81318899/result.json" },
+      { "id": "test-verify-focused", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/test-verify.ps1", "outer_exit": 0, "note": "mandatory preview-safety step 62/62 PASS included; rerun on the final bytes after the document-only edits", "artifact": ".pi/test-verify-65852be17d574b6b87058d10f73b1fc0/preview-safety/result.json", "log": ".pi/probe-7c1f2a54-2e9b-4a11-9c8d-1f0b2a6d4e77/test-verify-final.log" },
+      { "id": "executable-smoke-focused", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/smoke-host-cli.ps1", "outer_exit": 0, "steps": 53, "artifact": ".pi/smoke-host-cli-c9d61abc1439415d8841b68483c00ea4/result.json", "credential_proof": "the exact synthetic target ScreenMemory.Test.V1/library/93af45bc-15ce-4219-9935-5d73e3d7bcfe/owner was confirmed absent by a separate direct cmdkey /delete ('Element not found', raw exit 1)" },
+      { "id": "cargo-focused", "command": "cargo test --locked --offline -p sm-host / -p sm-cli / -p sm-session -- --test-threads=1", "native_exit": 0, "cases": "5/5, 5/5, 5 native + 4 wire", "artifacts": [".pi/probe-7c1f2a54-2e9b-4a11-9c8d-1f0b2a6d4e77/sm-host.log", ".pi/probe-7c1f2a54-2e9b-4a11-9c8d-1f0b2a6d4e77/sm-cli.log", ".pi/probe-7c1f2a54-2e9b-4a11-9c8d-1f0b2a6d4e77/sm-session.log"] },
+      { "id": "boundaries-focused", "command": "python tests/contracts/check_boundaries.py", "native_exit": 0, "artifact": ".pi/probe-7c1f2a54-2e9b-4a11-9c8d-1f0b2a6d4e77/boundaries.log" },
+      { "id": "verify-focused", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify.ps1", "outer_exit": 0, "steps": 26, "final_bytes": true, "artifact": ".pi/verify-8cfb98abc1f54858ab6ff20dbde9e79d/result.json" },
+      { "id": "verify-contracts-focused", "command": "powershell.exe -NoProfile -NonInteractive -File scripts/verify-contracts.ps1", "outer_exit": 0, "steps": 15, "artifact": ".pi/contracts-f5336abe27e54f4ea1a532c8f8e1096e/result.json" },
+      { "id": "live-preview-cleanup-focused", "command": "scripts/preview.ps1 -Action cleanup -PreviewRoot <owned> -SkipBuild (owned host running)", "outer_exit": 0, "result": "stage=removed stop_exit=0 credential_stage=verified; native readback absent/1168 afterwards; independent direct cmdkey /delete raw exit 1; no shotd.exe left", "root": ".pi/preview/165566fb-8137-4161-b179-06c4e07f556d", "library_id": "f8767952-8cbf-46cb-a6fd-fa49580925c8", "artifact": ".pi/probe-7c1f2a54-2e9b-4a11-9c8d-1f0b2a6d4e77/preview-cleanup-bounded.log" }
+    ],
+    "observation_not_fixed": "An ad-hoc probe that read a redirected pipe with an unbounded ReadToEnd did not return while the spawned owned host was alive; the sanctioned harnesses use the bounded Invoke-PreviewProcess/Invoke-PinnedCargo helpers instead (smoke 53/53, bounded live cleanup exit 0). Reported to the host/CLI owner; outside this delta.",
+    "not_touched": "fix B (per-run build log), fix C (bootstrap order) and fix D (report claims) are unchanged and were not re-verified beyond the suites above; Rust bootstrap/session/framing product code untouched; nine immutable plans untouched; no Git write"
+  },
+  "hashes": {
+    "crates/host/Cargo.toml": "d16c8c814efa8121de1b1ad9aede3bddc0231646906e0a24a4c4d2a1c09f4819",
+    "crates/host/src/lib.rs": "634df9b3e60704cf4b77dbb87521d24ce7091c1e27808e31696fe2acb623fd99",
+    "crates/host/src/args.rs": "c2c440309ec02d840f5da8277313db857cf427d0f17ce7b72ae9b7d80f01c8db",
+    "crates/host/src/services.rs": "1af4c8adee6087f6420a1849336056ad99c89f88927c335307b19244d8b5e487",
+    "crates/host/src/bootstrap.rs": "31f3a2501386a09ad588dc549186ccc1a358b37aebda6fb24de5969acaa4a0c8",
+    "crates/host/src/main.rs": "22c9f3dbb1c2e1679d39881ab6a552a2911e6014be00b4ccf01481b2c7b03c18",
+    "crates/host/tests/composition.rs": "d14573e49ffc88b42f171a16c1161accde0e30150e125dfaab49b133c4c336d0",
+    "crates/cli/Cargo.toml": "b34f5ace7dad183a8ccb5a6ba3bac9ee5cee4ef31ba792da83f5898e4a524e59",
+    "crates/cli/src/lib.rs": "b0f6f4bac6eff638baa4844d946b9e7a6efedd5b2f2448d350303ed045a8c363",
+    "crates/cli/src/args.rs": "ef1edc36258b5d5205f3c6a67e8599f9cb0c3f916ead3b8670c70fe1a0f50b3c",
+    "crates/cli/src/config.rs": "92cc3a4e3d8b43fe0e22bc6d349d08c4542b805cc6f3b9336dd46333993f177e",
+    "crates/cli/src/exec.rs": "8f48ecd3d586927da4476df99728dff12e0f6a064080f67fd1375be2b568c1b8",
+    "crates/cli/src/launcher.rs": "d1dc325b43c661720ad8e00d93e3f48eef130763cd5d54a3dc993b87b67bf618",
+    "crates/cli/src/output.rs": "cda82210111e285c57583cb6a48c7932c6a257b2c72d71c19caa191a9d24f772",
+    "crates/cli/src/main.rs": "65ac97577b1c74bf069da4d6a973e58b274d340a1a14da31a5c2c0fcb1213692",
+    "crates/cli/tests/cli_surface.rs": "80eb588288afda9a6bc54186dd0dec0188e8049bb184609d7489b85a10e052de",
+    "crates/session/src/lib.rs": "a72fc712675f72e9f126a3ac5d0f8603722539810aa7f056b773a7f3e4fac7af",
+    "crates/session/tests/native_session.rs": "a18cdd1fe7f6dfae23c89b011a67b713767d9dafe4f5e4bf6cddee2db4470cfe",
+    "Cargo.toml": "a60f3c4df9133cd015361b5a1eb654ca4d28c84c575105f9206603075feceb46",
+    "Cargo.lock": "40eb2560e3aa5ada3ebd404319f001f15d009fa1651fee65ed08630d68363b49",
+    "tests/contracts/check_boundaries.py": "18cc68f6bfdd9cce3931ca1476e72398b206b08f9f74296d1bbc339a0a1409d6",
+    "scripts/verify.ps1": "c4d30e533be4c6a820f6734c677574ad07c84e85db36e8c05d820bb6d29b0343",
+    "scripts/test-verify.ps1": "ad64a031d496d101c205b032da2c4ab3b0bf7488ce404847a41cf63635090fc4",
+    "scripts/preview.ps1": "54ec667deb462df1f8fc99f6401c9a67b4b4d58d7871d8d7244daa9b72df35ca",
+    "scripts/preview-common.ps1": "c3665bbbc0840d6902f2a9629d0cb27120dab108c0ea786e442285608ca2ecdd",
+    "scripts/smoke-host-cli.ps1": "2ee62fe408d10cfd50e20c0295c4ab88d05be3d13048bb46704a7082975e5c84",
+    "scripts/test-preview-safety.ps1": "38f477db514ca7f4bdcee25065d05390f9b4b9a87182ce9aa1612bb32a338f50",
+    "scripts/README.md": "dd48908ab30d99e6991920eff1a81913e2a3de94ada6a652b9609df2fe1bcd35",
+    "AGENTS.md": "f102edb912fa154d49deb5f685b8ca7e038dfe5d5eee16ecad9ec5aca67a5fa8",
+    "instructions/HOST.composition.instructions.md": "4154071bc8163bfaa9cb031f60ec4b8c4b78e7e7ed4481b8645d5fc912ff9d50",
+    "docs/adr/009-host-cli-composition.md": "aa8306091afbc26fd73d235c98661683027e223c447fd626b051bc66c0e98e60"
+  },
+  "not_accepted": [
+    "GUI integration over the same application-client",
+    "production first-run root provisioning (the preview root is script-prepared and Test-only)",
+    "other real logon/remote/restricted-token gates",
+    "full HOST/IPC stage case catalog: crash, UNC, alias, cross-session",
+    "runtime inventory, live probe and consent flows",
+    "codecs, FTS/vec, private bridge and packaging",
+    "whole-S01 acceptance"
+  ],
+  "residual_risks": [
+    "accepted session forced-abort path leaves that connection's pipe instance alive and an in-flight client request pending until disconnect; mitigated in the product stop flow by the bounded drain and reported to the session owner",
+    "typed log delivery is best-effort (try-lock): a single INFO event such as host_ready can be dropped under contention while readiness stays a functional state",
+    "no local per-request timeout in the CLI; the host enforces timeout_ms",
+    "autostart discovery is capped at 5s and terminates only the CLI's own unreached child",
+    "<root>/cache/host-stderr.log is CLI-created and truncated per launch, outside the host rotation policy",
+    "preview cleanup requires ownership evidence that roots created by the pre-fix script lack, so such roots are refused instead of deleted and must be reconciled manually",
+    "cleanup deliberately refuses when the owning shot.exe image is unavailable or the stop cannot be verified, so no unverified delete ever happens",
+    "an owned tree above the explicit 10000-element inspection limit is refused (fail closed) and must be reconciled manually; the limit is pointwise tested with a lowered limit, not by a real 10000-element tree",
+    "the native credential readback compiles a minimal Add-Type P/Invoke in the calling PowerShell session; if that compilation is unavailable the cleanup refuses as absence-unavailable and deletes nothing (escalate rather than fall back to an exit-code heuristic)",
+    "an ad-hoc raw-process probe draining a redirected pipe with an unbounded ReadToEnd did not return while a spawned owned host was alive; the sanctioned bounded Invoke-PreviewProcess harness is unaffected and the live cleanup exited 0, and the observation is reported to the host/CLI owner rather than fixed here"
+  ],
+  "secrets": "Only synthetic ScreenMemory.Test.V1 owner keys of freshly created owned preview libraries were enrolled; each was deleted with a second read-through delete proving absence; no enumeration, no other target, no secret bytes in any artifact. No model, capture, network or personal data was used.",
+  "git": "No staged files, no commit; the shared candidate tree keeps the S01-T06c changes."
+}
