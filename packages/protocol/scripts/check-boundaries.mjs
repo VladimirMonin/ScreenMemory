@@ -6,10 +6,13 @@ const rootManifest = JSON.parse(await readFile(resolve(root, 'package.json'), 'u
 const workspace = await readFile(resolve(root, 'pnpm-workspace.yaml'), 'utf8');
 const deps = Object.keys(manifest.dependencies);
 const devDeps = Object.keys(manifest.devDependencies);
+// Explicit allowlist of workspace members: a new package must update this file and the
+// verification catalog, never be added by a wildcard.
+const workspaceEntries = [...workspace.matchAll(/^\s*-\s*'([^']+)'\s*$/gmu)].map(match => match[1]).join(',');
 if (rootManifest.dependencies || rootManifest.devDependencies ||
     deps.sort().join(',') !== 'ajv,ajv-formats' ||
     devDeps.sort().join(',') !== 'json-schema-to-typescript,typescript' ||
-    !/^packages:\s*\n\s*- 'packages\/protocol'\s*$/u.test(workspace)) {
+    workspaceEntries !== 'packages/protocol,apps/gui') {
   throw new Error('protocol-only workspace dependency boundary changed');
 }
 for (const file of ['index.ts', ...(await readdir(resolve(root, 'packages/protocol/src/generated'))).map(name => `generated/${name}`)]) {

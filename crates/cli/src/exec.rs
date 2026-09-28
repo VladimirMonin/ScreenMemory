@@ -14,18 +14,25 @@ use sm_protocol::{
 use sm_session::{ApplicationClient, ClientError, CredentialSource, SessionError};
 use std::{io::Write, sync::Arc, time::Instant};
 
-/// Explicit dependencies of one CLI invocation; production wires the native vault and
+/// Explicit dependencies of one client invocation; production wires the native vault and
 /// the fixed process launcher, tests inject the same seams without touching live data.
+/// Shared by `shot` and the GUI shell, so both integrations autostart the same fixed
+/// trusted image through exactly one implementation.
+#[derive(Clone)]
 pub struct CliDeps {
     pub store: Arc<dyn SecretStore + Send + Sync>,
     pub launcher: Arc<dyn HostLauncher>,
 }
 
-struct Failure {
-    exit: u8,
-    code: ErrorCode,
-    message: &'static str,
-    retryable: bool,
+/// Typed outcome of one client operation: a stable command exit code, the protocol
+/// error code and a bounded safe message. Shared by `shot` and the private GUI shell so
+/// both integrations report the same codes for the same failure; never a free-form string.
+#[derive(Debug)]
+pub struct ClientFailure {
+    pub exit: u8,
+    pub code: ErrorCode,
+    pub message: &'static str,
+    pub retryable: bool,
 }
 
 /// Stable exit code per protocol error code; never a free-form string.
@@ -68,33 +75,33 @@ pub fn doctor_exit_code(report: &DoctorReport) -> u8 {
     exit
 }
 
-fn session_failure(error: SessionError) -> Failure {
+pub fn session_failure(error: SessionError) -> ClientFailure {
     match error {
-        SessionError::CredentialUnavailable => Failure {
+        SessionError::CredentialUnavailable => ClientFailure {
             exit: crate::EXIT_POLICY,
             code: ErrorCode::CredentialStoreUnavailable,
             message: "The owner credential of this library is not available.",
             retryable: false,
         },
-        SessionError::PermissionDenied => Failure {
+        SessionError::PermissionDenied => ClientFailure {
             exit: crate::EXIT_POLICY,
             code: ErrorCode::PermissionDenied,
             message: "The host refused the supplied credential.",
             retryable: false,
         },
-        SessionError::LibraryMismatch => Failure {
+        SessionError::LibraryMismatch => ClientFailure {
             exit: crate::EXIT_HOST,
             code: ErrorCode::LibraryMismatch,
             message: "The configured library identity does not match the host.",
             retryable: false,
         },
-        SessionError::ProtocolMismatch | SessionError::CapabilityMismatch => Failure {
+        SessionError::ProtocolMismatch | SessionError::CapabilityMismatch => ClientFailure {
             exit: crate::EXIT_HOST,
             code: ErrorCode::ProtocolMismatch,
             message: "The host does not speak the expected application protocol.",
             retryable: false,
         },
-        _ => Failure {
+        _ => ClientFailure {
             exit: crate::EXIT_HOST,
             code: ErrorCode::RuntimeUnavailable,
             message: "Host is not available.",
@@ -103,15 +110,15 @@ fn session_failure(error: SessionError) -> Failure {
     }
 }
 
-fn client_failure(error: ClientError) -> Failure {
+pub fn client_failure(error: ClientError) -> ClientFailure {
     match error {
         ClientError::Session(error) => session_failure(error),
         ClientError::Application(error) => application_failure(error),
     }
 }
 
-fn application_failure(error: AppError) -> Failure {
-    Failure {
+fn application_failure(error: AppError) -> ClientFailure {
+    ClientFailure {
         exit: exit_for_code(error.code),
         code: error.code,
         message: "The host rejected the request.",
@@ -166,12 +173,12 @@ pub async fn run(argv: &[String], deps: &CliDeps, out: &mut dyn Write, err: &mut
     };
     let target = match config::resolve_target(&config) {
         Ok(target) => target,
-        Err(error) => return target_failure(error, args.json, out, err),
+        Err(error) => return emit_failure(target_failure(error), args.json, out, err),
     };
     // Only the two stop-style commands are forbidden from starting a host.
     let no_start = matches!(args.command, Command::HostStop)
         || matches!(args.command, Command::Status { no_start: true });
-    let client = match discover_client(&config, &target, deps, no_start).await {
+    let client = match connect_session(&config, &target, deps, no_start).await {
         Ok(client) => client,
         Err(failure) => return emit_failure(failure, args.json, out, err),
     };
@@ -211,7 +218,7 @@ pub async fn run(argv: &[String], deps: &CliDeps, out: &mut dyn Write, err: &mut
             }
             Ok(_) => {
                 return emit_failure(
-                    Failure {
+                    ClientFailure {
                         exit: crate::EXIT_HOST,
                         code: ErrorCode::RuntimeUnavailable,
                         message: "The host did not accept the stop request.",
@@ -233,12 +240,12 @@ pub async fn run(argv: &[String], deps: &CliDeps, out: &mut dyn Write, err: &mut
 
 /// No-start commands perform exactly one attempt; autostart commands may start the fixed
 /// trusted host image once and then retry within the bounded discovery deadline.
-async fn discover_client(
+pub async fn connect_session(
     config: &PreviewConfig,
     target: &ResolvedTarget,
     deps: &CliDeps,
     no_start: bool,
-) -> Result<ApplicationClient, Failure> {
+) -> Result<ApplicationClient, ClientFailure> {
     let store = deps.store.clone();
     match open_client(config, target, &store).await {
         Ok(client) => return Ok(client),
@@ -253,7 +260,7 @@ async fn discover_client(
     let mut child = match deps.launcher.launch(&config.host_executable, &config.root) {
         Ok(child) => child,
         Err(_) => {
-            return Err(Failure {
+            return Err(ClientFailure {
                 exit: crate::EXIT_HOST,
                 code: ErrorCode::RuntimeUnavailable,
                 message: "The fixed host executable could not be started.",
@@ -279,14 +286,14 @@ async fn discover_client(
             // The guard terminates only this owned, never-reached child handle.
             drop(child);
             return Err(if exited {
-                Failure {
+                ClientFailure {
                     exit: crate::EXIT_HOST,
                     code: ErrorCode::RuntimeUnavailable,
                     message: "The host did not become available.",
                     retryable: false,
                 }
             } else {
-                Failure {
+                ClientFailure {
                     exit: crate::EXIT_WAIT,
                     code: ErrorCode::WaitTimeout,
                     message: "The host did not become ready in time.",
@@ -303,7 +310,7 @@ fn wants_json(argv: &[String]) -> bool {
 }
 
 fn usage_failure(json: bool, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
-    let failure = Failure {
+    let failure = ClientFailure {
         exit: crate::EXIT_USAGE,
         code: ErrorCode::InvalidRequest,
         message: "Invalid arguments. Expected --config <path> status|doctor|host stop [--json].",
@@ -312,8 +319,10 @@ fn usage_failure(json: bool, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     emit_failure(failure, json, out, err)
 }
 
-fn config_failure(error: ConfigError, json: bool, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
-    let message = match error {
+/// Closed safe message of one configuration refusal; shared so the GUI shell refuses an
+/// invalid explicit configuration with exactly the same wording as `shot`.
+pub fn config_message(error: ConfigError) -> &'static str {
+    match error {
         ConfigError::Missing => "The configuration file does not exist.",
         ConfigError::NotAbsolute => "Configuration paths must be absolute local paths.",
         ConfigError::NotRegularFile => "The configuration path is not a regular file.",
@@ -322,12 +331,15 @@ fn config_failure(error: ConfigError, json: bool, out: &mut dyn Write, err: &mut
         ConfigError::UnsupportedEnvironment => {
             "Only an explicit test namespace configuration is supported."
         }
-    };
+    }
+}
+
+fn config_failure(error: ConfigError, json: bool, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     emit_failure(
-        Failure {
+        ClientFailure {
             exit: crate::EXIT_USAGE,
             code: ErrorCode::InvalidRequest,
-            message,
+            message: config_message(error),
             retryable: false,
         },
         json,
@@ -336,31 +348,36 @@ fn config_failure(error: ConfigError, json: bool, out: &mut dyn Write, err: &mut
     )
 }
 
-fn target_failure(error: TargetError, json: bool, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
-    let failure = match error {
-        TargetError::Root => Failure {
+/// Typed refusal of one resolved client target; the same codes the GUI shell reports.
+pub fn target_failure(error: TargetError) -> ClientFailure {
+    match error {
+        TargetError::Root => ClientFailure {
             exit: crate::EXIT_HOST,
             code: ErrorCode::RuntimeUnavailable,
             message: "The configured library root is not available.",
             retryable: false,
         },
-        TargetError::Endpoint => Failure {
+        TargetError::Endpoint => ClientFailure {
             exit: crate::EXIT_HOST,
             code: ErrorCode::RuntimeUnavailable,
             message: "The configured library endpoint could not be derived.",
             retryable: false,
         },
-        TargetError::Image => Failure {
+        TargetError::Image => ClientFailure {
             exit: crate::EXIT_HOST,
             code: ErrorCode::RuntimeUnavailable,
             message: "The configured host executable is not a trusted local image.",
             retryable: false,
         },
-    };
-    emit_failure(failure, json, out, err)
+    }
 }
 
-fn emit_failure(failure: Failure, json: bool, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+fn emit_failure(
+    failure: ClientFailure,
+    json: bool,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
     if json {
         let error = output::safe_error(failure.code, failure.message);
         output::write_error_json(out, &error);

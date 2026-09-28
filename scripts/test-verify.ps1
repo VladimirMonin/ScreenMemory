@@ -46,6 +46,7 @@ if (Test-Path $untracked) { throw 'Negative fixture collision; refusing overwrit
 try {
     # Run both real positive suites in the regression and assert their exact public argv.
     $expected = @{
+        'GUI-FRONTEND-BUILD' = @('node',@('@PNPM_CLI','--filter','@screenmemory/gui','build'))
         'RUST-FMT' = @('cargo',@('fmt','--all','--','--check'))
         'RUST-CLIPPY' = @('cargo',@('clippy','--workspace','--all-targets','--locked','--','-D','warnings'))
         'RUST-TEST' = @('cargo',@('test','--workspace','--locked'))
@@ -55,6 +56,10 @@ try {
         'SESSION-NATIVE' = @('cargo',@('test','--locked','-p','sm-session'))
         'HOST-COMPOSITION' = @('cargo',@('test','--locked','-p','sm-host'))
         'CLI-SURFACE' = @('cargo',@('test','--locked','-p','sm-cli'))
+        'GUI-RUST-TEST' = @('cargo',@('test','--locked','-p','sm-gui'))
+        'GUI-FRONTEND-TYPECHECK' = @('node',@('@PNPM_CLI','--filter','@screenmemory/gui','typecheck'))
+        'GUI-FRONTEND-LINT' = @('node',@('@PNPM_CLI','--filter','@screenmemory/gui','lint'))
+        'GUI-FRONTEND-TEST' = @('node',@('@PNPM_CLI','--filter','@screenmemory/gui','test'))
         'PNPM-TYPECHECK' = @('node',@('@PNPM_CLI','typecheck'))
         'PNPM-LINT' = @('node',@('@PNPM_CLI','lint'))
         'PNPM-TEST' = @('node',@('@PNPM_CLI','test'))
@@ -84,7 +89,7 @@ try {
         }
         $ids = @($positive.steps | ForEach-Object { $_.check_id })
         foreach ($id in $expected.Keys) {
-            if ($id -in @('PREREQ-pnpm') -or ($suite -eq 'verify' -and $id -in @('RUST-FMT','RUST-CLIPPY','RUST-TEST','HOST-LEASE','FRAMING','PIPE-NATIVE','SESSION-NATIVE','HOST-COMPOSITION','CLI-SURFACE','PNPM-TYPECHECK','PNPM-LINT','PNPM-TEST','CONTRACTS')) -or
+            if ($id -in @('PREREQ-pnpm') -or ($suite -eq 'verify' -and $id -in @('GUI-FRONTEND-BUILD','RUST-FMT','RUST-CLIPPY','RUST-TEST','HOST-LEASE','FRAMING','PIPE-NATIVE','SESSION-NATIVE','HOST-COMPOSITION','CLI-SURFACE','GUI-RUST-TEST','GUI-FRONTEND-TYPECHECK','GUI-FRONTEND-LINT','GUI-FRONTEND-TEST','PNPM-TYPECHECK','PNPM-LINT','PNPM-TEST','CONTRACTS')) -or
                 ($suite -eq 'verify-contracts' -and $id -in @('SCHEMA-GENERATE','SCHEMA-CHECK','TS-GENERATE','PNPM-CONTRACTS','BOUNDARIES','SCHEMA-FIXTURES'))) {
                 if ($id -notin $ids) { throw "Missing fixed check evidence: $id" }
             }

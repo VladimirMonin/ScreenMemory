@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/domain", "crates/protocol", "crates/application", "crates/observability", "crates/isolation", "crates/storage", "crates/credentials", "crates/framing", "crates/pipe", "crates/session", "crates/host", "crates/cli"]
+members = ["crates/domain", "crates/protocol", "crates/application", "crates/observability", "crates/isolation", "crates/storage", "crates/credentials", "crates/framing", "crates/pipe", "crates/session", "crates/host", "crates/cli", "crates/gui"]
 resolver = "2"
 
 [workspace.package]
@@ -19,3 +19,7 @@ sha2 = "=0.10.9"
 subtle = "=2.6.1"
 zeroize = "=1.8.2"
 windows-sys = { version = "=0.61.2", features = ["Win32_Security_Credentials", "Win32_Foundation"] }
+# The diagnostic window shell (S01-T06d) is the only Tauri consumer; the versions are
+# pinned to the exact crates available in the project-local cargo cache.
+tauri = "=2.10.3"
+tauri-build = "=2.5.6"

@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Diagnostic window: core window/webview access plus the shell's own typed commands.","local":true,"windows":["diagnostics"],"permissions":["core:default"]}}

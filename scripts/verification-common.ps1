@@ -135,10 +135,15 @@ function Add-VerificationGuardStep($State, [string]$Id, [string]$Reason) {
         versions = $State.versions; native_exit = $null; outcome = $(if ($ok) { 'PASS' } else { 'FAIL' }); reason = $Reason; artifact = $null })
     if (-not $ok) { $State.failed = $true }
 }
-function Complete-Verification($State, [string[]]$NotImplemented) {
+function Complete-Verification($State, [string[]]$NotImplemented, [object[]]$NotRunCatalog = @()) {
+    # The catalog separates the stage-wide NOT_RUN from future-owner NOT_IMPLEMENTED entries; an
+    # implemented-but-not-offline-exercised surface is reported as an explicit NOT_RUN of its own.
+    $catalog = @(@{ check_id = 'FOUNDATION-OFFLINE-FULL'; outcome = 'NOT_RUN'; reason = 'implementation incomplete; subset is not stage acceptance' }) +
+        @($NotImplemented | ForEach-Object { @{ check_id = $_; outcome = 'NOT_IMPLEMENTED'; reason = 'future owner; not part of implemented contract subset' } }) +
+        @($NotRunCatalog)
     $report = [ordered]@{ schema_version = 1; suite = $State.suite; stage = 'S01'; stage_result = 'IN_PROGRESS';
         scope = 'implemented-contract-subset'; outcome = $(if ($State.failed) { 'FAIL' } else { 'PASS' });
-        steps = @($State.steps.ToArray()); catalog = @(@{ check_id = 'FOUNDATION-OFFLINE-FULL'; outcome = 'NOT_RUN'; reason = 'implementation incomplete; subset is not stage acceptance' }) + @($NotImplemented | ForEach-Object { @{ check_id = $_; outcome = 'NOT_IMPLEMENTED'; reason = 'future owner; not part of implemented contract subset' } });
+        steps = @($State.steps.ToArray()); catalog = $catalog;
         raw_logs = 'private .pi output only; do not upload automatically' }
     Write-VerificationJson (Join-Path $State.output 'result.json') $report
     if ($State.failed) { [Console]::Out.WriteLine('Verification FAIL; sanitized result.json in requested .pi output'); return 1 }
@@ -167,7 +172,23 @@ function Get-VerificationEnvironment([string]$Root, [string]$LogRoot) {
             $protocolPackage.scripts.$name -match '--if-present|continue-on-error') { throw 'Missing or optional mandatory pnpm script' }
     }
     $workspace = [System.IO.File]::ReadAllText((Join-Path $Root 'pnpm-workspace.yaml'))
-    if ($workspace -notmatch "(?m)^\s+-\s+'packages/protocol'\s*$" -or ([regex]::Matches($workspace, '(?m)^\s+-\s+')).Count -ne 1) { throw 'WORKSPACE_SUITE_UPDATE_REQUIRED' }
+    # Every workspace package is an explicit allowlist entry, and the catalog below covers
+    # exactly the same set: a new package demands an explicit suite update, never a wildcard.
+    $workspaceEntries = @([regex]::Matches($workspace, "(?m)^\s+-\s+'([^']+)'\s*$") | ForEach-Object { $_.Groups[1].Value })
+    if (($workspaceEntries -join ',') -cne 'packages/protocol,apps/gui' -or
+        ([regex]::Matches($workspace, '(?m)^\s+-\s+')).Count -ne 2) { throw 'WORKSPACE_SUITE_UPDATE_REQUIRED' }
+    # The diagnostic window package (S01-T06d) must exist with mandatory, non-optional scripts
+    # and installed local tools; the frontend is built before the crate that embeds its assets.
+    $guiPackagePath = Join-Path $Root 'apps\gui\package.json'
+    if (-not (Test-Path -LiteralPath $guiPackagePath -PathType Leaf)) { throw 'WORKSPACE_SUITE_UPDATE_REQUIRED' }
+    $guiPackage = ConvertFrom-Json ([System.IO.File]::ReadAllText($guiPackagePath))
+    if ($guiPackage.name -ne '@screenmemory/gui' -or $guiPackage.engines.node -ne '24.13.0') { throw 'Package pin mismatch' }
+    foreach ($name in @('typecheck', 'lint', 'test', 'build')) {
+        if (-not $guiPackage.scripts.$name -or $guiPackage.scripts.$name -match '--if-present|continue-on-error') { throw 'Missing or optional mandatory gui script' }
+    }
+    foreach ($tool in @('tsc.CMD', 'vite.CMD', 'vitest.CMD')) {
+        if (-not (Test-Path (Join-Path $Root ('apps\gui\node_modules\.bin\' + $tool)))) { throw 'Missing installed gui package prerequisite; bootstrap explicitly' }
+    }
     if ($rootPackage.packageManager -ne 'pnpm@10.32.1' -or $rootPackage.engines.node -ne '24.13.0') { throw 'Package pin mismatch' }
     $cmd = Join-Path $env:SystemRoot 'System32\cmd.exe'
     # vcvars writes only into this child; parse its environment, never mutate caller/registry.

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ScreenMemoryDiagnostics",
+  "version": "0.1.0",
+  "identifier": "test.screenmemory.diagnostics",
+  "build": {
+    "frontendDist": "../../apps/gui/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "diagnostics",
+        "create": false,
+        "title": "ScreenMemory — диагностика основы",
+        "width": 960,
+        "height": 720,
+        "minWidth": 720,
+        "minHeight": 560,
+        "center": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; script-src 'self'; style-src 'self'; img-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["icons/icon.ico"]
+  }
+}

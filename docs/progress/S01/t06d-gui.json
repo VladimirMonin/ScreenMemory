@@ -1,0 +1,227 @@
+{
+  "stage": "S01",
+  "slice": "S01-T06d",
+  "state": "IN_PROGRESS",
+  "base": "e5cecff1fba77269a26eeeb438a2cd8126f12c02",
+  "scope": "minimal working Tauri v2 diagnostic window, its typed command surface, explicit trusted window configuration, headless --self-check and the window developer preview only",
+  "environment": {
+    "rust": "1.98.1 (pinned .pi/toolchains)",
+    "node": "24.13.0 (pinned .pi/toolchains)",
+    "pnpm": "10.32.1",
+    "cargo_home": ".pi/donor-build/.cargo-home (project-local registry cache)",
+    "network": "none; every cargo command ran with --offline, the frontend build used the already installed local node_modules",
+    "tauri": "2.10.3 / tauri-build 2.5.6 (pinned, offline-resolvable)",
+    "fixture_scope": ".pi/preview/<uuid> and .pi/temporary/sm-gui-* owned synthetic roots only"
+  },
+  "tests": {
+    "cargo_sm_gui_unit": [
+      "config::tests::t06d_gui_01_arguments_require_one_explicit_absolute_config",
+      "config::tests::t06d_gui_02_arguments_refuse_every_implicit_or_foreign_form"
+    ],
+    "cargo_sm_gui_integration": [
+      "t06d_gui_01_arguments_and_config_refusals_are_stable",
+      "t06d_gui_02_no_start_is_bounded_and_never_launches_a_host",
+      "t06d_gui_03_real_host_states_and_instance_reuse_on_reopen",
+      "t06d_gui_04_cli_and_gui_status_doctor_parity",
+      "t06d_gui_05_protocol_and_identity_mismatch_are_reported_without_guessing",
+      "t06d_gui_06_open_report_reaches_only_the_validated_directory",
+      "t06d_gui_07_state_mapping_is_total_and_shows_no_invented_counts",
+      "t06d_gui_08_self_check_prints_exactly_one_json_with_cli_exits",
+      "t06d_gui_09_autostart_uses_the_configured_fixed_image_once"
+    ],
+    "vitest_frontend": [
+      "covers every documented state of S01 §10.1 without invented counts",
+      "shows unknown values before any status instead of zero images",
+      "renders real host IDs, versions, AI policy and bridge state without substituting values",
+      "reports the enabled AI policy with an unusable bridge as runtime unavailable",
+      "maps every wire bridge state and never falls back to a raw value",
+      "separates a failed mandatory check from an unfinished one",
+      "shows the owner list of unfinished capabilities and never invents one",
+      "keeps the envelope version of this slice and its build identity",
+      "never exposes an image count, a path or a model field"
+    ],
+    "frontend_boundary_checkers": [
+      "apps/gui/scripts/check-boundaries.mjs (React/Tauri-only imports, argument-free invoke, command parity with shell.rs)",
+      "apps/gui/scripts/check-parity.mjs (build/protocol/envelope versions, state and bridge sets, capability list)"
+    ]
+  },
+  "checks": [
+    {
+      "check_id": "CARGO-SM-GUI-TEST",
+      "command": "cargo test --locked -p sm-gui --offline",
+      "native_exit": 0,
+      "detail": "2 unit + 9 integration tests passed"
+    },
+    {
+      "check_id": "CARGO-SM-GUI-CLIPPY",
+      "command": "cargo clippy -p sm-gui --all-targets --locked --offline -- -D warnings",
+      "native_exit": 0
+    },
+    {
+      "check_id": "CARGO-FMT",
+      "command": "cargo fmt --all -- --check",
+      "native_exit": 0
+    },
+    {
+      "check_id": "GUI-FRONTEND-BUILD",
+      "command": "pnpm --filter @screenmemory/gui build",
+      "native_exit": 0,
+      "artifact": "apps/gui/dist (git-ignored, embedded into the crate)"
+    },
+    {
+      "check_id": "GUI-FRONTEND-TYPECHECK",
+      "command": "pnpm --filter @screenmemory/gui typecheck",
+      "native_exit": 0
+    },
+    {
+      "check_id": "GUI-FRONTEND-LINT",
+      "command": "pnpm --filter @screenmemory/gui lint",
+      "native_exit": 0
+    },
+    {
+      "check_id": "GUI-FRONTEND-TEST",
+      "command": "pnpm --filter @screenmemory/gui test",
+      "native_exit": 0,
+      "detail": "9 vitest cases"
+    },
+    {
+      "check_id": "BOUNDARIES",
+      "command": "python tests/contracts/check_boundaries.py",
+      "native_exit": 0,
+      "detail": "thirteen crates, exact allowlists, window client boundary"
+    },
+    {
+      "check_id": "PROTOCOL-TS-BOUNDARIES",
+      "command": "pnpm lint (packages/protocol)",
+      "native_exit": 0,
+      "detail": "workspace allowlist is exactly packages/protocol,apps/gui"
+    },
+    {
+      "check_id": "VERIFY-OFFLINE",
+      "command": "powershell -NoProfile -NonInteractive -File scripts/verify.ps1 -OutputRoot .pi/t06d-verify-final",
+      "native_exit": 0,
+      "detail": "31 steps PASS; GUI-FRONTEND-BUILD 2652 ms, GUI-RUST-TEST 7390 ms, GUI-FRONTEND-TYPECHECK 1362 ms, GUI-FRONTEND-LINT 1513 ms, GUI-FRONTEND-TEST 1501 ms; catalog entry GUI-WINDOW-RUNTIME = NOT_RUN",
+      "result": ".pi/t06d-verify-final/result.json"
+    },
+    {
+      "check_id": "TEST-VERIFY",
+      "command": "powershell -NoProfile -NonInteractive -File scripts/test-verify.ps1",
+      "native_exit": 0,
+      "detail": "real positive verify + contracts suites PASS (both include the new GUI steps), preview-safety and every synthetic fixture/mutation case retained",
+      "result": ".pi/test-verify-a2c14242a2364befad7501d9744012a8/positive-verify/result.json"
+    },
+    {
+      "check_id": "PREVIEW-GUI-SELF-CHECK",
+      "command": "powershell -NoProfile -NonInteractive -File scripts/preview-gui.ps1",
+      "native_exit": 0,
+      "detail": "frontend+cargo build, owned root .pi/preview/ece4b13e-1d78-4dbf-b86b-30c64e7b6fb3, library_id 8719c632-b2cd-478e-b6bb-b6a954dd5e8b, self-check exit 0 with one JSON line, state ready, host_instance_id 9ce15845-4b61-4617-ae71-8292c681534c reused by the second check, shot host stop exit 0 and verified process end",
+      "log": ".pi/temporary/t06d-final-selfcheck.log"
+    },
+    {
+      "check_id": "PREVIEW-GUI-WINDOW",
+      "command": "powershell -NoProfile -NonInteractive -File scripts/preview-gui.ps1 -Action window -WindowHoldSeconds 5 -PreviewRoot <owned root>",
+      "native_exit": 0,
+      "detail": "window pid 31396 shown with the real title and responding, owned host pid 25300 observed before/during/after the close and reused afterwards, window closed with raw code 0, host_instance_id 437fa8c4-eddd-42a7-ae05-1a7751af5df4 reused by the reopened check, shot host stop exit 0 and verified process end",
+      "log": ".pi/temporary/t06d-final-window.log"
+    }
+  ],
+  "residual_findings": {
+    "stray_reserved_name_file": "An untracked junk file literally named `nul` appeared in the repository root during an earlier harness run (content was a POSIX shell error line, not repository content). Get-SourceSnapshot failed closed with SOURCE_INVENTORY_ERROR, which is the correct safe behavior but makes every verify run fail; the file was removed with a `\\\\?\\` Win32 delete, and both final verify and test-verify then ran clean and did not recreate it.",
+    "pre_existing_foreign_host": "A `shotd.exe` process from an earlier session still serves an unrelated owned root (.pi/preview/7482a571-...); it was left untouched because it is not this run's owned child. This run's own preview roots were stopped and cleaned up."
+  },
+  "changed_paths": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "crates/gui/Cargo.toml",
+    "crates/gui/build.rs",
+    "crates/gui/tauri.conf.json",
+    "crates/gui/capabilities/default.json",
+    "crates/gui/icons/icon.ico",
+    "crates/gui/src/config.rs",
+    "crates/gui/src/lib.rs",
+    "crates/gui/src/main.rs",
+    "crates/gui/src/model.rs",
+    "crates/gui/src/open.rs",
+    "crates/gui/src/selfcheck.rs",
+    "crates/gui/src/session.rs",
+    "crates/gui/src/shell.rs",
+    "crates/gui/tests/gui_surface.rs",
+    "crates/cli/src/exec.rs",
+    "crates/cli/src/lib.rs",
+    "apps/gui/package.json",
+    "apps/gui/tsconfig.json",
+    "apps/gui/vite.config.ts",
+    "apps/gui/index.html",
+    "apps/gui/src/main.tsx",
+    "apps/gui/src/App.tsx",
+    "apps/gui/src/model.ts",
+    "apps/gui/src/model.test.ts",
+    "apps/gui/src/style.css",
+    "apps/gui/scripts/check-boundaries.mjs",
+    "apps/gui/scripts/check-parity.mjs",
+    "scripts/preview-gui.ps1",
+    "scripts/preview-common.ps1",
+    "scripts/verify.ps1",
+    "scripts/verification-common.ps1",
+    "scripts/test-verify.ps1",
+    "scripts/README.md",
+    "tests/contracts/check_boundaries.py",
+    "packages/protocol/scripts/check-boundaries.mjs",
+    "pnpm-workspace.yaml",
+    "pnpm-lock.yaml",
+    "AGENTS.md",
+    "instructions/APP.gui.instructions.md",
+    "docs/adr/010-diagnostic-window.md",
+    "docs/progress/S01/t06d-gui.md",
+    "docs/progress/S01/t06d-gui.json",
+    "docs/progress/S01/result.md",
+    "docs/progress/S01/result.json"
+  ],
+  "candidate_file_hashes_sha256": {
+    "crates/gui/tests/gui_surface.rs": "265c3cf60d399448bafdb2670b61d36663c30e3892de1d567643cb955233e66e",
+    "crates/gui/src/config.rs": "a84e88e7b22756bb781b73f8dd48d02864907b6c9ca41f95d1b90363d96df209",
+    "crates/gui/src/model.rs": "6e25b2b63090c9e40cc489e41db56b4988647f65fd4aad5912941608d8381918",
+    "crates/gui/src/session.rs": "86f9018156f8717ea24e961b8580c9405cd43eef8ec2b76bce1e7b4c2c0aaa7a",
+    "crates/gui/src/shell.rs": "d34b8cb594965780596617b73f3c2e6f6db72e664a3f89c6be64b055a0ec77f2",
+    "crates/gui/src/selfcheck.rs": "9868e0df5a4c1b02772117e94a287d0994dcf92e9db05d123c1e3a18b69b2783",
+    "crates/gui/src/open.rs": "285b4c94002a79c4052b1b2aa93e423bd154acabab5c74528b9861d0a1382d51",
+    "crates/gui/src/main.rs": "955366e137bc1862fb1b9f8dbf986a10cd109373ec1f2f16342d48826a56edb6",
+    "crates/gui/src/lib.rs": "0693b7f12058285823dc5106681da63140caa184f955762b68da06d3a64fcd58",
+    "crates/gui/Cargo.toml": "ba99339f1abd973d4df58aed024b43775fdce12f1fac6b409b04b343bc838a93",
+    "crates/gui/tauri.conf.json": "f5e9d7908d9953e20f36484e62e8bc7801c8ac7625978ca1f600fc03a9475b46",
+    "crates/cli/src/exec.rs": "9cce74b3a457fe5e02ad209dffec87b05ad59d3fb5f8a49c5c7eb4138c10b74b",
+    "crates/cli/src/lib.rs": "5a8f1490319e93fb55b50445fa16d1d0e7331038c8fa3bf3819dc6324e755095",
+    "apps/gui/package.json": "809f6ea05c068fbba37c32adf66db237bf31e0265fcf5c26e5ca3941d2cbd92d",
+    "apps/gui/src/model.ts": "e4cf76545545f33f82490ed392fe9a89226e32fd59a303e1559ab0501e0e6caf",
+    "apps/gui/src/App.tsx": "b1d67f0686ce9eaf31b468ad92baad12d6e8960a893dc9eed4fe61d658fbad16",
+    "apps/gui/src/model.test.ts": "4a9dae6b76ff9ca87c32f983f1663369409f3e26a39e72a20f64d6d43cdde232",
+    "apps/gui/scripts/check-boundaries.mjs": "3bc1eb55396075c1daa9e496a6a2e7486cc2f78006279f7fd591503d603752eb",
+    "apps/gui/scripts/check-parity.mjs": "74779df8e46f62b6e19d4f25a584398d3cb5fee0acef6ef231222adb35791260",
+    "scripts/preview-gui.ps1": "438dc1ad47d8ae8156c18a1e7526d0bae16739c4ce394360f82a32f5594d28ee",
+    "scripts/preview-common.ps1": "07806231ddf9c215f0b7bbb8d2f3c8d21455ef28e5e1f9b3f29dbb7c6b2e6dec",
+    "scripts/verify.ps1": "e8a0d0c657c2dfeb7464996238d4a23fa2b809afd5d27efc3aab5c5204857d14",
+    "scripts/verification-common.ps1": "23354132c24be39879fab89fbcd96b814e47cbc457cab61f332717acd6cad9df",
+    "scripts/test-verify.ps1": "c64a2906264371ca980bb91fc48a0e7e925911c894b05083d414fda41dfd00a5",
+    "tests/contracts/check_boundaries.py": "c9c54a8fac8b2f874b73b23734576dd52c6434388f5c3ebce19895f9a33aa7cc",
+    "packages/protocol/scripts/check-boundaries.mjs": "6c84b25795d41316361f59c8c1cbe131b5e678fb674a9758b56fce7fe8159cf3",
+    "Cargo.toml": "9104b28d97fbe4b236b6aaf2fa7cb50b664f114ca0ba32ea1e265201b4792750",
+    "Cargo.lock": "a9f74f56772be7f3a4cae3d600cd2b824b788a4c5a5799fd80a5b756d00fe714",
+    "pnpm-workspace.yaml": "87e67c6de17d39cea8115509a57148f459b559d583854385c5ba9a14946ee98c",
+    "pnpm-lock.yaml": "342df7eb48ffcea033dd19399e8194c2c69e4fafba677ee7eb1563ca8d9c6faa"
+  },
+  "evidence_order": "scripts/verify.ps1 (14:52-14:56) and scripts/test-verify.ps1 (14:56-15:01) ran on the exact bytes above, after every source, instruction, ADR and result-document change; the only later write is this evidence document itself.",
+  "not_accepted": [
+    "independent review of this slice",
+    "production first-run/installation, packaging, autostart and real user roots",
+    "capture, gallery, search, drop zone, model settings, AI bridge, MCP",
+    "any UI automation or human visual verification of the window",
+    "live AI/codec/index behaviour (all NOT_RUN/UNSUPPORTED)",
+    "whole S01 acceptance and every other gate"
+  ],
+  "secrets": "no credential value, token, personal path or live user data is recorded here; only synthetic owned roots, canonical UUIDs and raw exit codes",
+  "preview_cleanup": {
+    "command": "powershell -NoProfile -NonInteractive -File scripts/preview.ps1 -Action cleanup -PreviewRoot <owned root>",
+    "native_exit": 0,
+    "detail": "every preview root created by this slice was stopped and cleaned: ece4b13e (library 8719c632), 9427f985 (c31acb3c), 9ffc8959 (a794e544), 62cd672b (97474390), 4623785f (3ee2301a); each run reported stage=removed and credential_stage=verified, i.e. the synthetic Test credential was proven absent by the native CredReadW readback before the owned root was removed; only the .pi (git-ignored) tree changed after the verification runs, so the verified source bytes are unchanged"
+  }
+}

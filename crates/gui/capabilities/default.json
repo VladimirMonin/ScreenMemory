@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Diagnostic window: core window/webview access plus the shell's own typed commands.",
+  "windows": ["diagnostics"],
+  "permissions": ["core:default"]
+}

@@ -1,0 +1,34 @@
+[package]
+name = "sm-gui"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "screenmemory-gui"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+sm-application = { path = "../application" }
+sm-cli = { path = "../cli" }
+sm-credentials = { path = "../credentials" }
+sm-domain = { path = "../domain" }
+sm-isolation = { path = "../isolation" }
+sm-protocol = { path = "../protocol" }
+sm-session = { path = "../session" }
+serde.workspace = true
+serde_json.workspace = true
+tauri.workspace = true
+tokio = { version = "=1.53.1", features = ["rt", "time", "io-util", "sync"] }
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_System_SystemInformation"] }
+
+[dev-dependencies]
+sm-framing = { path = "../framing" }
+sm-host = { path = "../host" }
+sm-pipe = { path = "../pipe" }
+tokio-util.workspace = true
+uuid = { workspace = true, features = ["v4"] }

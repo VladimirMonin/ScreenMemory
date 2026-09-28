@@ -10,8 +10,13 @@ mod launcher;
 mod output;
 
 pub use args::{parse_args, ArgError, CliArgs, Command};
-pub use config::{load_config, ConfigError, PreviewConfig};
-pub use exec::{doctor_exit_code, run, CliDeps};
+pub use config::{
+    load_config, resolve_target, ConfigError, PreviewConfig, ResolvedTarget, TargetError,
+};
+pub use exec::{
+    client_failure, config_message, connect_session, doctor_exit_code, exit_for_code, run,
+    session_failure, target_failure, CliDeps, ClientFailure,
+};
 pub use launcher::{HostLauncher, LaunchError, LaunchedHost, ProcessLauncher};
 
 /// Exit codes inherited from master/S01 §10.3.

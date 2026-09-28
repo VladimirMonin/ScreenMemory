@@ -10,7 +10,41 @@ powershell.exe -NoProfile -NonInteractive -File scripts/test-verify.ps1
 
 These never start the product host: they run the offline contract subset only. Since the
 working host/CLI slice, `verify.ps1` also runs `HOST-COMPOSITION` (`cargo test -p
-sm-host`) and `CLI-SURFACE` (`cargo test -p sm-cli`) against in-process compositions.
+sm-host`) and `CLI-SURFACE` (`cargo test -p sm-cli`) against in-process compositions, and
+since the diagnostic window slice it builds the React assets first
+(`GUI-FRONTEND-BUILD`), then runs `GUI-RUST-TEST` (`cargo test -p sm-gui`),
+`GUI-FRONTEND-TYPECHECK`, `GUI-FRONTEND-LINT` and `GUI-FRONTEND-TEST`. The frontend build is
+required because the window crate embeds `apps/gui/dist`; it uses only the pinned local Node
+and the already installed `apps/gui/node_modules`. The offline suite deliberately never opens a
+window — the window runtime is reported as the explicit `GUI-WINDOW-RUNTIME` **NOT_RUN**
+catalog entry in `result.json`.
+
+Bootstrap the frontend workspace once, explicitly, before verifying:
+
+```powershell
+pnpm install --frozen-lockfile
+```
+
+## Diagnostic window preview (separate from verification)
+
+```powershell
+powershell -NoProfile -File scripts/preview-gui.ps1
+```
+
+One owned `.pi\preview\<uuid>` root, one explicit trusted configuration and the real
+`shotd.exe`/`shot.exe`/`screenmemory-gui.exe` binaries; the frontend assets and the binaries are
+built with the pinned project-local toolchain into their own unique private build-log roots.
+The default `-Action selfcheck` drives the **same** window client headlessly and prints exactly
+one JSON value (CLI exit codes), then verifies that a repeated check attaches to the same host
+instance and stops the owned host with a checked exit. `-Action window` really opens the Tauri
+window on that owned root, closes it like the user's close button and proves that the same
+owned `shotd.exe` process outlived the window and was reused by the reopened check.
+Other options: `-PreviewRoot <owned preview dir>` to reuse a prepared root, `-SkipBuild` to use
+existing binaries, `-WindowHoldSeconds <n>` to hold the window before the script closes it.
+This is an explicit development preview, **not** a production first-run installer and **not**
+part of `verify.ps1`: no personal root, model, capture or network access is involved. Clean up
+its owned root (and its synthetic Test credential) with
+`scripts/preview.ps1 -Action cleanup -PreviewRoot <owned preview dir>`.
 
 ## Owned-preview cleanup safety suite (mandatory)
 

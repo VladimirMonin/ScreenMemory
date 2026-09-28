@@ -5,7 +5,7 @@ import tomllib
 
 root = Path(__file__).resolve().parents[2]
 workspace = tomllib.loads((root / 'Cargo.toml').read_text(encoding='utf-8'))['workspace']
-assert set(workspace['members']) == {'crates/domain', 'crates/protocol', 'crates/application', 'crates/observability', 'crates/isolation', 'crates/storage', 'crates/credentials', 'crates/framing', 'crates/pipe', 'crates/session', 'crates/host', 'crates/cli'}
+assert set(workspace['members']) == {'crates/domain', 'crates/protocol', 'crates/application', 'crates/observability', 'crates/isolation', 'crates/storage', 'crates/credentials', 'crates/framing', 'crates/pipe', 'crates/session', 'crates/host', 'crates/cli', 'crates/gui'}
 allowed = {
     'domain': {'serde', 'uuid', 'schemars'},
     'protocol': {'sm-domain', 'serde', 'serde_json', 'schemars', 'time'},
@@ -19,6 +19,7 @@ allowed = {
     'session': {'sm-application', 'sm-domain', 'sm-protocol', 'sm-framing', 'sm-pipe', 'serde', 'serde_json', 'uuid', 'tokio-util', 'tokio'},
     'host': {'sm-application', 'sm-credentials', 'sm-domain', 'sm-framing', 'sm-isolation', 'sm-observability', 'sm-pipe', 'sm-protocol', 'sm-session', 'sm-storage', 'async-trait', 'serde', 'serde_json', 'tokio', 'tokio-util', 'uuid'},
     'cli': {'sm-application', 'sm-credentials', 'sm-domain', 'sm-framing', 'sm-isolation', 'sm-pipe', 'sm-protocol', 'sm-session', 'serde', 'serde_json', 'tokio', 'windows-sys'},
+    'gui': {'sm-application', 'sm-cli', 'sm-credentials', 'sm-domain', 'sm-isolation', 'sm-protocol', 'sm-session', 'serde', 'serde_json', 'tauri', 'tokio', 'windows-sys'},
 }
 for crate, expected in allowed.items():
     manifest = tomllib.loads((root / 'crates' / crate / 'Cargo.toml').read_text(encoding='utf-8'))
@@ -34,11 +35,18 @@ for crate, expected in allowed.items():
         assert 'dev-dependencies' not in manifest, 'host composition tests use the production ports only'
     if crate == 'cli':
         assert set(manifest['dev-dependencies']) == {'sm-host', 'tokio-util', 'uuid'}
+    if crate == 'gui':
+        assert set(manifest['dev-dependencies']) == {'sm-framing', 'sm-host', 'sm-pipe', 'tokio-util', 'uuid'}
+        assert manifest['bin'][0]['name'] == 'screenmemory-gui'
     for source in (root / 'crates' / crate / 'src').rglob('*.rs'):
         text = source.read_text(encoding='utf-8')
-        for forbidden in (('tauri::', 'winapi::', 'lmstudio::', 'std::net::') if crate == 'storage' else ('tauri::', 'rusqlite::', 'winapi::', 'lmstudio::', 'std::net::')):
+        forbidden_modules = ('tauri::', 'winapi::', 'lmstudio::', 'std::net::') if crate == 'storage' else ('tauri::', 'rusqlite::', 'winapi::', 'lmstudio::', 'std::net::')
+        if crate == 'gui':
+            # The window speaks only the shared client; it never opens storage or the wire.
+            forbidden_modules = ('rusqlite::', 'sm_storage::', 'winapi::', 'lmstudio::', 'std::net::')
+        for forbidden in forbidden_modules:
             assert forbidden not in text, (crate, source.name, forbidden)
-        if crate not in ('observability', 'isolation', 'storage', 'credentials', 'pipe', 'session', 'host', 'cli'):
+        if crate not in ('observability', 'isolation', 'storage', 'credentials', 'pipe', 'session', 'host', 'cli', 'gui'):
             for forbidden in ('windows::', 'std::fs::'):
                 assert forbidden not in text, (crate, source.name, forbidden)
 # S01-T05d boundaries: the CLI never opens the library database, never links the storage
@@ -78,4 +86,39 @@ storage_manifest = tomllib.loads((root / 'crates/storage/Cargo.toml').read_text(
 assert storage_manifest['dependencies']['rusqlite']['features'] == ['bundled']
 assert storage_manifest['dependencies']['rusqlite']['version'].startswith('=')
 assert 'rusqlite::' not in (root / 'crates/application/src/storage.rs').read_text(encoding='utf-8')
-print('S01-DEP-01 PASS: twelve crates, exact dependency allowlists, bundled SQLite in storage and native credentials in adapter; host/CLI composition boundaries retained')
+# S01-T06d boundaries: the diagnostic window is one client of the shared session owner.
+gui_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/gui/src').rglob('*.rs')}
+assert set(gui_sources) == {'config.rs', 'lib.rs', 'main.rs', 'model.rs', 'open.rs', 'selfcheck.rs', 'session.rs', 'shell.rs'}
+assert 'ApplicationClient' in gui_sources['session.rs'] and 'sm_session' in gui_sources['session.rs']
+assert 'connect_session' in gui_sources['session.rs'], 'the window must reuse the shared client integration path'
+assert 'ApplicationClient' not in gui_sources['shell.rs'], 'handlers must not bypass the session owner'
+for name, text in gui_sources.items():
+    assert 'sm_sqlite' not in text and 'Connection::open' not in text
+    if name != 'open.rs':
+        assert 'Command::new' not in text, ('gui', name)
+        assert 'std::fs::' not in text, ('gui', name, 'std::fs::')
+        assert 'std::os::windows' not in text, ('gui', name, 'std::os::windows')
+        assert 'windows_sys::' not in text or name == 'main.rs', ('gui', name, 'windows_sys::')
+# Only the report opener may start a shell, and it must come from the Windows directory.
+assert 'GetWindowsDirectoryW' in gui_sources['open.rs']
+assert 'std::os::windows::fs::MetadataExt' in gui_sources['open.rs']
+assert 'std::env::var' not in gui_sources['open.rs'] and 'explorer' in gui_sources['open.rs']
+# No implicit root/configuration: the only accepted argument is an absolute local --config.
+assert '--config' in gui_sources['config.rs'] and 'std::env::var' not in gui_sources['config.rs']
+assert 'load_config' in gui_sources['config.rs'] and '"--self-check"' in gui_sources['config.rs']
+gui_config = json.loads((root / 'crates/gui/tauri.conf.json').read_text(encoding='utf-8'))
+assert gui_config['identifier'].startswith('test.'), 'the shell stays in the explicit test identity'
+assert gui_config['bundle']['active'] is False, 'no production bundle/installer in this slice'
+assert gui_config['build']['frontendDist'] == '../../apps/gui/dist'
+assert gui_config['app']['windows'][0]['create'] is False, 'the window is built by the shell, not at startup'
+capabilities = json.loads((root / 'crates/gui/capabilities/default.json').read_text(encoding='utf-8'))
+assert capabilities['permissions'] == ['core:default'], 'no plugin permission is added to the diagnostic window'
+gui_package = json.loads((root / 'apps/gui/package.json').read_text(encoding='utf-8'))
+assert set(gui_package['dependencies']) == {'@tauri-apps/api', 'react', 'react-dom'}
+assert set(gui_package['devDependencies']) == {'@types/react', '@types/react-dom', 'typescript', 'vite', 'vitest'}
+frontend = {source.name: source.read_text(encoding='utf-8') for source in (root / 'apps/gui/src').glob('*') if source.suffix in ('.ts', '.tsx')}
+assert set(frontend) == {'App.tsx', 'main.tsx', 'model.ts', 'model.test.ts'}
+for name, text in frontend.items():
+    for forbidden in ('@lmstudio/sdk', 'better-sqlite3', 'sqlite', 'child_process', 'XMLHttpRequest'):
+        assert forbidden not in text, ('gui-frontend', name, forbidden)
+print('S01-DEP-01 PASS: thirteen crates, exact dependency allowlists, bundled SQLite in storage and native credentials in adapter; host/CLI composition and the diagnostic-window client boundary retained')

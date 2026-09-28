@@ -112,6 +112,32 @@ function Build-PreviewBinaries([string]$Root, [hashtable]$Toolchain) {
     return @{ shotd = $binaries.shotd; shot = $binaries.shot; build_log = $log }
 }
 
+function Get-PreviewGuiBinary([hashtable]$Toolchain) {
+    return (Join-Path $Toolchain.target 'debug\screenmemory-gui.exe')
+}
+
+function Build-PreviewGuiBinaries([string]$Root, [hashtable]$Toolchain) {
+    # The diagnostic window compiles the checked-in frontend assets, so its own explicit
+    # frontend build must have run first; this function never invokes a package manager.
+    if (-not (Test-Path -LiteralPath (Join-Path $Root 'apps\gui\dist\index.html') -PathType Leaf)) {
+        throw 'The gui frontend assets are missing; build them explicitly before the window binary'
+    }
+    $log = Join-Path (New-PreviewBuildLogRoot $Root) 'build.log'
+    $build = Invoke-PinnedCargo $Root $Toolchain @('build', '--locked', '--offline', '--bin', 'shotd', '--bin', 'shot', '--bin', 'screenmemory-gui')
+    [System.IO.File]::WriteAllText($log, ("exit=$($build.exit) reason=$($build.reason)`n" + [string]$build.stdout + [string]$build.stderr), (New-Object System.Text.UTF8Encoding($false)))
+    $binaries = Get-PreviewBinaries $Toolchain
+    $gui = Get-PreviewGuiBinary $Toolchain
+    if ($build.exit -ne 0) { throw ('Gui preview build failed; raw exit ' + $build.exit + '; private build log ' + $log) }
+    foreach ($path in @($binaries.shotd, $binaries.shot, $gui)) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw ('Gui preview binary is missing: ' + $path + '; private build log ' + $log) }
+    }
+    return @{ shotd = $binaries.shotd; shot = $binaries.shot; gui = $gui; build_log = $log }
+}
+
+function Get-PreviewGuiCommandLine([string]$Gui, [string]$Config) {
+    return ('"' + $Gui + '" --config "' + $Config + '"')
+}
+
 function Get-PreviewOwnedRootBase([string]$Root) {
     return (Join-Path (Join-Path $Root '.pi') 'preview')
 }

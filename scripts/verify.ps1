@@ -58,6 +58,7 @@ try {
         $state.versions = @{ rust = '1.98.1'; node = '24.13.0'; pnpm = '10.32.1'; python_jsonschema = '4.26.0' }
         Assert-VerificationVersions $state $tools
         $checks = @(
+            @('GUI-FRONTEND-BUILD',$tools.node,@($tools.pnpm,'--filter','@screenmemory/gui','build')),
             @('RUST-FMT',$tools.rust,@('fmt','--all','--','--check')),
             @('RUST-CLIPPY',$tools.rust,@('clippy','--workspace','--all-targets','--locked','--','-D','warnings')),
             @('RUST-TEST',$tools.rust,@('test','--workspace','--locked')),
@@ -70,6 +71,10 @@ try {
             @('SESSION-NATIVE',$tools.rust,@('test','--locked','-p','sm-session')),
             @('HOST-COMPOSITION',$tools.rust,@('test','--locked','-p','sm-host')),
             @('CLI-SURFACE',$tools.rust,@('test','--locked','-p','sm-cli')),
+            @('GUI-RUST-TEST',$tools.rust,@('test','--locked','-p','sm-gui')),
+            @('GUI-FRONTEND-TYPECHECK',$tools.node,@($tools.pnpm,'--filter','@screenmemory/gui','typecheck')),
+            @('GUI-FRONTEND-LINT',$tools.node,@($tools.pnpm,'--filter','@screenmemory/gui','lint')),
+            @('GUI-FRONTEND-TEST',$tools.node,@($tools.pnpm,'--filter','@screenmemory/gui','test')),
             @('PNPM-TYPECHECK',$tools.node,@($tools.pnpm,'typecheck')),
             @('PNPM-LINT',$tools.node,@($tools.pnpm,'lint')),
             @('PNPM-TEST',$tools.node,@($tools.pnpm,'test'))
@@ -100,5 +105,5 @@ try {
         } catch { Add-VerificationGuardStep $state 'SOURCE-INTEGRITY-POST' 'SOURCE_INVENTORY_ERROR' }
     }
 }
-if ($state) { exit (Complete-Verification $state @('FRONTEND','BRIDGE','HOST','IPC','S01-SEC-01','S01-SEC-02','S01-SEC-03','HOST-LOG-INTEGRATION','T02-ISOLATION-MENU','LIVE-RUNTIME','WINDOWS-PACKAGE')) }
+if ($state) { exit (Complete-Verification $state @('FRONTEND','BRIDGE','HOST','IPC','S01-SEC-01','S01-SEC-02','S01-SEC-03','HOST-LOG-INTEGRATION','T02-ISOLATION-MENU','LIVE-RUNTIME','WINDOWS-PACKAGE') @(@{ check_id = 'GUI-WINDOW-RUNTIME'; outcome = 'NOT_RUN'; reason = 'the diagnostic window is deliberately not started by the offline suite; exercise it with scripts/preview-gui.ps1 -Action window' })) }
 exit 1
