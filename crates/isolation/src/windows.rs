@@ -3,7 +3,7 @@
 use crate::{RootError, StagingError};
 use std::ffi::{c_void, OsStr};
 use std::os::windows::ffi::OsStrExt;
-use std::os::windows::io::FromRawHandle;
+use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::path::{Path, PathBuf};
 
 // Metadata-only FILE_READ_ATTRIBUTES does NOT pin directory rename on NTFS.
@@ -19,6 +19,8 @@ const OPEN_EXISTING: u32 = 3;
 const OPEN_ALWAYS: u32 = 4;
 const CREATE_NEW: u32 = 1;
 const READ_WRITE: u32 = 0x8000_0000 | 0x4000_0000;
+const READ_ONLY: u32 = 0x8000_0000 | FILE_READ_ATTRIBUTES;
+const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
 const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 const LOCK_EXCLUSIVE_NOWAIT: u32 = 0x1 | 0x2; // LOCKFILE_FAIL_IMMEDIATELY | LOCKFILE_EXCLUSIVE_LOCK
 const DIRECTORY_OPEN: u32 = 0x0200_0000 | 0x0020_0000; // BACKUP_SEMANTICS | OPEN_REPARSE_POINT
@@ -74,6 +76,7 @@ extern "system" {
         fs_len: u32,
     ) -> i32;
     fn GetDriveTypeW(root: *const u16) -> u32;
+    fn MoveFileExW(source: *const u16, destination: *const u16, flags: u32) -> i32;
 }
 // minwinbase.h OVERLAPPED: two ULONG_PTR, two DWORD offsets, HANDLE event (x64).
 #[repr(C)]
@@ -301,9 +304,12 @@ pub(super) fn staging_directory(data: &Directory) -> Result<Directory, StagingEr
     match std::fs::create_dir(&path) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-        Err(_) => return Err(StagingError::UnsafeEntry),
+        Err(error) => return Err(staging_io(error)),
     }
-    let root = Directory::open(&path).map_err(|_| StagingError::UnsafeEntry)?;
+    let root = Directory::open(&path).map_err(|error| match error {
+        RootError::Inaccessible => StagingError::AccessDenied,
+        _ => StagingError::UnsafeEntry,
+    })?;
     if root.volume != data.volume
         || root.ancestors.len() != data.ancestors.len()
         || root.ancestors[..data.ancestors.len() - 1] != data.ancestors[..data.ancestors.len() - 1]
@@ -319,14 +325,30 @@ pub(super) fn create_operation_directory(
     canonical_id: &str,
 ) -> Result<Directory, StagingError> {
     let path = root.path.join(canonical_id);
-    std::fs::create_dir(&path).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::AlreadyExists {
-            StagingError::AlreadyExists
-        } else {
-            StagingError::UnsafeEntry
-        }
-    })?;
-    let operation = Directory::open(&path).map_err(|_| StagingError::UnsafeEntry)?;
+    std::fs::create_dir(&path).map_err(staging_io)?;
+    open_operation_directory(root, canonical_id)
+}
+
+fn staging_io(error: std::io::Error) -> StagingError {
+    match error.raw_os_error() {
+        Some(2 | 3) => StagingError::Missing,
+        Some(80 | 183) => StagingError::AlreadyExists,
+        Some(112 | 39) => StagingError::Full,
+        Some(5) => StagingError::AccessDenied,
+        _ => StagingError::UnsafeEntry,
+    }
+}
+
+pub(super) fn open_operation_directory(
+    root: &Directory,
+    canonical_id: &str,
+) -> Result<Directory, StagingError> {
+    let operation =
+        Directory::open(&root.path.join(canonical_id)).map_err(|error| match error {
+            RootError::Missing => StagingError::Missing,
+            RootError::Inaccessible => StagingError::AccessDenied,
+            _ => StagingError::UnsafeEntry,
+        })?;
     pinned_child(root, &operation)?;
     Ok(operation)
 }
@@ -345,11 +367,7 @@ pub(super) fn create_temp(root: &Directory, leaf: &str) -> Result<std::fs::File,
         )
     };
     if raw == INVALID {
-        return if std::io::Error::last_os_error().raw_os_error() == Some(80) {
-            Err(StagingError::AlreadyExists)
-        } else {
-            Err(StagingError::UnsafeEntry)
-        };
+        return Err(staging_io(std::io::Error::last_os_error()));
     }
     let handle = OwnedHandle(raw);
     let mut info = std::mem::MaybeUninit::<FileInfo>::uninit();
@@ -364,6 +382,96 @@ pub(super) fn create_temp(root: &Directory, leaf: &str) -> Result<std::fs::File,
         return Err(StagingError::UnsafeEntry);
     }
     Ok(handle.into_file())
+}
+
+fn file_info(handle: Handle, root: &Directory) -> Result<FileInfo, StagingError> {
+    let mut info = std::mem::MaybeUninit::<FileInfo>::uninit();
+    if unsafe { GetFileInformationByHandle(handle, info.as_mut_ptr()) } == 0 {
+        return Err(staging_io(std::io::Error::last_os_error()));
+    }
+    let info = unsafe { info.assume_init() };
+    if info.dwFileAttributes & (REPARSE_POINT | DIRECTORY) != 0
+        || info.nNumberOfLinks != 1
+        || info.dwVolumeSerialNumber != root.volume
+    {
+        return Err(StagingError::UnsafeEntry);
+    }
+    Ok(info)
+}
+
+fn identity(info: &FileInfo) -> (u32, u64) {
+    (
+        info.dwVolumeSerialNumber,
+        (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
+    )
+}
+
+// OPEN_REPARSE_POINT + no DELETE sharing retains the file against ordinary
+// substitution while inspecting it. No caller-provided pathname enters this function.
+fn inspect_fixed(root: &Directory, leaf: &str) -> Result<(std::fs::File, u64), StagingError> {
+    let name = wide(root.path.join(leaf).as_os_str());
+    let raw = unsafe {
+        CreateFileW(
+            name.as_ptr(),
+            READ_ONLY,
+            SHARE_PINNED,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            OPEN_REPARSE_POINT,
+            std::ptr::null_mut(),
+        )
+    };
+    if raw == INVALID {
+        return Err(staging_io(std::io::Error::last_os_error()));
+    }
+    let handle = OwnedHandle(raw);
+    let info = file_info(handle.0, root)?;
+    let len = (u64::from(info.nFileSizeHigh) << 32) | u64::from(info.nFileSizeLow);
+    Ok((handle.into_file(), len))
+}
+
+pub(super) fn open_fixed(
+    root: &Directory,
+    leaf: &str,
+) -> Result<(std::fs::File, u64), StagingError> {
+    inspect_fixed(root, leaf)
+}
+
+pub(super) fn publish_temp(
+    root: &Directory,
+    source: &str,
+    target: &str,
+    file: std::fs::File,
+) -> Result<(), StagingError> {
+    let expected = identity(&file_info(file.as_raw_handle(), root)?);
+    let (source_handle, _) = inspect_fixed(root, source)?;
+    if identity(&file_info(source_handle.as_raw_handle(), root)?) != expected {
+        return Err(StagingError::UnsafeEntry);
+    }
+    // Refuse an existing target, especially a symlink/reparse point. MoveFileExW
+    // without REPLACE_EXISTING is the final no-overwrite authority, not this preflight.
+    match inspect_fixed(root, target) {
+        Ok(_) => return Err(StagingError::AlreadyExists),
+        Err(StagingError::Missing) => {}
+        Err(error) => return Err(error),
+    }
+    drop(source_handle);
+    drop(file);
+    let target_leaf = target;
+    let source = wide(root.path.join(source).as_os_str());
+    let target = wide(root.path.join(target).as_os_str());
+    // Both names are fixed children of the same pinned NTFS directory. Never use
+    // COPY_ALLOWED or REPLACE_EXISTING. MoveFileExW is pathname-based after close:
+    // a malicious same-user process retaining DELETE access can race this gap;
+    // this capability is not a sandbox against that process.
+    if unsafe { MoveFileExW(source.as_ptr(), target.as_ptr(), MOVEFILE_WRITE_THROUGH) } == 0 {
+        return Err(staging_io(std::io::Error::last_os_error()));
+    }
+    let (published, _) = inspect_fixed(root, target_leaf)?;
+    if identity(&file_info(published.as_raw_handle(), root)?) != expected {
+        return Err(StagingError::UnsafeEntry);
+    }
+    Ok(())
 }
 
 /// Pinned existing entries prevent replacement between preflight and SQLite open.

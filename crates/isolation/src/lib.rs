@@ -6,6 +6,7 @@ compile_error!("sm-isolation requires Windows x64 for the audited native adapter
 use sm_application::observability::{
     Component, EventId, Level, Operation, Outcome, SafeCode, SafeEvent, SafeEventSink,
 };
+use std::io::Read;
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Component as PathComponent, Path};
 mod windows;
@@ -148,6 +149,11 @@ pub enum StagingError {
     InvalidOperation,
     AlreadyExists,
     UnsafeEntry,
+    Missing,
+    NotSynced,
+    TooLarge,
+    Full,
+    AccessDenied,
 }
 
 /// No path or arbitrary filename is exported from this write authority.
@@ -165,6 +171,22 @@ impl<'lease> StagingRoot<'lease> {
             return Err(StagingError::InvalidOperation);
         }
         let native = windows::create_operation_directory(&self.native, &uuid.to_string())?;
+        Ok(StagingOperation {
+            _root: self,
+            native,
+        })
+    }
+
+    /// Reopen a known operation without adopting, creating or cleaning its contents.
+    pub fn open_operation<'root>(
+        &'root self,
+        id: sm_domain::OperationId,
+    ) -> Result<StagingOperation<'root, 'lease>, StagingError> {
+        let uuid = id.as_uuid();
+        if uuid.is_nil() {
+            return Err(StagingError::InvalidOperation);
+        }
+        let native = windows::open_operation_directory(&self.native, &uuid.to_string())?;
         Ok(StagingOperation {
             _root: self,
             native,
@@ -190,6 +212,20 @@ impl StagingTempKind {
             Self::ManifestJson => "manifest.json.tmp",
         }
     }
+    const fn stable_filename(self) -> &'static str {
+        match self {
+            Self::PixelsRgba => "pixels.rgba",
+            Self::ContextJson => "context.json",
+            Self::ManifestJson => "manifest.json",
+        }
+    }
+    const fn max_bytes(self) -> u64 {
+        match self {
+            Self::PixelsRgba => 512 * 1024 * 1024,
+            Self::ContextJson => 256 * 1024,
+            Self::ManifestJson => 64 * 1024,
+        }
+    }
 }
 impl<'root, 'lease> StagingOperation<'root, 'lease> {
     /// Exclusive CREATE_NEW on a pinned directory; no overwrite or reparse following.
@@ -199,23 +235,92 @@ impl<'root, 'lease> StagingOperation<'root, 'lease> {
     ) -> Result<StagingTemp<'operation, 'root, 'lease>, StagingError> {
         let file = windows::create_temp(&self.native, kind.filename())?;
         Ok(StagingTemp {
-            _operation: self,
+            operation: self,
             file,
+            kind,
+            synced: false,
         })
+    }
+
+    /// Returns only a fixed, bounded, no-follow stable file; never an arbitrary path.
+    pub fn open_fixed(&self, kind: StagingTempKind) -> Result<StagingRead, StagingError> {
+        let (file, len) = windows::open_fixed(&self.native, kind.stable_filename())?;
+        if len > kind.max_bytes() {
+            return Err(StagingError::TooLarge);
+        }
+        Ok(StagingRead { file, len })
+    }
+}
+
+/// Immutable length from the verified handle. No path or unbounded File is exposed.
+pub struct StagingRead {
+    file: std::fs::File,
+    len: u64,
+}
+impl StagingRead {
+    pub fn len(&self) -> u64 {
+        self.len
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+    pub fn read_all(mut self) -> std::io::Result<Vec<u8>> {
+        let mut bytes = Vec::with_capacity(self.len as usize);
+        std::io::Read::take(&mut self.file, self.len).read_to_end(&mut bytes)?;
+        if bytes.len() as u64 != self.len {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "staging changed",
+            ));
+        }
+        Ok(bytes)
     }
 }
 
 pub struct StagingTemp<'operation, 'root, 'lease> {
-    _operation: &'operation StagingOperation<'root, 'lease>,
+    operation: &'operation StagingOperation<'root, 'lease>,
     file: std::fs::File,
+    kind: StagingTempKind,
+    synced: bool,
 }
 impl StagingTemp<'_, '_, '_> {
-    pub fn sync_all(&self) -> std::io::Result<()> {
-        self.file.sync_all()
+    pub fn sync_all(&mut self) -> std::io::Result<()> {
+        self.synced = false;
+        self.file.sync_all()?;
+        self.synced = true;
+        Ok(())
+    }
+
+    /// Explicit publication (including manifest); this does not assert durable_input.
+    pub fn publish(self) -> Result<(), StagingError> {
+        if !self.synced {
+            return Err(StagingError::NotSynced);
+        }
+        let StagingTemp {
+            operation,
+            file,
+            kind,
+            ..
+        } = self;
+        if file
+            .metadata()
+            .map_err(|_| StagingError::UnsafeEntry)?
+            .len()
+            > kind.max_bytes()
+        {
+            return Err(StagingError::TooLarge);
+        }
+        windows::publish_temp(
+            &operation.native,
+            kind.filename(),
+            kind.stable_filename(),
+            file,
+        )
     }
 }
 impl std::io::Write for StagingTemp<'_, '_, '_> {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.synced = false;
         std::io::Write::write(&mut self.file, bytes)
     }
     fn flush(&mut self) -> std::io::Result<()> {

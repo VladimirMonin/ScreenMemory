@@ -51,6 +51,14 @@ fn t09b_native_create_new_flush_and_no_unknown_purge() {
         root.create_operation(OperationId::new(Uuid::nil())),
         Err(StagingError::InvalidOperation)
     ));
+    assert!(matches!(
+        root.open_operation(OperationId::new(Uuid::nil())),
+        Err(StagingError::InvalidOperation)
+    ));
+    assert!(matches!(
+        root.open_operation(OperationId::new(Uuid::new_v4())),
+        Err(StagingError::Missing)
+    ));
     let op = root.create_operation(id).unwrap();
     let staging = f.0.join("staging");
     let directory = staging.join(id.as_uuid().to_string());
@@ -79,14 +87,135 @@ fn t09b_native_create_new_flush_and_no_unknown_purge() {
         root.create_operation(id),
         Err(StagingError::AlreadyExists)
     ));
+    let reopened = root.open_operation(id).unwrap();
+    assert!(matches!(
+        reopened.open_fixed(StagingTempKind::PixelsRgba),
+        Err(StagingError::Missing)
+    ));
     assert_eq!(
         fs::read(directory.join("unknown.bin")).unwrap(),
         b"SYNTHETIC-UNKNOWN"
     );
+    drop(reopened);
     drop(op);
     drop(root);
     drop(lease);
     assert!(f.lease().staging_root().is_ok());
+}
+
+#[test]
+fn t09b_publish_fixed_reopen_no_overwrite_or_purge() {
+    let f = Fixture::new();
+    let lease = f.lease();
+    let root = lease.staging_root().unwrap();
+    let id = OperationId::new(Uuid::new_v4());
+    let op = root.create_operation(id).unwrap();
+    let dir = f.0.join("staging").join(id.as_uuid().to_string());
+    fs::write(dir.join("unknown.bin"), b"UNKNOWN-KEEP").unwrap();
+    for (kind, payload) in [
+        (StagingTempKind::PixelsRgba, &b"RGBA-SYNTHETIC"[..]),
+        (StagingTempKind::ContextJson, &b"{\"synthetic\":true}"[..]),
+        (StagingTempKind::ManifestJson, &b"{\"version\":1}"[..]),
+    ] {
+        let mut temp = op.create_temp(kind).unwrap();
+        temp.write_all(payload).unwrap();
+        temp.sync_all().unwrap();
+        temp.publish().unwrap();
+        let read = op.open_fixed(kind).unwrap();
+        assert_eq!(read.len(), payload.len() as u64);
+        assert_eq!(read.read_all().unwrap(), payload);
+        let mut repeat = op.create_temp(kind).unwrap();
+        repeat.write_all(b"REPEATED").unwrap();
+        repeat.sync_all().unwrap();
+        assert_eq!(repeat.publish(), Err(StagingError::AlreadyExists));
+        assert_eq!(op.open_fixed(kind).unwrap().read_all().unwrap(), payload);
+    }
+    let reopened = root.open_operation(id).unwrap();
+    for (kind, payload) in [
+        (StagingTempKind::PixelsRgba, &b"RGBA-SYNTHETIC"[..]),
+        (StagingTempKind::ContextJson, &b"{\"synthetic\":true}"[..]),
+        (StagingTempKind::ManifestJson, &b"{\"version\":1}"[..]),
+    ] {
+        assert_eq!(
+            reopened.open_fixed(kind).unwrap().read_all().unwrap(),
+            payload
+        );
+    }
+    assert_eq!(fs::read(dir.join("unknown.bin")).unwrap(), b"UNKNOWN-KEEP");
+}
+
+#[test]
+fn t09b_publication_refuses_unsynced_existing_and_reparse_targets() {
+    let f = Fixture::new();
+    let lease = f.lease();
+    let root = lease.staging_root().unwrap();
+    let id = OperationId::new(Uuid::new_v4());
+    let op = root.create_operation(id).unwrap();
+    let dir = f.0.join("staging").join(id.as_uuid().to_string());
+    let mut unsynced = op.create_temp(StagingTempKind::ManifestJson).unwrap();
+    unsynced.write_all(b"UNSYNCED").unwrap();
+    assert_eq!(unsynced.publish(), Err(StagingError::NotSynced));
+    assert!(matches!(
+        op.open_fixed(StagingTempKind::ManifestJson),
+        Err(StagingError::Missing)
+    ));
+    let stable = dir.join("pixels.rgba");
+    fs::write(&stable, b"SENTINEL").unwrap();
+    let mut temp = op.create_temp(StagingTempKind::PixelsRgba).unwrap();
+    temp.write_all(b"NEW").unwrap();
+    temp.sync_all().unwrap();
+    assert_eq!(temp.publish(), Err(StagingError::AlreadyExists));
+    assert_eq!(fs::read(&stable).unwrap(), b"SENTINEL");
+    assert_eq!(
+        op.open_fixed(StagingTempKind::PixelsRgba)
+            .unwrap()
+            .read_all()
+            .unwrap(),
+        b"SENTINEL"
+    );
+    fs::remove_file(&stable).unwrap();
+    let outside = f.0.join("outside.txt");
+    fs::write(&outside, b"OUTSIDE-SENTINEL").unwrap();
+    match std::os::windows::fs::symlink_file(&outside, &stable) {
+        Ok(()) => {
+            assert!(matches!(
+                op.open_fixed(StagingTempKind::PixelsRgba),
+                Err(StagingError::UnsafeEntry)
+            ));
+            // Existing temp remains after refused publication, never silently discarded.
+            // Create a fresh operation to prove publication refuses the symlink target.
+            let other_id = OperationId::new(Uuid::new_v4());
+            let other = root.create_operation(other_id).unwrap();
+            let other_dir = f.0.join("staging").join(other_id.as_uuid().to_string());
+            let mut next = other.create_temp(StagingTempKind::PixelsRgba).unwrap();
+            next.write_all(b"NEW").unwrap();
+            next.sync_all().unwrap();
+            std::os::windows::fs::symlink_file(&outside, other_dir.join("pixels.rgba")).unwrap();
+            assert_eq!(next.publish(), Err(StagingError::UnsafeEntry));
+            assert_eq!(fs::read(&outside).unwrap(), b"OUTSIDE-SENTINEL");
+        }
+        Err(error) => panic!(
+            "T09B-STABLE-SYMLINK NOT_RUN: raw OS code {:?}",
+            error.raw_os_error()
+        ),
+    }
+}
+
+#[test]
+fn t09b_fixed_read_rejects_oversized_context_without_cleanup() {
+    let f = Fixture::new();
+    let lease = f.lease();
+    let root = lease.staging_root().unwrap();
+    let id = OperationId::new(Uuid::new_v4());
+    let op = root.create_operation(id).unwrap();
+    let dir = f.0.join("staging").join(id.as_uuid().to_string());
+    let bytes = vec![b'X'; 256 * 1024 + 1];
+    fs::write(dir.join("context.json"), &bytes).unwrap();
+    assert!(matches!(
+        op.open_fixed(StagingTempKind::ContextJson),
+        Err(StagingError::TooLarge)
+    ));
+    assert_eq!(fs::read(dir.join("context.json")).unwrap(), bytes);
 }
 
 #[test]
@@ -111,6 +240,10 @@ fn t09b_native_reparse_root_and_operation_do_not_write_outside() {
     assert!(matches!(
         root.create_operation(id),
         Err(StagingError::AlreadyExists)
+    ));
+    assert!(matches!(
+        root.open_operation(id),
+        Err(StagingError::UnsafeEntry)
     ));
     remove_junction(&path);
     assert_eq!(fs::read(sentinel).unwrap(), b"SYNTHETIC-UNCHANGED");
