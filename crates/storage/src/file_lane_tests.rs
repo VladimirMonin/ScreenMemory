@@ -253,6 +253,113 @@ fn s02_t09c_04_root_error_and_duplicate_preserve_existing_bytes() {
 }
 
 #[test]
+fn s02_t09d_01_probe_absent_incomplete_complete_and_unsafe_root() {
+    let f = Fixture::new();
+    let worker = StorageWorker::start(f.try_lease().unwrap()).unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let input = f.input();
+        let operation = input.operation_id;
+        assert_eq!(
+            worker.probe_stage_presence(operation).await,
+            Ok(StagePresence::Absent)
+        );
+        let dir = f.0.join("staging").join(operation.as_uuid().to_string());
+        fs::create_dir(&dir).unwrap();
+        fs::write(dir.join("pixels.rgba.tmp"), b"incomplete").unwrap();
+        assert_eq!(
+            worker.probe_stage_presence(operation).await,
+            Ok(StagePresence::Present)
+        );
+        fs::remove_dir_all(&dir).unwrap();
+        worker.stage_capture_owned(input).await.unwrap();
+        assert!(dir.join("manifest.json").exists());
+        // Presence does not parse or trust manifest contents, even if corrupted.
+        fs::write(dir.join("manifest.json"), b"synthetic-corrupt-manifest").unwrap();
+        assert_eq!(
+            worker.probe_stage_presence(operation).await,
+            Ok(StagePresence::Present)
+        );
+        let unsafe_operation = OperationId::new(Uuid::new_v4());
+        let sentinel =
+            f.0.join("staging")
+                .join(unsafe_operation.as_uuid().to_string());
+        fs::write(&sentinel, b"not-a-directory").unwrap();
+        assert!(matches!(
+            worker.probe_stage_presence(unsafe_operation).await,
+            Err(StageOwnedError::Stage(
+                staging_files::StageFailure::Storage(_)
+            ))
+        ));
+        assert_eq!(fs::read(sentinel).unwrap(), b"not-a-directory");
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+    });
+    let blocked = Fixture::new();
+    let sentinel = blocked.0.join("staging");
+    fs::write(&sentinel, b"not-a-root").unwrap();
+    let worker = StorageWorker::start(blocked.try_lease().unwrap()).unwrap();
+    rt.block_on(async {
+        assert!(matches!(
+            worker
+                .probe_stage_presence(OperationId::new(Uuid::new_v4()))
+                .await,
+            Err(StageOwnedError::Stage(
+                staging_files::StageFailure::Storage(_)
+            ))
+        ));
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+    });
+    assert_eq!(fs::read(sentinel).unwrap(), b"not-a-root");
+}
+
+#[test]
+fn s02_t09d_02_probe_is_fifo_with_stage_and_stop() {
+    let f = Fixture::new();
+    let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+    let (release_tx, release_rx) = mpsc::sync_channel(1);
+    let worker =
+        StorageWorker::start_with_file_pause(f.try_lease().unwrap(), entered_tx, release_rx)
+            .unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let input = f.input();
+        let operation = input.operation_id;
+        let stage = tokio::spawn({
+            let worker = worker.clone();
+            async move { worker.stage_capture_owned(input).await }
+        });
+        tokio::task::yield_now().await;
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let probe = tokio::spawn({
+            let worker = worker.clone();
+            async move { worker.probe_stage_presence(operation).await }
+        });
+        tokio::task::yield_now().await;
+        assert!(!probe.is_finished(), "probe cannot skip paused stage");
+        assert_eq!(
+            worker.shutdown(Duration::from_millis(30)).await,
+            Err(StorageError::Unavailable)
+        );
+        assert!(matches!(
+            worker.probe_stage_presence(operation).await,
+            Err(StageOwnedError::Unavailable)
+        ));
+        assert!(matches!(f.try_lease(), Err(LeaseError::Busy)));
+        release_tx.send(()).unwrap();
+        stage.await.unwrap().unwrap();
+        assert_eq!(probe.await.unwrap(), Ok(StagePresence::Present));
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        drop(f.try_lease().unwrap());
+    });
+}
+
+#[test]
 fn s02_t09c_03_pre_admission_rejects_wrong_length_without_staging_write() {
     let f = Fixture::new();
     let worker = StorageWorker::start(f.try_lease().unwrap()).unwrap();

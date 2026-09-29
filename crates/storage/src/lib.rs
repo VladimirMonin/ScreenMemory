@@ -53,6 +53,13 @@ pub struct OwnedStageInput {
     pub pixels: Vec<u8>,
 }
 
+/// Existence of the fixed operation directory, not validity of its manifest or contents.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StagePresence {
+    Absent,
+    Present,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StageOwnedError {
     Unavailable,
@@ -122,6 +129,10 @@ impl OwnedStageInput {
 type StageResponse = oneshot::Sender<Result<staging_files::Staged, StageOwnedError>>;
 enum FileRequest {
     Stage(StageResponse, Box<OwnedStageInput>),
+    Probe(
+        oneshot::Sender<Result<StagePresence, StageOwnedError>>,
+        OperationId,
+    ),
     Stop,
 }
 struct Admission {
@@ -287,6 +298,26 @@ impl StorageWorker {
             }
             self.file_sender
                 .try_send(FileRequest::Stage(tx, Box::new(input)))
+        };
+        match queued {
+            Ok(()) => rx.await.unwrap_or(Err(StageOwnedError::Unavailable)),
+            Err(_) => Err(StageOwnedError::Unavailable),
+        }
+    }
+    /// A path-free, file-lane-ordered preflight. Only a genuinely missing fixed
+    /// operation directory is Absent; unsafe entries and root IO fail closed.
+    pub async fn probe_stage_presence(
+        &self,
+        operation_id: OperationId,
+    ) -> Result<StagePresence, StageOwnedError> {
+        let (tx, rx) = oneshot::channel();
+        let queued = {
+            let gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+            if gate.closing {
+                return Err(StageOwnedError::Unavailable);
+            }
+            self.file_sender
+                .try_send(FileRequest::Probe(tx, operation_id))
         };
         match queued {
             Ok(()) => rx.await.unwrap_or(Err(StageOwnedError::Unavailable)),
@@ -459,6 +490,17 @@ fn file_loop(
     for request in receiver {
         match request {
             FileRequest::Stop => break,
+            FileRequest::Probe(tx, operation_id) => {
+                let result = lease
+                    .staging_root()
+                    .and_then(|root| match root.open_operation(operation_id) {
+                        Ok(_) => Ok(StagePresence::Present),
+                        Err(sm_isolation::StagingError::Missing) => Ok(StagePresence::Absent),
+                        Err(error) => Err(error),
+                    })
+                    .map_err(|e| StageOwnedError::Stage(staging_files::StageFailure::Storage(e)));
+                let _ = tx.send(result);
+            }
             FileRequest::Stage(tx, input) => {
                 let result = lease
                     .staging_root()

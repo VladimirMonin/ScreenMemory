@@ -34,7 +34,7 @@ use sm_protocol::{
     errors::{AppError, ErrorCode},
     values::SafeMessage,
 };
-use sm_storage::StorageWorker;
+use sm_storage::{StagePresence, StorageWorker};
 use std::{
     collections::HashSet,
     sync::{
@@ -406,6 +406,42 @@ impl CaptureIngest {
         // under the same id (S02 §8.7).
         if let Some(receipt) = self.replay(&request, ctx.principal_id()).await? {
             return Ok(WireCaptureOutcome::Saved { receipt });
+        }
+        // DB Unknown is not proof that this operation has never accepted a crop:
+        // an incomplete or published stage can outlive the connection without a row.
+        // The same file lane serializes this probe with admitted Stage and Stop.
+        match self
+            .storage
+            .probe_stage_presence(sm_domain::OperationId::new(request.operation_id()))
+            .await
+        {
+            Ok(StagePresence::Absent) => {}
+            Ok(StagePresence::Present) => {
+                emit(
+                    &self.logger,
+                    EventId::CaptureRefused,
+                    Outcome::Failed,
+                    Some(SafeCode::ProbeBlocked),
+                );
+                return Err(app_error(
+                    ErrorCode::InvalidRequest,
+                    "The operation id cannot start another capture.",
+                    false,
+                ));
+            }
+            Err(_) => {
+                emit(
+                    &self.logger,
+                    EventId::CaptureRefused,
+                    Outcome::Failed,
+                    Some(SafeCode::ProbeBlocked),
+                );
+                return Err(app_error(
+                    ErrorCode::RuntimeUnavailable,
+                    "Library staging is unavailable.",
+                    true,
+                ));
+            }
         }
         if !self.reserve() {
             emit(

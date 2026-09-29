@@ -565,6 +565,14 @@ fn s02_capture_host_05_mode_and_foreign_principal_conflict_without_metadata() {
             .await
             .unwrap();
         worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        // The DB ownership conflict must win even when a stage directory also exists.
+        fs::create_dir_all(
+            roots
+                .path()
+                .join("staging")
+                .join(foreign.operation_id.as_uuid().to_string()),
+        )
+        .unwrap();
         let adapter = SyntheticAdapter::new(4, 4, Answer::Accept);
         let host = bootstrap(options(
             &roots.path(),
@@ -610,6 +618,98 @@ fn s02_capture_host_05_mode_and_foreign_principal_conflict_without_metadata() {
         );
         assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
         assert_eq!(roots.published_files().len(), 2);
+        stop(&client, handle).await;
+    });
+}
+
+#[test]
+fn s02_t09d_host_unknown_staged_ids_refuse_on_reconnect_before_native() {
+    let rt = runtime();
+    rt.block_on(async {
+        let roots = Roots::new();
+        let store = Arc::new(MemoryStore::default());
+        let incomplete = command(CaptureMode::Region);
+        let complete = command(CaptureMode::Region);
+        // Hand-placed synthetic stage entries have no DB journal rows. Neither contents
+        // nor the presence of a manifest may grant a second screen freeze.
+        let stage_root = roots.path().join("staging");
+        fs::create_dir(&stage_root).unwrap();
+        let incomplete_dir = stage_root.join(incomplete.operation_id.as_uuid().to_string());
+        fs::create_dir(&incomplete_dir).unwrap();
+        fs::write(incomplete_dir.join("pixels.rgba.tmp"), b"synthetic").unwrap();
+        let complete_dir = stage_root.join(complete.operation_id.as_uuid().to_string());
+        fs::create_dir(&complete_dir).unwrap();
+        for (name, contents) in [
+            ("pixels.rgba", b"synthetic".as_slice()),
+            ("context.json", b"{}".as_slice()),
+            ("manifest.json", b"not-parsed-by-probe".as_slice()),
+        ] {
+            fs::write(complete_dir.join(name), contents).unwrap();
+        }
+        let adapter = SyntheticAdapter::new(4, 4, Answer::Accept);
+        let host = bootstrap(options(
+            &roots.path(),
+            CaptureOptions::Injected(adapter.clone()),
+            store.clone(),
+        ))
+        .await
+        .unwrap();
+        assert!(matches!(
+            HostLease::acquire(roots.layout()),
+            Err(sm_isolation::LeaseError::Busy)
+        ));
+        let library = host.library_id();
+        let handle = tokio::spawn(async move { host.serve(DEFAULT_DRAIN).await });
+        for params in [incomplete, complete] {
+            for _ in 0..2 {
+                let client = connect(&roots, library, &store).await;
+                match client.capture_command(params.clone(), 10_000, None).await {
+                    Err(ClientError::Application(error)) => {
+                        assert_eq!(error.code, ErrorCode::InvalidRequest);
+                        assert!(!error.retryable);
+                        assert!(!serde_json::to_string(&error).unwrap().contains("principal"));
+                    }
+                    other => panic!("unknown staged operation must be refused: {other:?}"),
+                }
+                assert_eq!(adapter.calls.load(Ordering::SeqCst), 0);
+            }
+        }
+        assert_eq!(roots.published_files().len(), 0);
+        let client = connect(&roots, library, &store).await;
+        stop(&client, handle).await;
+    });
+}
+
+#[test]
+fn s02_t09d_host_unsafe_stage_root_refuses_unknown_before_native() {
+    let rt = runtime();
+    rt.block_on(async {
+        let roots = Roots::new();
+        let store = Arc::new(MemoryStore::default());
+        let sentinel = roots.path().join("staging");
+        fs::write(&sentinel, b"unsafe-stage-root").unwrap();
+        let adapter = SyntheticAdapter::new(4, 4, Answer::Accept);
+        let host = bootstrap(options(
+            &roots.path(),
+            CaptureOptions::Injected(adapter.clone()),
+            store.clone(),
+        ))
+        .await
+        .unwrap();
+        let library = host.library_id();
+        let handle = tokio::spawn(async move { host.serve(DEFAULT_DRAIN).await });
+        let client = connect(&roots, library, &store).await;
+        match client
+            .capture_command(command(CaptureMode::Region), 10_000, None)
+            .await
+        {
+            Err(ClientError::Application(error)) => {
+                assert_eq!(error.code, ErrorCode::RuntimeUnavailable);
+            }
+            other => panic!("unsafe stage root must fail closed: {other:?}"),
+        }
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(fs::read(sentinel).unwrap(), b"unsafe-stage-root");
         stop(&client, handle).await;
     });
 }
