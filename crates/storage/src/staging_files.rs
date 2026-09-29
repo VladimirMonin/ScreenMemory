@@ -223,13 +223,36 @@ pub fn stage_capture(
     root: &StagingRoot<'_>,
     input: StageInput<'_>,
 ) -> Result<Staged, StageFailure> {
-    stage_capture_seamed(root, input, StageSeams::NONE)
+    stage_capture_with(root, input, StageSeams::NONE, None)
 }
 
+#[cfg(test)]
 fn stage_capture_seamed(
     root: &StagingRoot<'_>,
     input: StageInput<'_>,
     seams: StageSeams,
+) -> Result<Staged, StageFailure> {
+    stage_capture_with(root, input, seams, None)
+}
+
+/// Test-only variant of [`stage_capture`] that invokes `pause` once the `pixels.rgba.tmp`
+/// bytes have been written and synced, immediately before that temp is published. The
+/// hook observes a real in-progress write; production never installs one, because the
+/// file lane always calls [`stage_capture`].
+#[cfg(test)]
+pub(crate) fn stage_capture_pausing(
+    root: &StagingRoot<'_>,
+    input: StageInput<'_>,
+    pause: &dyn Fn(),
+) -> Result<Staged, StageFailure> {
+    stage_capture_with(root, input, StageSeams::NONE, Some(pause))
+}
+
+fn stage_capture_with(
+    root: &StagingRoot<'_>,
+    input: StageInput<'_>,
+    seams: StageSeams,
+    pause: Option<&dyn Fn()>,
 ) -> Result<Staged, StageFailure> {
     let (manifest_bytes, context_bytes, validated) = prepare(&input)?;
 
@@ -252,13 +275,18 @@ fn stage_capture_seamed(
         drop(pixels_temp);
         return Err(StageFailure::Injected);
     }
-    write_synced_publish(pixels_temp, input.pixels)?;
+    write_synced(&mut pixels_temp, input.pixels)?;
+    if let Some(pause) = pause {
+        pause();
+    }
+    pixels_temp.publish().map_err(StageFailure::Storage)?;
 
     // 2. Context temp -> sync -> publish stable.
-    let context_temp = operation
+    let mut context_temp = operation
         .create_temp(StagingTempKind::ContextJson)
         .map_err(StageFailure::Storage)?;
-    write_synced_publish(context_temp, context_bytes.as_bytes())?;
+    write_synced(&mut context_temp, context_bytes.as_bytes())?;
+    context_temp.publish().map_err(StageFailure::Storage)?;
 
     if seams.stable_before_manifest {
         // F03: both input files are stable, the manifest is absent.
@@ -266,10 +294,11 @@ fn stage_capture_seamed(
     }
 
     // 3. Manifest temp -> sync -> publish LAST.
-    let manifest_temp = operation
+    let mut manifest_temp = operation
         .create_temp(StagingTempKind::ManifestJson)
         .map_err(StageFailure::Storage)?;
-    write_synced_publish(manifest_temp, &manifest_bytes)?;
+    write_synced(&mut manifest_temp, &manifest_bytes)?;
+    manifest_temp.publish().map_err(StageFailure::Storage)?;
 
     if seams.manifest_published {
         // F04: a complete, published staged input; the caller observes the abort, while a
@@ -349,15 +378,12 @@ fn prepare(
     Ok((manifest_bytes, context_bytes, validated))
 }
 
-/// Write a borrowed bounded slice, sync it and publish the stable name.
-fn write_synced_publish(
-    mut temp: StagingTemp<'_, '_, '_>,
-    bytes: &[u8],
-) -> Result<(), StageFailure> {
+/// Write a borrowed bounded slice and sync it. Publication is a separate step so that a
+/// test seam can observe a real, synced-but-unpublished in-progress write.
+fn write_synced(temp: &mut StagingTemp<'_, '_, '_>, bytes: &[u8]) -> Result<(), StageFailure> {
     temp.write_all(bytes)
         .map_err(|_| StageFailure::WriteFailed)?;
-    temp.sync_all().map_err(|_| StageFailure::WriteFailed)?;
-    temp.publish().map_err(StageFailure::Storage)
+    temp.sync_all().map_err(|_| StageFailure::WriteFailed)
 }
 
 /// Reopen one known operation through the fixed, bounded, no-follow read.

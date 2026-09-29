@@ -112,7 +112,7 @@ assert 'rusqlite::' not in (root / 'crates/application/src/storage.rs').read_tex
 # S02 images storage: the owner keeps its single writer, the canonical file layout and
 # the closed canonical-format vocabulary; the codec never reaches the filesystem.
 storage_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/storage/src').rglob('*.rs')}
-assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_files.rs', 'staging_tests.rs', 'staging_files_tests.rs', 'tests.rs', 'image_tests.rs'}
+assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_files.rs', 'staging_tests.rs', 'staging_files_tests.rs', 'file_lane_tests.rs', 'tests.rs', 'image_tests.rs'}
 # S02-T09b staging validator: pure schema decoding only. It must not reach a filesystem,
 # a SQLite connection, a process or the network, and it never publishes a path or a
 # durable-input claim from manifest content.

@@ -2,6 +2,8 @@
 #[cfg(not(all(windows, target_pointer_width = "64")))]
 compile_error!("sm-storage requires the audited Windows x64 root adapter");
 #[cfg(test)]
+mod file_lane_tests;
+#[cfg(test)]
 mod image_tests;
 mod images;
 mod migration;
@@ -16,15 +18,117 @@ use sm_application::storage::{
     AssetChunk, CommitImageCapture, CommittedImage, FoundationRepository, LookupOutcome, Page,
     Record, RecordPageQuery, SchemaSnapshot, StorageError,
 };
+use sm_application::{
+    capture::{MAX_CAPTURE_PIXELS, MAX_CAPTURE_SIDE},
+    storage::{CaptureContext, CaptureTarget},
+};
+use sm_domain::{AssetId, LibraryId, OperationId, PrincipalId, RecordId};
 use sm_isolation::{HostLease, LeaseError};
 use std::{
     path::PathBuf,
-    sync::mpsc::{self, Receiver, SyncSender, TrySendError},
+    sync::{
+        mpsc::{self, Receiver, SyncSender, TrySendError},
+        Arc, Mutex,
+    },
     time::Duration,
 };
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
+use uuid::Uuid;
 
 type Response<T> = oneshot::Sender<Result<T, StorageError>>;
+
+/// An owned, path-free staging command. The caller transfers the pixel allocation, never
+/// clones it; cancellation of its waiter does not revoke an admitted file write.
+pub struct OwnedStageInput {
+    pub library_id: LibraryId,
+    pub principal_id: PrincipalId,
+    pub operation_id: OperationId,
+    pub record_id: RecordId,
+    pub asset_id: AssetId,
+    pub frame_id: Uuid,
+    pub mode: CaptureTarget,
+    pub context: CaptureContext,
+    pub captured_at: String,
+    pub encoder_fingerprint: String,
+    pub pixels: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StageOwnedError {
+    Unavailable,
+    Stage(staging_files::StageFailure),
+}
+
+impl OwnedStageInput {
+    fn checked(&self) -> Result<(), StageOwnedError> {
+        use staging::StagingError;
+        let width = self.context.bounds.width;
+        let height = self.context.bounds.height;
+        if width == 0 || height == 0 || width > MAX_CAPTURE_SIDE || height > MAX_CAPTURE_SIDE {
+            return Err(StageOwnedError::Stage(
+                staging_files::StageFailure::Rejected(StagingError::InvalidGeometry),
+            ));
+        }
+        let bytes = u64::from(width)
+            .checked_mul(u64::from(height))
+            .and_then(|n| n.checked_mul(4))
+            .filter(|n| *n <= MAX_CAPTURE_PIXELS * 4)
+            .ok_or(StageOwnedError::Stage(
+                staging_files::StageFailure::Rejected(StagingError::InvalidGeometry),
+            ))?;
+        if self.pixels.len() as u64 != bytes {
+            return Err(StageOwnedError::Stage(
+                staging_files::StageFailure::Rejected(StagingError::PixelLengthMismatch),
+            ));
+        }
+        if self.context.sources.len() > 4 {
+            return Err(StageOwnedError::Stage(
+                staging_files::StageFailure::Rejected(StagingError::InvalidContext),
+            ));
+        }
+        if self
+            .context
+            .to_json()
+            .map_or(true, |json| json.len() > staging::MAX_CONTEXT_BYTES)
+        {
+            return Err(StageOwnedError::Stage(
+                staging_files::StageFailure::Rejected(StagingError::InvalidContext),
+            ));
+        }
+        if self.encoder_fingerprint.len() > 512 || self.captured_at.len() > 32 {
+            return Err(StageOwnedError::Stage(
+                staging_files::StageFailure::Rejected(StagingError::ManifestBeyondLimit),
+            ));
+        }
+        Ok(())
+    }
+    fn borrowed(&self) -> staging_files::StageInput<'_> {
+        staging_files::StageInput {
+            library_id: self.library_id,
+            principal_id: self.principal_id,
+            operation_id: self.operation_id,
+            record_id: self.record_id,
+            asset_id: self.asset_id,
+            frame_id: self.frame_id,
+            mode: self.mode,
+            context: &self.context,
+            captured_at: &self.captured_at,
+            encoder_fingerprint: &self.encoder_fingerprint,
+            pixels: &self.pixels,
+        }
+    }
+}
+
+type StageResponse = oneshot::Sender<Result<staging_files::Staged, StageOwnedError>>;
+enum FileRequest {
+    Stage(StageResponse, Box<OwnedStageInput>),
+    Stop,
+}
+struct Admission {
+    closing: bool,
+    stop_sent: bool,
+    stopped: watch::Sender<bool>,
+}
 
 /// Test-only fault channel between the file write and its commit. The production
 /// path always uses `Fault::None`.
@@ -48,21 +152,41 @@ enum Request {
     Pragmas(Response<(String, i64, i64, i64)>),
     #[cfg(test)]
     Pause(Response<()>, Duration),
-    Stop(Response<()>),
+    Stop,
 }
 
 /// Cloneable bounded command endpoint, never a cloneable connection or lease.
 #[derive(Clone)]
 pub struct StorageWorker {
     sender: SyncSender<Request>,
+    file_sender: SyncSender<FileRequest>,
+    gate: Arc<Mutex<Admission>>,
 }
 impl StorageWorker {
     /// Consumes a real acquired OS lease. No database filename/path input.
     pub fn start(lease: HostLease) -> Result<Self, StorageError> {
-        Self::start_inner(lease, Fault::None)
+        Self::start_inner(
+            lease,
+            Fault::None,
+            #[cfg(test)]
+            None,
+        )
     }
-    fn start_inner(lease: HostLease, fault: Fault) -> Result<Self, StorageError> {
+    fn start_inner(
+        lease: HostLease,
+        fault: Fault,
+        #[cfg(test)] pause: Option<FilePause>,
+    ) -> Result<Self, StorageError> {
         let (sender, receiver) = mpsc::sync_channel(32);
+        let (file_sender, file_receiver) = mpsc::sync_channel(1);
+        let (stopped, _) = watch::channel(false);
+        let gate = Arc::new(Mutex::new(Admission {
+            closing: false,
+            stop_sent: false,
+            stopped,
+        }));
+        let status = Arc::clone(&gate);
+        let file_stop_sender = file_sender.clone();
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         std::thread::Builder::new()
             .name("sm-sqlite-worker".into())
@@ -88,18 +212,49 @@ impl StorageWorker {
                 let result = open(&entry, fault == Fault::MigrationCommit);
                 match result {
                     Ok(db) => {
-                        if ready_tx.send(Ok(())).is_ok() {
-                            let stopped = run(db, receiver, assets, fault);
-                            // All SQLite handles close before entry pins and lease.
-                            drop(entry);
-                            drop(lease);
-                            if let Some(tx) = stopped {
-                                let _ = tx.send(Ok(()));
+                        let completed = std::thread::scope(|scope| {
+                            let (started_tx, started_rx) = mpsc::sync_channel(1);
+                            let lease_ref = &lease;
+                            let file_thread = std::thread::Builder::new()
+                                .name("sm-staging-files".into())
+                                .spawn_scoped(scope, move || {
+                                    let _ = started_tx.send(());
+                                    file_loop(
+                                        lease_ref,
+                                        file_receiver,
+                                        #[cfg(test)]
+                                        pause,
+                                    );
+                                });
+                            let Ok(file_thread) = file_thread else {
+                                let _ = ready_tx.send(Err(StorageError::Unavailable));
+                                drop(db);
+                                return false;
+                            };
+                            if started_rx.recv().is_err() || ready_tx.send(Ok(())).is_err() {
+                                drop(db);
+                                let _ = file_stop_sender.send(FileRequest::Stop);
+                                let _ = file_thread.join();
+                                return false;
                             }
-                        } else {
-                            drop(db);
-                            drop(entry);
-                            drop(lease);
+                            // A panicking DB loop still sends the file stop and joins before
+                            // the scoped borrow and its original lease can be released.
+                            let sqlite_result =
+                                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                    run(db, receiver, assets, fault)
+                                }));
+                            let file_stop = file_stop_sender.send(FileRequest::Stop).is_ok();
+                            let file_joined = file_thread.join().is_ok();
+                            matches!(sqlite_result, Ok(true)) && file_stop && file_joined
+                        });
+                        drop(entry);
+                        drop(lease);
+                        if completed {
+                            status
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .stopped
+                                .send_replace(true);
                         }
                     }
                     Err(error) => {
@@ -111,11 +266,43 @@ impl StorageWorker {
             })
             .map_err(|_| StorageError::Unavailable)?;
         ready_rx.recv().map_err(|_| StorageError::Unavailable)??;
-        Ok(Self { sender })
+        Ok(Self {
+            sender,
+            file_sender,
+            gate,
+        })
+    }
+    /// Separate, single-slot file queue. Only accepted requests own file-lane memory;
+    /// caller-owned pending buffers are outside this queue's budget.
+    pub async fn stage_capture_owned(
+        &self,
+        input: OwnedStageInput,
+    ) -> Result<staging_files::Staged, StageOwnedError> {
+        input.checked()?;
+        let (tx, rx) = oneshot::channel();
+        let queued = {
+            let gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+            if gate.closing {
+                return Err(StageOwnedError::Unavailable);
+            }
+            self.file_sender
+                .try_send(FileRequest::Stage(tx, Box::new(input)))
+        };
+        match queued {
+            Ok(()) => rx.await.unwrap_or(Err(StageOwnedError::Unavailable)),
+            Err(_) => Err(StageOwnedError::Unavailable),
+        }
     }
     async fn ask<T>(&self, build: impl FnOnce(Response<T>) -> Request) -> Result<T, StorageError> {
         let (tx, rx) = oneshot::channel();
-        match self.sender.try_send(build(tx)) {
+        let queued = {
+            let gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+            if gate.closing {
+                return Err(StorageError::Unavailable);
+            }
+            self.sender.try_send(build(tx))
+        };
+        match queued {
             Ok(()) => rx.await.map_err(|_| StorageError::Unavailable)?,
             Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => {
                 Err(StorageError::Unavailable)
@@ -124,9 +311,48 @@ impl StorageWorker {
     }
     /// Timeout is unknown/still-owned, never a declaration of Stopped.
     pub async fn shutdown(&self, deadline: Duration) -> Result<(), StorageError> {
-        tokio::time::timeout(deadline, self.ask(Request::Stop))
-            .await
-            .map_err(|_| StorageError::Unavailable)?
+        tokio::time::timeout(deadline, async {
+            let mut done = {
+                let mut gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+                gate.closing = true;
+                gate.stopped.subscribe()
+            };
+            loop {
+                if *done.borrow() {
+                    return Ok(());
+                }
+                {
+                    let mut gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+                    if !gate.stop_sent {
+                        match self.sender.try_send(Request::Stop) {
+                            Ok(()) => gate.stop_sent = true,
+                            Err(TrySendError::Disconnected(_)) => {
+                                return Err(StorageError::Unavailable)
+                            }
+                            Err(TrySendError::Full(_)) => {}
+                        }
+                    }
+                }
+                if *done.borrow() {
+                    return Ok(());
+                }
+                // If Stop has been queued, wait only for completed close + file join.
+                let stop_sent = self
+                    .gate
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .stop_sent;
+                if stop_sent {
+                    done.changed()
+                        .await
+                        .map_err(|_| StorageError::Unavailable)?;
+                } else {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            }
+        })
+        .await
+        .map_err(|_| StorageError::Unavailable)?
     }
     /// Actual bundled SQLite runtime version; NOT a sqlite-vec query proof.
     pub async fn sqlite_version(&self) -> Result<String, StorageError> {
@@ -157,12 +383,7 @@ fn open(entry: &sm_isolation::DatabaseEntry, fail: bool) -> Result<Connection, S
     migration::initialize(&mut db, fresh, fail)?;
     Ok(db)
 }
-fn run(
-    db: Connection,
-    receiver: Receiver<Request>,
-    assets: PathBuf,
-    fault: Fault,
-) -> Option<Response<()>> {
+fn run(db: Connection, receiver: Receiver<Request>, assets: PathBuf, fault: Fault) -> bool {
     let mut db = db;
     for request in receiver {
         match request {
@@ -220,14 +441,58 @@ fn run(
                 std::thread::sleep(duration);
                 let _ = tx.send(Ok(()));
             }
-            Request::Stop(tx) => {
+            Request::Stop => {
                 close_confirmed(db);
-                return Some(tx);
+                return true;
             }
         }
     }
     close_confirmed(db);
-    None
+    false
+}
+
+fn file_loop(
+    lease: &HostLease,
+    receiver: Receiver<FileRequest>,
+    #[cfg(test)] pause: Option<FilePause>,
+) {
+    for request in receiver {
+        match request {
+            FileRequest::Stop => break,
+            FileRequest::Stage(tx, input) => {
+                let result = lease
+                    .staging_root()
+                    .map_err(|e| StageOwnedError::Stage(staging_files::StageFailure::Storage(e)))
+                    .and_then(|root| {
+                        #[cfg(test)]
+                        if let Some(ref pause) = pause {
+                            return staging_files::stage_capture_pausing(
+                                &root,
+                                input.borrowed(),
+                                &|| {
+                                    let _ = pause.entered.send(());
+                                    let _ = pause
+                                        .release
+                                        .lock()
+                                        .unwrap_or_else(|e| e.into_inner())
+                                        .recv();
+                                },
+                            )
+                            .map_err(StageOwnedError::Stage);
+                        }
+                        staging_files::stage_capture(&root, input.borrowed())
+                            .map_err(StageOwnedError::Stage)
+                    });
+                let _ = tx.send(result);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+struct FilePause {
+    entered: SyncSender<()>,
+    release: Mutex<Receiver<()>>,
 }
 /// sqlite3_close may return BUSY together with the *still-open* connection.
 /// Retain both the connection and the worker-owned HostLease until closure succeeds;
@@ -292,10 +557,24 @@ impl FoundationRepository for StorageWorker {
 #[cfg(test)]
 impl StorageWorker {
     pub(crate) fn start_with_fault(lease: HostLease) -> Result<Self, StorageError> {
-        Self::start_inner(lease, Fault::MigrationCommit)
+        Self::start_inner(lease, Fault::MigrationCommit, None)
     }
     pub(crate) fn start_with_image_fault(lease: HostLease) -> Result<Self, StorageError> {
-        Self::start_inner(lease, Fault::ImageCommit)
+        Self::start_inner(lease, Fault::ImageCommit, None)
+    }
+    pub(crate) fn start_with_file_pause(
+        lease: HostLease,
+        entered: SyncSender<()>,
+        release: Receiver<()>,
+    ) -> Result<Self, StorageError> {
+        Self::start_inner(
+            lease,
+            Fault::None,
+            Some(FilePause {
+                entered,
+                release: Mutex::new(release),
+            }),
+        )
     }
     pub(crate) async fn read_pragmas(&self) -> Result<(String, i64, i64, i64), StorageError> {
         self.ask(Request::Pragmas).await
