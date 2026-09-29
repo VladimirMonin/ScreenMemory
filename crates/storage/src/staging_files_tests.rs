@@ -117,8 +117,190 @@ impl Drop for Fixture {
     }
 }
 
+fn stage_v2<'a>(
+    f: &Fixture,
+    root: &StagingRoot<'_>,
+    context: &'a CaptureContext,
+    pixels: &'a [u8],
+    warnings: &'a [String],
+) -> Result<ValidatedRecoveryEnvelope, StageFailure> {
+    stage_capture_v2(
+        root,
+        StageInputV2 {
+            capture: f.input(context, pixels),
+            warnings,
+        },
+    )
+}
+
 fn hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
+}
+
+#[test]
+fn s02_t09i_01_v2_exact_document_and_owned_reopen_pixels() {
+    let f = Fixture::new();
+    let lease = f.lease();
+    let root = lease.staging_root().unwrap();
+    let context = f.context(8, 4);
+    let pixels = Fixture::pixels(8, 4);
+    let warnings = vec!["topology_changed".into(), "display_unknown".into()];
+    let staged = stage_v2(&f, &root, &context, &pixels, &warnings).unwrap();
+    assert_eq!(staged.warnings(), Some(warnings.as_slice()));
+    let dir = f.directory();
+    let raw = fs::read(dir.join("manifest.json")).unwrap();
+    let manifest: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+    assert_eq!(manifest.as_object().unwrap().len(), 21);
+    assert_eq!(manifest["schema_version"], 2);
+    assert_eq!(manifest["warnings"], serde_json::json!(warnings));
+    assert_eq!(manifest["provenance_kind"], "automatic");
+    assert_eq!(manifest["path_policy"], RECOVERY_PATH_POLICY);
+    assert_eq!(manifest["pixels_sha256"], hex(&pixels));
+    assert_eq!(
+        manifest["context_sha256"],
+        hex(context.to_json().unwrap().as_bytes())
+    );
+    assert_eq!(fs::read(dir.join("pixels.rgba")).unwrap(), pixels);
+    for temp in ["pixels.rgba.tmp", "context.json.tmp", "manifest.json.tmp"] {
+        assert!(!dir.join(temp).exists());
+    }
+    let reopened = reopen_staged_v2(&root, f.expectations()).unwrap();
+    assert_eq!(reopened.envelope(), &staged);
+    assert_eq!(reopened.pixels(), pixels);
+    assert_eq!(
+        reopen_staged_v2(&root, f.expectations()).unwrap().pixels(),
+        pixels
+    );
+    assert_eq!(
+        stage_v2(&f, &root, &context, &pixels, &warnings).unwrap_err(),
+        StageFailure::Storage(StagingRootError::AlreadyExists)
+    );
+}
+
+#[test]
+fn s02_t09i_02_empty_v2_distinct_from_published_v1_and_prewrite_rejection() {
+    let f = Fixture::new();
+    let lease = f.lease();
+    let root = lease.staging_root().unwrap();
+    let context = f.context(8, 4);
+    let pixels = Fixture::pixels(8, 4);
+    let bad = vec!["bad/path".into()];
+    assert_eq!(
+        stage_v2(&f, &root, &context, &pixels, &bad).unwrap_err(),
+        StageFailure::Rejected(StagingError::InvalidWarnings)
+    );
+    assert!(
+        !f.directory().exists(),
+        "invalid v2 input must not create operation"
+    );
+    let too_many = vec!["display_unknown".into(); 17];
+    assert_eq!(
+        stage_v2(&f, &root, &context, &pixels, &too_many).unwrap_err(),
+        StageFailure::Rejected(StagingError::InvalidWarnings)
+    );
+    assert!(!f.directory().exists());
+    let empty: Vec<String> = vec![];
+    let ready = stage_v2(&f, &root, &context, &pixels, &empty).unwrap();
+    assert_eq!(ready.warnings(), Some([].as_slice()));
+    assert_eq!(
+        reopen_staged_v2(&root, f.expectations())
+            .unwrap()
+            .envelope()
+            .warnings(),
+        Some([].as_slice())
+    );
+    let legacy = Fixture::new();
+    let legacy_lease = legacy.lease();
+    let legacy_root = legacy_lease.staging_root().unwrap();
+    stage_capture(&legacy_root, legacy.input(&context, &pixels)).unwrap();
+    assert_eq!(
+        reopen_staged_v2(&legacy_root, legacy.expectations()).unwrap_err(),
+        ReopenFailure::Rejected(StagingError::UnsupportedSchemaVersion)
+    );
+    assert!(reopen_staged(&legacy_root, legacy.expectations()).is_ok());
+    assert!(legacy.directory().join("manifest.json").exists());
+}
+
+#[test]
+fn s02_t09i_03_foreign_tamper_missing_oversize_and_sentinel() {
+    let f = Fixture::new();
+    let lease = f.lease();
+    let root = lease.staging_root().unwrap();
+    let context = f.context(8, 4);
+    let pixels = Fixture::pixels(8, 4);
+    let warnings = vec!["display_unknown".into()];
+    stage_v2(&f, &root, &context, &pixels, &warnings).unwrap();
+    let dir = f.directory();
+    fs::write(dir.join("sentinel.bin"), b"UNTOUCHED").unwrap();
+    let foreign = StagingExpectations {
+        principal_id: PrincipalId::new(Uuid::new_v4()),
+        ..f.expectations()
+    };
+    assert_eq!(
+        reopen_staged_v2(&root, foreign).unwrap_err(),
+        ReopenFailure::Rejected(StagingError::ForeignIdentity)
+    );
+    let profile = StagingExpectations {
+        encoder_fingerprint: "foreign-profile",
+        ..f.expectations()
+    };
+    assert_eq!(
+        reopen_staged_v2(&root, profile).unwrap_err(),
+        ReopenFailure::Rejected(StagingError::ProfileMismatch)
+    );
+    let original = fs::read(dir.join("manifest.json")).unwrap();
+    let mut value: serde_json::Value = serde_json::from_slice(&original).unwrap();
+    value["warnings"] = serde_json::json!(["bad/path"]);
+    fs::write(
+        dir.join("manifest.json"),
+        serde_json::to_vec(&value).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        reopen_staged_v2(&root, f.expectations()).unwrap_err(),
+        ReopenFailure::Rejected(StagingError::InvalidWarnings)
+    );
+    value["warnings"] = serde_json::json!(warnings);
+    value["path_policy"] = serde_json::json!("../escape");
+    fs::write(
+        dir.join("manifest.json"),
+        serde_json::to_vec(&value).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        reopen_staged_v2(&root, f.expectations()).unwrap_err(),
+        ReopenFailure::Rejected(StagingError::InvalidPathPolicy)
+    );
+    fs::write(dir.join("manifest.json"), &original).unwrap();
+    fs::write(dir.join("pixels.rgba"), vec![0; pixels.len()]).unwrap();
+    assert_eq!(
+        reopen_staged_v2(&root, f.expectations()).unwrap_err(),
+        ReopenFailure::Rejected(StagingError::PixelDigestMismatch)
+    );
+    fs::write(dir.join("pixels.rgba"), &pixels).unwrap();
+    let original_context = fs::read(dir.join("context.json")).unwrap();
+    oversize_stable(&dir, "context.json", MAX_CONTEXT_BYTES as u64 + 1);
+    assert_eq!(
+        reopen_staged_v2(&root, f.expectations()).unwrap_err(),
+        ReopenFailure::Rejected(StagingError::ContextBeyondLimit)
+    );
+    fs::write(dir.join("context.json"), original_context).unwrap();
+    oversize_stable(&dir, "pixels.rgba", PIXELS_CEILING + 1);
+    assert_eq!(
+        reopen_staged_v2(&root, f.expectations()).unwrap_err(),
+        ReopenFailure::Rejected(StagingError::PixelLengthMismatch)
+    );
+    fs::remove_file(dir.join("pixels.rgba")).unwrap();
+    assert_eq!(
+        reopen_staged_v2(&root, f.expectations()).unwrap_err(),
+        ReopenFailure::MissingArtifact(StagedArtifact::PixelsRgba)
+    );
+    oversize_stable(&dir, "manifest.json", MAX_MANIFEST_BYTES as u64 + 1);
+    assert_eq!(
+        reopen_staged_v2(&root, f.expectations()).unwrap_err(),
+        ReopenFailure::Rejected(StagingError::ManifestBeyondLimit)
+    );
+    assert_eq!(fs::read(dir.join("sentinel.bin")).unwrap(), b"UNTOUCHED");
 }
 
 #[test]

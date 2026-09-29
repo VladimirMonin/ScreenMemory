@@ -6,8 +6,8 @@
 //! trusted operation UUID and a fixed layout, so no caller can name a file.
 //!
 //! Sequence encoded here (S02 §8.3):
-//! 1. build the schema-v1 manifest and context documents and their hashes;
-//! 2. validate the triple with the pure [`validate_staging`] **before** a single byte is
+//! 1. build schema-v1 or isolated recovery-ready-v2 manifest and context documents;
+//! 2. validate with the pure v1/v2 validator **before** a single byte is
 //!    written, so an inconsistent input leaves an untouched operation directory;
 //! 3. create a fresh operation directory and write `pixels.rgba.tmp`, sync it and publish
 //!    the stable `pixels.rgba`;
@@ -24,12 +24,13 @@
 //! and **no** file is ever deleted: an incomplete operation, an unknown file or a sentinel
 //! left in the directory stays exactly where it is.
 use crate::staging::{
-    validate_staging, StagingError, StagingExpectations, ValidatedStagingManifest,
-    MAX_CONTEXT_BYTES, MAX_MANIFEST_BYTES, STAGING_MANIFEST_SCHEMA_VERSION,
+    validate_recovery_envelope, validate_staging, StagingError, StagingExpectations,
+    ValidatedRecoveryEnvelope, ValidatedStagingManifest, MAX_CONTEXT_BYTES, MAX_MANIFEST_BYTES,
+    RECOVERY_ENVELOPE_SCHEMA_VERSION, RECOVERY_PATH_POLICY, STAGING_MANIFEST_SCHEMA_VERSION,
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use sm_application::storage::CaptureContext;
+use sm_application::storage::{warnings_to_json, CaptureContext};
 use sm_domain::{AssetId, LibraryId, OperationId, PrincipalId, RecordId};
 use sm_isolation::{
     StagingError as StagingRootError, StagingOperation, StagingRoot, StagingTemp, StagingTempKind,
@@ -67,6 +68,13 @@ pub struct StageInput<'a> {
     pub pixels: &'a [u8],
 }
 
+/// Trusted v2 input: the ordered receipt codes are explicit, never inferred from v1.
+/// The application warning codec bounds and validates them before any file is created.
+pub struct StageInputV2<'a> {
+    pub capture: StageInput<'a>,
+    pub warnings: &'a [String],
+}
+
 /// Exact schema-v1 manifest document. The member order is also the serialized order and
 /// the set is closed at eighteen members, matching [`crate::staging`].
 #[derive(Serialize)]
@@ -89,6 +97,26 @@ struct ManifestV1<'a> {
     context_sha256: String,
     encoder_fingerprint: &'a str,
     captured_at: &'a str,
+}
+
+/// Owned reopened v2 snapshot. The pixels belong to the caller and were checked against
+/// the returned envelope using the trusted identity; this is not a durable receipt.
+#[derive(Debug)]
+pub struct ReopenedV2 {
+    envelope: ValidatedRecoveryEnvelope,
+    pixels: Vec<u8>,
+}
+
+impl ReopenedV2 {
+    /// Validated metadata for the same immutable pixel view returned below.
+    pub const fn envelope(&self) -> &ValidatedRecoveryEnvelope {
+        &self.envelope
+    }
+
+    /// Borrow the hash-checked pixels; callers cannot mutate them while this envelope lives.
+    pub fn pixels(&self) -> &[u8] {
+        &self.pixels
+    }
 }
 
 /// One completed staging operation. Holding this value means the pixels, the context and
@@ -255,10 +283,96 @@ fn stage_capture_with(
     pause: Option<&dyn Fn()>,
 ) -> Result<Staged, StageFailure> {
     let (manifest_bytes, context_bytes, validated) = prepare(&input)?;
+    publish_stage(
+        root,
+        input.operation_id,
+        input.pixels,
+        &context_bytes,
+        &manifest_bytes,
+        seams,
+        pause,
+    )?;
+    Ok(Staged {
+        manifest: validated,
+    })
+}
 
+/// Isolated v2 writer. Both the exact warnings and the recovery-ready variant are
+/// validated before creating an operation; this does not grant host Saved authority.
+pub fn stage_capture_v2(
+    root: &StagingRoot<'_>,
+    input: StageInputV2<'_>,
+) -> Result<ValidatedRecoveryEnvelope, StageFailure> {
+    // Bound count and code lengths before serializing untrusted-sized caller strings.
+    let warning_json = warnings_to_json(input.warnings)
+        .map_err(|_| StageFailure::Rejected(StagingError::InvalidWarnings))?;
+    let (mut manifest_bytes, context_bytes, _) = prepare(&input.capture)?;
+    let mut document: serde_json::Value = serde_json::from_slice(&manifest_bytes)
+        .map_err(|_| StageFailure::Rejected(StagingError::MalformedManifest))?;
+    let object = document
+        .as_object_mut()
+        .ok_or(StageFailure::Rejected(StagingError::MalformedManifest))?;
+    object.insert(
+        "schema_version".into(),
+        RECOVERY_ENVELOPE_SCHEMA_VERSION.into(),
+    );
+    object.insert(
+        "warnings".into(),
+        serde_json::from_str(&warning_json)
+            .map_err(|_| StageFailure::Rejected(StagingError::InvalidWarnings))?,
+    );
+    object.insert("provenance_kind".into(), "automatic".into());
+    object.insert("path_policy".into(), RECOVERY_PATH_POLICY.into());
+    manifest_bytes = serde_json::to_vec(&document)
+        .map_err(|_| StageFailure::Rejected(StagingError::MalformedManifest))?;
+    if manifest_bytes.len() > MAX_MANIFEST_BYTES {
+        return Err(StageFailure::Rejected(StagingError::ManifestBeyondLimit));
+    }
+    let expectations = StagingExpectations {
+        library_id: input.capture.library_id,
+        principal_id: input.capture.principal_id,
+        operation_id: input.capture.operation_id,
+        mode: input.capture.mode,
+        encoder_fingerprint: input.capture.encoder_fingerprint,
+    };
+    let validated = validate_recovery_envelope(
+        &manifest_bytes,
+        context_bytes.as_bytes(),
+        input.capture.pixels,
+        expectations,
+    )
+    .map_err(StageFailure::Rejected)?;
+    if !matches!(&validated, ValidatedRecoveryEnvelope::RecoveryReadyV2 { warnings, .. }
+        if warnings == input.warnings)
+    {
+        return Err(StageFailure::Rejected(StagingError::InvalidWarnings));
+    }
+    publish_stage(
+        root,
+        input.capture.operation_id,
+        input.capture.pixels,
+        &context_bytes,
+        &manifest_bytes,
+        StageSeams::NONE,
+        None,
+    )?;
+    Ok(validated)
+}
+
+/// The single manifest-last publication sequence shared by v1 and v2. No replacement,
+/// cleanup or extra lease is introduced; all leaves use the fixed capability names.
+fn publish_stage(
+    root: &StagingRoot<'_>,
+    operation_id: OperationId,
+    pixels: &[u8],
+    context_bytes: &str,
+    manifest_bytes: &[u8],
+    seams: StageSeams,
+    pause: Option<&dyn Fn()>,
+) -> Result<(), StageFailure> {
     // Create the operation only after the trusted input proved consistent.
     let operation = root
-        .create_operation(input.operation_id)
+        .create_operation(operation_id)
         .map_err(StageFailure::Storage)?;
 
     // 1. Pixels temp -> sync -> publish stable.
@@ -268,14 +382,14 @@ fn stage_capture_with(
     if seams.mid_pixels_temp {
         // F02: a truncated temp that is never published and never cleaned. The borrowed
         // slice is written in half so no extra copy of the frame is made.
-        let half = input.pixels.len() / 2;
+        let half = pixels.len() / 2;
         pixels_temp
-            .write_all(&input.pixels[..half])
+            .write_all(&pixels[..half])
             .map_err(|_| StageFailure::WriteFailed)?;
         drop(pixels_temp);
         return Err(StageFailure::Injected);
     }
-    write_synced(&mut pixels_temp, input.pixels)?;
+    write_synced(&mut pixels_temp, pixels)?;
     if let Some(pause) = pause {
         pause();
     }
@@ -297,7 +411,7 @@ fn stage_capture_with(
     let mut manifest_temp = operation
         .create_temp(StagingTempKind::ManifestJson)
         .map_err(StageFailure::Storage)?;
-    write_synced(&mut manifest_temp, &manifest_bytes)?;
+    write_synced(&mut manifest_temp, manifest_bytes)?;
     manifest_temp.publish().map_err(StageFailure::Storage)?;
 
     if seams.manifest_published {
@@ -306,9 +420,7 @@ fn stage_capture_with(
         return Err(StageFailure::Injected);
     }
 
-    Ok(Staged {
-        manifest: validated,
-    })
+    Ok(())
 }
 
 /// Build and validate the manifest/context documents. No IO happens here: an inconsistent
@@ -427,6 +539,40 @@ pub fn reopen_staged(
     Ok(Staged {
         manifest: validated,
     })
+}
+
+/// Reopen only recovery-ready v2. A published legacy v1 has unknown receipt warnings,
+/// including when the true list happened to be empty, and cannot be upgraded here.
+pub fn reopen_staged_v2(
+    root: &StagingRoot<'_>,
+    expectations: StagingExpectations<'_>,
+) -> Result<ReopenedV2, ReopenFailure> {
+    let operation = match root.open_operation(expectations.operation_id) {
+        Ok(operation) => operation,
+        Err(StagingRootError::Missing) => return Err(ReopenFailure::Incomplete),
+        Err(error) => return Err(ReopenFailure::Storage(error)),
+    };
+    let manifest_bytes = match operation.open_fixed(StagingTempKind::ManifestJson) {
+        Ok(read) => read
+            .read_all()
+            .map_err(|_| ReopenFailure::Rejected(StagingError::MalformedManifest))?,
+        Err(StagingRootError::Missing) => return Err(ReopenFailure::Incomplete),
+        Err(StagingRootError::TooLarge) => {
+            return Err(ReopenFailure::Rejected(StagingError::ManifestBeyondLimit))
+        }
+        Err(error) => return Err(ReopenFailure::Storage(error)),
+    };
+    let context_bytes = read_fixed(&operation, StagedArtifact::ContextJson)?;
+    let pixels = read_fixed(&operation, StagedArtifact::PixelsRgba)?;
+    let envelope =
+        validate_recovery_envelope(&manifest_bytes, &context_bytes, &pixels, expectations)
+            .map_err(ReopenFailure::Rejected)?;
+    if !envelope.is_recovery_ready() {
+        return Err(ReopenFailure::Rejected(
+            StagingError::UnsupportedSchemaVersion,
+        ));
+    }
+    Ok(ReopenedV2 { envelope, pixels })
 }
 
 /// Bounded fixed-leaf read; a missing stable file is a corrupt staged input.

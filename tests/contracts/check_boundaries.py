@@ -129,15 +129,22 @@ assert storage_sources['staging.rs'].count('MAX_CAPTURE_SIDE') == 3, \
     'the side ceiling is only imported and applied, never redefined'
 assert 'is_canonical_utc_timestamp' in storage_sources['staging.rs']
 assert 'CaptureContext::from_json' in storage_sources['staging.rs']
-# S02-T09h is pure and not connected to stage/reopen or host. V1 still has an
-# exact 18-field decoder; v2 is explicitly versioned and receipt-ready only with
-# validated warnings, automatic provenance and the fixed current path policy.
+# S02-T09h stays pure. V1 retains its exact 18-field decoder; v2 is versioned and
+# receipt-ready only with validated warnings, automatic provenance and fixed policy.
+# T09i connects only the isolated file primitive; no host/file-lane/SQL integration.
 assert 'const MANIFEST_FIELDS: [&str; 18]' in storage_sources['staging.rs']
 for member in ('"warnings"', '"provenance_kind"', '"path_policy"'):
     assert member in storage_sources['staging.rs']
 assert 'warnings_from_json' in storage_sources['staging.rs']
 assert 'RECOVERY_PATH_POLICY' in storage_sources['staging.rs']
-assert 'validate_recovery_envelope(' not in storage_sources['staging_files.rs']
+assert 'validate_recovery_envelope(' in storage_sources['staging_files.rs']
+assert 'pub fn stage_capture_v2(' in storage_sources['staging_files.rs']
+assert 'pub fn reopen_staged_v2(' in storage_sources['staging_files.rs']
+reopened_v2 = storage_sources['staging_files.rs'].split('pub struct ReopenedV2 {', 1)[1].split('}', 1)[0]
+assert 'pub envelope:' not in reopened_v2 and 'pub pixels:' not in reopened_v2
+assert 'pub fn pixels(&self) -> &[u8]' in storage_sources['staging_files.rs']
+assert 'stage_capture_v2(' not in storage_sources['lib.rs']
+assert 'reopen_staged_v2(' not in storage_sources['lib.rs']
 for forbidden in ('std::fs', 'std::path', 'rusqlite', 'std::process', 'std::net'):
     assert forbidden not in storage_sources['staging_recovery_tests.rs']
 assert 'pub mod staging;' in storage_sources['lib.rs']
