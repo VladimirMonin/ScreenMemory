@@ -173,6 +173,23 @@
             "value"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "records_page",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/LibraryRecordsPage"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -553,6 +570,79 @@
       "minLength": 36,
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
       "type": "string"
+    },
+    "LibraryRecordEntry": {
+      "additionalProperties": false,
+      "description": "S02 §10.3: one entry in a library records page; asset paths are library-relative.",
+      "properties": {
+        "byte_size": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "height": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "$ref": "#/$defs/RecordId"
+        },
+        "preview_asset_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssetId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "width": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "created_at",
+        "title",
+        "target",
+        "width",
+        "height",
+        "byte_size"
+      ],
+      "type": "object"
+    },
+    "LibraryRecordsPage": {
+      "additionalProperties": false,
+      "description": "S02 §10.3: one bounded page of committed records; `next_cursor` is opaque.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/LibraryRecordEntry"
+          },
+          "type": "array"
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
     },
     "MethodName": {
       "maxLength": 96,

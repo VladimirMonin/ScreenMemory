@@ -32,6 +32,10 @@ export type KnownParams =
   | {
       method: 'library.asset.read';
       params: LibraryAssetRequest;
+    }
+  | {
+      method: 'library.list_records';
+      params: LibraryRecordsRequest;
     };
 export type ConsentId = string;
 export type ProbeFixture = 'synthetic_menu_v1' | 'embedding_text_v1';
@@ -81,4 +85,11 @@ export interface CaptureCommandParams {
 export interface LibraryAssetRequest {
   asset_id: AssetId;
   offset: number;
+}
+/**
+ * S02 §10.3: one bounded page of committed library records.
+ */
+export interface LibraryRecordsRequest {
+  cursor?: string | null;
+  limit: number;
 }

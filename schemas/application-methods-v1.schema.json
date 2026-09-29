@@ -119,6 +119,28 @@
       ],
       "type": "object"
     },
+    "LibraryRecordsRequest": {
+      "additionalProperties": false,
+      "description": "S02 §10.3: one bounded page of committed library records.",
+      "properties": {
+        "cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "limit"
+      ],
+      "type": "object"
+    },
     "OperationId": {
       "maxLength": 36,
       "minLength": 36,
@@ -299,6 +321,23 @@
         },
         "params": {
           "$ref": "#/$defs/LibraryAssetRequest"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "const": "library.list_records",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/LibraryRecordsRequest"
         }
       },
       "required": [

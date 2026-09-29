@@ -47,6 +47,10 @@ export type ApplicationResult =
   | {
       type: 'asset_chunk';
       value: LibraryAssetChunk;
+    }
+  | {
+      type: 'records_page';
+      value: LibraryRecordsPage;
     };
 export type BridgeState = 'stopped' | 'starting' | 'ready' | 'degraded' | 'unavailable';
 export type BuildId = string;
@@ -213,6 +217,26 @@ export interface LibraryAssetChunk {
    * Decimal string of the whole canonical file size.
    */
   total_size: string;
+}
+/**
+ * S02 §10.3: one bounded page of committed records; `next_cursor` is opaque.
+ */
+export interface LibraryRecordsPage {
+  items: LibraryRecordEntry[];
+  next_cursor?: string | null;
+}
+/**
+ * S02 §10.3: one entry in a library records page; asset paths are library-relative.
+ */
+export interface LibraryRecordEntry {
+  byte_size: string;
+  created_at: string;
+  height: number;
+  id: RecordId;
+  preview_asset_id?: AssetId | null;
+  target: string;
+  title: string;
+  width: number;
 }
 export interface AppError {
   code: ErrorCode;
