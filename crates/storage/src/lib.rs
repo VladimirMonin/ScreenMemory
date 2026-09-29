@@ -5,6 +5,7 @@ compile_error!("sm-storage requires the audited Windows x64 root adapter");
 mod image_tests;
 mod images;
 mod migration;
+pub mod staging;
 #[cfg(test)]
 mod tests;
 

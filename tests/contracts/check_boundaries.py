@@ -12,7 +12,7 @@ allowed = {
     'application': {'sm-domain', 'sm-protocol', 'async-trait', 'tokio-util', 'serde', 'serde_json', 'uuid', 'getrandom', 'sha2', 'subtle', 'zeroize'},
     'observability': {'sm-application', 'serde', 'serde_json'},
     'isolation': {'sm-application'},
-    'storage': {'sm-application', 'sm-domain', 'sm-isolation', 'async-trait', 'rusqlite', 'sha2', 'serde_json', 'uuid', 'tokio'},
+    'storage': {'sm-application', 'sm-domain', 'sm-isolation', 'async-trait', 'rusqlite', 'sha2', 'serde', 'serde_json', 'uuid', 'tokio'},
     'codec': {'libwebp-sys'},
     'credentials': {'sm-application', 'sm-isolation', 'windows-sys', 'zeroize'},
     'framing': {'serde', 'serde_json', 'tokio', 'zeroize'},
@@ -112,7 +112,24 @@ assert 'rusqlite::' not in (root / 'crates/application/src/storage.rs').read_tex
 # S02 images storage: the owner keeps its single writer, the canonical file layout and
 # the closed canonical-format vocabulary; the codec never reaches the filesystem.
 storage_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/storage/src').rglob('*.rs')}
-assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'tests.rs', 'image_tests.rs'}
+assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_tests.rs', 'tests.rs', 'image_tests.rs'}
+# S02-T09b staging validator: pure schema decoding only. It must not reach a filesystem,
+# a SQLite connection, a process or the network, and it never publishes a path or a
+# durable-input claim from manifest content.
+for forbidden in ('std::fs', 'std::path', 'PathBuf', 'rusqlite', 'std::process', 'std::net', 'durable_input'):
+    assert forbidden not in storage_sources['staging.rs'], ('storage', 'staging.rs', forbidden)
+for member in ('schema_version', 'kind', 'state', 'library_id', 'principal_id', 'operation_id',
+               'record_id', 'asset_id', 'frame_id', 'mode', 'width', 'height', 'stride',
+               'byte_length', 'pixels_sha256', 'context_sha256', 'encoder_fingerprint', 'captured_at'):
+    assert f'"{member}"' in storage_sources['staging.rs'], ('staging manifest member', member)
+assert 'use sm_application::' in storage_sources['staging.rs'] and \
+    'capture::{MAX_CAPTURE_PIXELS, MAX_CAPTURE_SIDE}' in storage_sources['staging.rs'], \
+    'the staging ceilings come from the capture seam, never from a second local constant'
+assert storage_sources['staging.rs'].count('MAX_CAPTURE_SIDE') == 3, \
+    'the side ceiling is only imported and applied, never redefined'
+assert 'is_canonical_utc_timestamp' in storage_sources['staging.rs']
+assert 'CaptureContext::from_json' in storage_sources['staging.rs']
+assert 'pub mod staging;' in storage_sources['lib.rs']
 assert {path.name for path in (root / 'crates/storage/migrations').glob('*.sql')} == {'0001_foundation.sql', '0002_images.sql', '0003_operations.sql'}
 images_sql = (root / 'crates/storage/migrations/0002_images.sql').read_text(encoding='utf-8')
 assert "format IN ('webp_lossless')" in images_sql and "'avif'" not in images_sql

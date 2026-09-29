@@ -12,6 +12,7 @@ sm-isolation = { path = "../isolation" }
 async-trait.workspace = true
 rusqlite = { version = "=0.37.0", features = ["bundled"] }
 sha2 = "=0.10.9"
+serde.workspace = true
 serde_json.workspace = true
 uuid = { workspace = true, features = ["v4"] }
 tokio = { version = "=1.53.1", features = ["sync", "time", "rt"] }
