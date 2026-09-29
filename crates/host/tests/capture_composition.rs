@@ -247,7 +247,7 @@ fn s02_capture_host_01_command_commits_a_canonical_record_and_serves_its_bytes()
             .collect();
         assert!(methods.contains(&"capture.command"));
         assert!(methods.contains(&"library.asset.read"));
-        assert_eq!(methods.len(), 5);
+        assert_eq!(methods.len(), 6);
         let outcome = client
             .capture_command(command(CaptureMode::Region), 10_000, None)
             .await
@@ -397,7 +397,7 @@ fn s02_capture_host_03_composition_without_a_capture_owner_supports_no_capture()
         let handle = tokio::spawn(async move { host.serve(DEFAULT_DRAIN).await });
         let client = connect(&roots, library, &store).await;
         let status = client.status().await.unwrap();
-        assert_eq!(status.available_methods.len(), 3);
+        assert_eq!(status.available_methods.len(), 4);
         assert!(!status
             .available_methods
             .iter()

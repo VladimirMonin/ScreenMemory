@@ -6,7 +6,7 @@ use sm_application::{
     observability::{
         Component, EventId, Level, Operation, Outcome, SafeCode, SafeEvent, SafeEventSink,
     },
-    storage::{FoundationRepository, StorageError},
+    storage::{FoundationRepository, RecordPageQuery, StorageError},
     FoundationApi, FoundationControlApi, RequestContext, Scope,
 };
 use sm_domain::{HostInstanceId, LibraryId, ReportId};
@@ -15,8 +15,9 @@ use sm_protocol::{
     application::{
         AiPolicyPatch, AiPolicyView, AuthorizeProbeRequest, BridgeState, CaptureCommandParams,
         CaptureOutcome, CheckOutcome, CheckResult, DoctorReport, DoctorRequest, HostState,
-        HostStatus, LibraryAssetChunk, LibraryAssetRequest, ProbeConsentReceipt,
-        RuntimeProbeReport, RuntimeProbeRequest, ShutdownReceipt, APPLICATION_VERSION,
+        HostStatus, LibraryAssetChunk, LibraryAssetRequest, LibraryRecordsPage,
+        LibraryRecordsRequest, ProbeConsentReceipt, RuntimeProbeReport, RuntimeProbeRequest,
+        ShutdownReceipt, APPLICATION_VERSION,
     },
     errors::{AppError, ErrorCode},
     values::{BuildId, CheckId, MethodName, SafeMessage},
@@ -35,9 +36,9 @@ use std::{
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-/// The three foundation handlers always implemented by this host.
-pub const AVAILABLE_METHODS: [&str; 3] =
-    ["system.status", "system.doctor", "system.request_shutdown"];
+/// The four foundation handlers always implemented by this host.
+pub const AVAILABLE_METHODS: [&str; 4] =
+    ["system.status", "system.doctor", "system.request_shutdown", "library.list_records"];
 /// S02 handlers, advertised only when this composition really owns a capture adapter.
 pub const CAPTURE_METHODS: [&str; 2] = ["capture.command", "library.asset.read"];
 const PHASE_STARTING: u8 = 0;
@@ -410,6 +411,48 @@ impl FoundationApi for FoundationServices {
     ) -> Result<RuntimeProbeReport, AppError> {
         // Live runtime probing is a later stage; never a synthetic success report.
         Err(AppError::method_not_supported())
+    }
+
+    async fn list_records(
+        &self,
+        ctx: RequestContext,
+        request: LibraryRecordsRequest,
+    ) -> Result<LibraryRecordsPage, AppError> {
+        if !ctx.allows(Scope::ListRecords) {
+            return Err(app_error(ErrorCode::PermissionDenied, "Scope is not granted."));
+        }
+        let query = RecordPageQuery::new(Some(request.limit), request.cursor.clone())
+            .map_err(|_| app_error(ErrorCode::InvalidRequest, "Invalid page query."))?;
+        let page = self.storage.page_records(query).await.map_err(storage_error)?;
+        let items = page
+            .items
+            .into_iter()
+            .map(|record| {
+                let (preview_asset_id, byte_size) = match record
+                    .assets
+                    .iter()
+                    .find(|a| a.asset_type.as_str() == "preview")
+                    .or_else(|| record.assets.first())
+                {
+                    Some(asset) => (Some(asset.id), asset.size_bytes.to_string()),
+                    None => (None, "0".to_string()),
+                };
+                sm_protocol::application::LibraryRecordEntry {
+                    id: record.id,
+                    created_at: record.created_at,
+                    title: record.title,
+                    target: record.target.as_str().to_string(),
+                    width: record.bounds.width,
+                    height: record.bounds.height,
+                    byte_size,
+                    preview_asset_id,
+                }
+            })
+            .collect();
+        Ok(LibraryRecordsPage {
+            items,
+            next_cursor: page.next_cursor,
+        })
     }
 }
 

@@ -357,6 +357,25 @@ impl ApplicationClient {
         }
     }
 
+    /// S02-T11: bounded page of committed library records.
+    pub async fn list_records(
+        &self,
+        request: sm_protocol::application::LibraryRecordsRequest,
+    ) -> Result<sm_protocol::application::LibraryRecordsPage, ClientError> {
+        match self
+            .call(
+                "library.list_records",
+                serde_json::to_value(request).expect("list records request is serializable"),
+                10_000,
+                None,
+            )
+            .await?
+        {
+            ApplicationResult::RecordsPage(page) => Ok(page),
+            _ => Err(SessionError::UnexpectedResponse.into()),
+        }
+   }
+
     /// Explicit best-effort cancellation, only for a request still pending on this client.
     pub async fn cancel(&self, id: RequestId) -> Result<(), SessionError> {
         if !self

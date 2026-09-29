@@ -15,7 +15,7 @@ use sm_protocol::{
     application::{
         AiPolicyPatch, AiPolicyView, AuthorizeProbeRequest, BridgeState, DoctorReport,
         DoctorRequest, HostState, HostStatus, ProbeConsentReceipt, Response, RuntimeProbeReport,
-        RuntimeProbeRequest, ShutdownReceipt, APPLICATION_VERSION,
+        LibraryRecordsPage, LibraryRecordsRequest, RuntimeProbeRequest, ShutdownReceipt, APPLICATION_VERSION,
     },
     errors::{AppError, ErrorCode},
     values::BuildId,
@@ -110,6 +110,16 @@ impl FoundationApi for Services {
         _: CancellationToken,
     ) -> Result<RuntimeProbeReport, AppError> {
         panic!("unsupported")
+    }
+    async fn list_records(
+        &self,
+        _: RequestContext,
+        _: LibraryRecordsRequest,
+    ) -> Result<LibraryRecordsPage, AppError> {
+        Ok(LibraryRecordsPage {
+            items: Vec::new(),
+            next_cursor: None,
+        })
     }
 }
 #[async_trait]

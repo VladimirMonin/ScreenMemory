@@ -976,7 +976,6 @@ fn t06d_gui_07_state_mapping_is_total_and_shows_no_invented_counts() {
         BTreeSet::from_iter(diagnostics.not_implemented.iter().cloned())
     );
     for capability in [
-        "library_counts",
         "gallery",
         "search",
         "drop_zone",

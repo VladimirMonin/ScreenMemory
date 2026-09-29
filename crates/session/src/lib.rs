@@ -14,8 +14,8 @@ use sm_pipe::{Connection, Endpoint, Listener, TrustedServerImage};
 use sm_protocol::{
     application::{
         ApplicationResult, CaptureCommandParams, CaptureOutcome, DoctorReport, HostStatus,
-        KnownParams, LibraryAssetChunk, LibraryAssetRequest, ProtocolVersion, RequestEnvelope,
-        Response, ShutdownReceipt, APPLICATION_VERSION,
+        KnownParams, LibraryAssetChunk, LibraryAssetRequest, ProtocolVersion, RequestEnvelope, Response, ShutdownReceipt,
+        APPLICATION_VERSION,
     },
     errors::{AppError, ErrorCode},
     values::{MethodName, SafeMessage},
@@ -397,6 +397,7 @@ async fn dispatch(
             | "system.authorize_probe"
             | "capture.command"
             | "library.asset.read"
+            | "library.list_records"
     ) {
         return Response::Error {
             request_id: id,
@@ -420,6 +421,8 @@ async fn dispatch(
         // S02: a new capture and a bounded read of an owned canonical asset.
         KnownParams::CaptureCommand(_) => Scope::CaptureScreen,
         KnownParams::ReadAsset(_) => Scope::ReadImages,
+        // S02-T11: list committed records with their assets.
+        KnownParams::ListRecords(_) => Scope::ListRecords,
     };
     if !ctx.allows(scope) {
         return fail(ErrorCode::PermissionDenied);
@@ -442,6 +445,10 @@ async fn dispatch(
                 capture_command(capture, ctx, params, cancel.clone()).await
             }
             KnownParams::ReadAsset(request) => read_asset(capture, ctx, request).await,
+            KnownParams::ListRecords(request) => foundation
+                .list_records(ctx, request)
+                .await
+                .map(ApplicationResult::RecordsPage),
             _ => Err(AppError::method_not_supported()),
         }
     };

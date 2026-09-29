@@ -9,7 +9,8 @@ use sm_domain::{CorrelationId, PrincipalId, RequestId};
 use sm_protocol::{
     application::{
         AiPolicyPatch, AiPolicyView, AuthorizeProbeRequest, DoctorReport, DoctorRequest,
-        HostStatus, ProbeConsentReceipt, RuntimeProbeReport, RuntimeProbeRequest, ShutdownReceipt,
+        HostStatus, LibraryRecordsPage, LibraryRecordsRequest, ProbeConsentReceipt,
+        RuntimeProbeReport, RuntimeProbeRequest, ShutdownReceipt,
     },
     errors::AppError,
 };
@@ -27,6 +28,9 @@ pub enum Scope {
     CaptureScreen,
     /// S02: read a committed canonical asset of an owned record.
     ReadImages,
+    /// S02-T11: read a bounded page of committed library records.
+    ListRecords,
+
 }
 /// Constructed only by the authenticated host boundary; never decoded from request.params.
 #[derive(Clone, Debug)]
@@ -98,6 +102,12 @@ pub trait FoundationApi: Send + Sync {
         request: RuntimeProbeRequest,
         cancel: CancellationToken,
     ) -> Result<RuntimeProbeReport, AppError>;
+    /// S02-T11: bounded, snapshot-stable page of committed records.
+    async fn list_records(
+        &self,
+        ctx: RequestContext,
+        request: LibraryRecordsRequest,
+    ) -> Result<LibraryRecordsPage, AppError>;
 }
 #[async_trait]
 pub trait FoundationControlApi: Send + Sync {

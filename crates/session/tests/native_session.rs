@@ -14,7 +14,7 @@ use sm_protocol::{
     application::{
         AiPolicyPatch, AiPolicyView, AuthorizeProbeRequest, BridgeState, CheckResult, DoctorReport,
         DoctorRequest, HostState, HostStatus, ProbeConsentReceipt, RuntimeProbeReport,
-        RuntimeProbeRequest, ShutdownReceipt, APPLICATION_VERSION,
+        LibraryRecordsPage, LibraryRecordsRequest, RuntimeProbeRequest, ShutdownReceipt, APPLICATION_VERSION,
     },
     errors::{AppError, ErrorCode},
     values::{BuildId, MethodName, SafeMessage},
@@ -152,6 +152,16 @@ impl FoundationApi for Services {
         _: CancellationToken,
     ) -> Result<RuntimeProbeReport, AppError> {
         panic!("unsupported handler invoked")
+    }
+    async fn list_records(
+        &self,
+        _: RequestContext,
+        _: LibraryRecordsRequest,
+    ) -> Result<LibraryRecordsPage, AppError> {
+        Ok(LibraryRecordsPage {
+            items: Vec::new(),
+            next_cursor: None,
+        })
     }
 }
 #[async_trait]

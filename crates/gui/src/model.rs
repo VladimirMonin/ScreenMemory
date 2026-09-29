@@ -18,8 +18,7 @@ pub const GUI_ENVELOPE_VERSION: u32 = 1;
 
 /// Capabilities still absent; the window marks them as not implemented. `capture` is no
 /// longer listed: S02 wires a real button through the same host command as `shot`.
-pub const NOT_IMPLEMENTED: [&str; 6] = [
-    "library_counts",
+pub const NOT_IMPLEMENTED: [&str; 5] = [
     "gallery",
     "search",
     "drop_zone",
@@ -282,4 +281,121 @@ pub fn state_for_failure(failure: &ClientFailure) -> GuiState {
 pub struct OpenReportOutcome {
     pub opened: bool,
     pub safe_code: Option<ErrorCode>,
+}
+
+/// S02-T11: one record in a bounded library page.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GuiLibraryRecord {
+    pub id: RecordId,
+    pub created_at: String,
+    pub title: String,
+    pub target: String,
+    pub width: u32,
+    pub height: u32,
+    pub byte_size: String,
+    pub preview_asset_id: Option<AssetId>,
+}
+
+impl GuiLibraryRecord {
+    fn from_entry(entry: &sm_protocol::application::LibraryRecordEntry) -> Self {
+        Self {
+            id: entry.id,
+            created_at: entry.created_at.clone(),
+            title: entry.title.clone(),
+            target: entry.target.clone(),
+            width: entry.width,
+            height: entry.height,
+            byte_size: entry.byte_size.clone(),
+            preview_asset_id: entry.preview_asset_id,
+        }
+    }
+}
+
+/// S02-T11: one bounded page of committed records the GUI can display.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GuiLibraryPage {
+    pub schema_version: u32,
+    pub items: Vec<GuiLibraryRecord>,
+    pub next_cursor: Option<String>,
+    pub safe_code: Option<ErrorCode>,
+    pub retryable: bool,
+}
+
+impl GuiLibraryPage {
+    fn envelope() -> Self {
+        Self {
+            schema_version: GUI_ENVELOPE_VERSION,
+            items: Vec::new(),
+            next_cursor: None,
+            safe_code: None,
+            retryable: false,
+        }
+    }
+    pub fn refused(failure: &sm_cli::ClientFailure) -> Self {
+        Self {
+            safe_code: Some(failure.code),
+            retryable: failure.retryable,
+            ..Self::envelope()
+        }
+    }
+    pub fn from_page(page: &sm_protocol::application::LibraryRecordsPage) -> Self {
+        Self {
+            items: page.items.iter().map(GuiLibraryRecord::from_entry).collect(),
+            next_cursor: page.next_cursor.clone(),
+            ..Self::envelope()
+        }
+    }
+}
+
+/// S02-T11: complete canonical asset bytes the GUI can display as a preview.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GuiAssetPreview {
+    pub schema_version: u32,
+    pub mime: String,
+    pub width: u32,
+    pub height: u32,
+    pub data_hex: String,
+    pub safe_code: Option<ErrorCode>,
+    pub retryable: bool,
+}
+
+impl GuiAssetPreview {
+    fn envelope() -> Self {
+        Self {
+            schema_version: GUI_ENVELOPE_VERSION,
+            mime: String::new(),
+            width: 0,
+            height: 0,
+            data_hex: String::new(),
+            safe_code: None,
+            retryable: false,
+        }
+    }
+    pub fn refused(failure: &sm_cli::ClientFailure) -> Self {
+        Self {
+            safe_code: Some(failure.code),
+            retryable: failure.retryable,
+            ..Self::envelope()
+        }
+    }
+    pub fn from_chunks(chunks: &[sm_protocol::application::LibraryAssetChunk]) -> Self {
+        let mut data_hex = String::new();
+        let mut mime = String::new();
+        let width = 0u32;
+        let height = 0u32;
+        for chunk in chunks {
+            data_hex.push_str(&chunk.data_hex);
+            if !chunk.mime.is_empty() { mime.clone_from(&chunk.mime); }
+        }
+        Self {
+            mime,
+            width,
+            height,
+            data_hex,
+            ..Self::envelope()
+        }
+    }
 }

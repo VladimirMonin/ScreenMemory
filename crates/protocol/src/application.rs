@@ -266,6 +266,46 @@ pub struct LibraryAssetChunk {
     pub data_hex: String,
 }
 
+/// S02 §10.3: one bounded page of committed library records.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryRecordsRequest {
+    pub limit: u16,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "present"
+    )]
+    pub cursor: Option<String>,
+}
+
+/// S02 §10.3: one entry in a library records page; asset paths are library-relative.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryRecordEntry {
+    pub id: RecordId,
+    pub created_at: String,
+    pub title: String,
+    pub target: String,
+    pub width: u32,
+    pub height: u32,
+    pub byte_size: String,
+    pub preview_asset_id: Option<AssetId>,
+}
+
+/// S02 §10.3: one bounded page of committed records; `next_cursor` is opaque.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryRecordsPage {
+    pub items: Vec<LibraryRecordEntry>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "present"
+    )]
+    pub next_cursor: Option<String>,
+}
+
 /// Decoded after the authorized handshake; `params` never carries a trusted context.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -296,6 +336,8 @@ pub enum KnownParams {
     CaptureCommand(CaptureCommandParams),
     #[serde(rename = "library.asset.read")]
     ReadAsset(LibraryAssetRequest),
+    #[serde(rename = "library.list_records")]
+    ListRecords(LibraryRecordsRequest),
 }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -317,6 +359,7 @@ pub enum ApplicationResult {
     Shutdown(ShutdownReceipt),
     Capture(CaptureOutcome),
     AssetChunk(LibraryAssetChunk),
+    RecordsPage(LibraryRecordsPage),
 }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -363,6 +406,7 @@ where
             | "system.request_shutdown"
             | "capture.command"
             | "library.asset.read"
+            | "library.list_records"
     ) {
         return Response::Error {
             request_id: request.request_id,

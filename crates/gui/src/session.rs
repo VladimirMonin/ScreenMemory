@@ -6,7 +6,9 @@
 //! window drops only this connection; the host keeps running and the next window connects
 //! to the same instance.
 use crate::{
-    model::{state_for_failure, GuiCaptureAnswer, GuiDiagnostics, OpenReportOutcome},
+    model::{
+        state_for_failure, GuiAssetPreview, GuiCaptureAnswer, GuiDiagnostics, GuiLibraryPage, OpenReportOutcome,
+    },
     open::{safe_code, validated_report_directory, OpenReportError, ReportOpener},
 };
 use sm_cli::{
@@ -14,7 +16,10 @@ use sm_cli::{
     PreviewConfig, ResolvedTarget,
 };
 use sm_domain::{LibraryId, OperationId};
-use sm_protocol::application::{CaptureCommandParams, CaptureMode, DoctorReport, HostStatus};
+use sm_protocol::application::{
+    CaptureCommandParams, CaptureMode, DoctorReport, HostStatus, LibraryAssetChunk,
+    LibraryRecordsRequest,
+};
 use sm_session::{ApplicationClient, ClientError};
 use std::path::PathBuf;
 
@@ -180,6 +185,60 @@ impl GuiSession {
             Ok(outcome) => GuiCaptureAnswer::from_outcome(&outcome),
             Err(failure) => GuiCaptureAnswer::refused(&failure),
         }
+    }
+
+    /// S02-T11: list committed records from the host library.
+    pub async fn list(&mut self, limit: u16, cursor: Option<String>) -> GuiLibraryPage {
+        if let Err(failure) = self.ensure(true).await {
+            return GuiLibraryPage::refused(&failure);
+        }
+        let request = LibraryRecordsRequest { limit, cursor };
+        let result = self
+            .client
+            .as_ref()
+            .expect("client is connected")
+            .list_records(request)
+            .await;
+        match self.finish(result) {
+            Ok(page) => GuiLibraryPage::from_page(&page),
+            Err(failure) => GuiLibraryPage::refused(&failure),
+        }
+    }
+
+    /// S02-T11: read a complete canonical asset (preview image) from the host.
+    pub async fn read_asset_full(&mut self, asset_id: sm_domain::AssetId) -> GuiAssetPreview {
+        if let Err(failure) = self.ensure(true).await {
+            return GuiAssetPreview::refused(&failure);
+        }
+        let mut chunks: Vec<LibraryAssetChunk> = Vec::new();
+        let mut offset: u32 = 0;
+        loop {
+            let request = sm_protocol::application::LibraryAssetRequest {
+                asset_id,
+                offset,
+            };
+            match self
+                .client
+                .as_ref()
+                .expect("client is connected")
+                .read_asset(request)
+                .await
+            {
+                Ok(chunk) => {
+                    let eof = chunk.eof;
+                    chunks.push(chunk.clone());
+                    if eof {
+                        break;
+                    }
+                    offset = chunk.next_offset;
+                }
+                Err(error) => {
+                    self.client = None;
+                    return GuiAssetPreview::refused(&client_failure(error));
+                }
+            }
+        }
+        GuiAssetPreview::from_chunks(&chunks)
     }
 
     /// Close this window's connection only; the host is never stopped from here.
