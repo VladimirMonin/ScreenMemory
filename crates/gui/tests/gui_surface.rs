@@ -633,8 +633,9 @@ fn t06d_gui_03_real_host_states_and_instance_reuse_on_reopen() {
             sm_protocol::application::HostState::Ready
         ));
         assert_eq!(host.protocol, APPLICATION_VERSION);
-        // The images migration (0002) is applied, so the real host reports schema 2.
-        assert_eq!(host.schema_version, 2);
+        // The images migration (0002) and the operations migration (0003) are applied, so
+        // the real host reports schema 3.
+        assert_eq!(host.schema_version, 3);
         assert!(!host.ai_enabled);
         assert!(matches!(host.bridge_state, BridgeState::Stopped));
         assert!(!runtime_available(host));

@@ -7,17 +7,25 @@ use std::{io::Read, path::Path};
 use uuid::Uuid;
 
 /// Shipped migrations in application order. `0001` owns the foundation tables;
-/// `0002` adds the S02 images schema (`records`, `assets`). Both are applied in a
-/// single transaction on a fresh file, and an interrupted upgrade rolls back the
-/// schema change together with its migration row.
-const SHIPPED: [(&str, &str); 2] = [
+/// `0002` adds the S02 images schema (`records`, `assets`); `0003` adds the durable
+/// capture-operation journal (`ingest_operations`), a global table only. All are
+/// applied in a single transaction on a fresh file, and an interrupted upgrade rolls
+/// back the schema change together with its migration row.
+const SHIPPED: [(&str, &str); 3] = [
     (
         "0001_foundation",
         include_str!("../migrations/0001_foundation.sql"),
     ),
     ("0002_images", include_str!("../migrations/0002_images.sql")),
+    (
+        "0003_operations",
+        include_str!("../migrations/0003_operations.sql"),
+    ),
 ];
-/// Applied images schema version, reported by `SchemaSnapshot::images`.
+/// Applied images schema version, reported by `SchemaSnapshot::images`. The
+/// `0003_operations` journal adds a global migration without changing the images
+/// schema itself, so the images contract stays at `0002` while the global
+/// `schema_version` becomes three.
 const IMAGES_VERSION: u32 = 2;
 pub(super) const BOOTSTRAP: &str = "CREATE TABLE schema_migrations (\n    version       INTEGER PRIMARY KEY CHECK (version > 0),\n    name          TEXT NOT NULL,\n    checksum      TEXT NOT NULL,\n    applied_at    TEXT NOT NULL\n)";
 // Candidate-only foundation format. Written on a newly created file, before WAL
@@ -71,11 +79,21 @@ fn object_name(statement: &str) -> String {
     panic!("shipped migration syntax");
 }
 
-fn statements(migration: &str) -> impl Iterator<Item = &str> {
-    migration
-        .split(";\n")
+fn statements(migration: &str) -> Vec<String> {
+    // A shipped migration may carry a leading `--` documentation header, but
+    // `sqlite_master.sql` stores only the DDL: comment lines are removed before the
+    // `;` split so the expected object text equals the stored text. The recorded
+    // checksum still covers the exact shipped bytes, comments included.
+    let ddl: String = migration
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("--"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    ddl.split(";\n")
         .map(str::trim)
         .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Exact objects a library must contain after the first `version` migrations.
@@ -83,7 +101,7 @@ fn expected_objects(version: usize) -> Vec<(String, String)> {
     let mut names = vec![("schema_migrations".to_owned(), BOOTSTRAP.to_owned())];
     for (_, migration) in SHIPPED.iter().take(version) {
         for statement in statements(migration) {
-            names.push((object_name(statement), statement.to_owned()));
+            names.push((object_name(&statement), statement));
         }
     }
     names.sort();

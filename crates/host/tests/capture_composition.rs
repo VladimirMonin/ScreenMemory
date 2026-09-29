@@ -8,12 +8,15 @@ use sm_application::{
         CaptureTrigger, CapturedDib, NativeCaptureAdapter,
     },
     credentials::{CredentialEnvironment, CredentialKey, Secret, SecretStore, StoreError},
-    storage::{CaptureContext, CaptureTarget, PhysicalBounds},
+    storage::{
+        AssetType, CaptureContext, CaptureTarget, CommitImageCapture, FoundationRepository,
+        PhysicalBounds, Provenance,
+    },
 };
-use sm_domain::LibraryId;
+use sm_domain::{AssetId, LibraryId, PrincipalId, RecordId};
 use sm_framing::BufferBudget;
 use sm_host::{bootstrap, BootstrapMode, BootstrapOptions, CaptureOptions, DEFAULT_DRAIN};
-use sm_isolation::{LibraryRootResolver, RootSource};
+use sm_isolation::{HostLease, LibraryRootResolver, RootSource};
 use sm_pipe::TrustedServerImage;
 use sm_protocol::{
     application::{
@@ -22,14 +25,16 @@ use sm_protocol::{
     errors::ErrorCode,
 };
 use sm_session::{ApplicationClient, ClientError, CredentialSource};
+use sm_storage::StorageWorker;
 use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Mutex,
+        Arc, Condvar, Mutex,
     },
+    time::{Duration, Instant},
 };
 use uuid::Uuid;
 
@@ -63,6 +68,29 @@ impl Roots {
     }
     fn assets(&self) -> PathBuf {
         self.0.join("assets")
+    }
+    fn lease(&self) -> HostLease {
+        HostLease::acquire(self.layout()).unwrap()
+    }
+    /// Every canonical file really published below the leased assets root.
+    fn published_files(&self) -> Vec<PathBuf> {
+        fn walk(directory: &Path, out: &mut Vec<PathBuf>) {
+            let Ok(entries) = fs::read_dir(directory) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, out);
+                } else if path.extension().and_then(|value| value.to_str()) == Some("webp") {
+                    out.push(path);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(&self.assets(), &mut out);
+        out.sort();
+        out
     }
 }
 
@@ -132,6 +160,47 @@ struct SyntheticAdapter {
     mode_answer: Answer,
     calls: AtomicUsize,
     cancelled: Mutex<Option<Uuid>>,
+    /// Optional hold: a gated adapter keeps its *first* session inside `capture` until the
+    /// test releases it, so a competing request can be observed while one native session
+    /// really is in flight. `None` means the session completes immediately.
+    gate: Option<Arc<Gate>>,
+}
+
+/// Two-way synthetic rendezvous used only by the concurrency test.
+#[derive(Default)]
+struct Gate {
+    open: Mutex<bool>,
+    wait_open: Condvar,
+    entered: Mutex<bool>,
+}
+
+impl Gate {
+    /// Called from inside a native session: announce entry and wait for release.
+    fn enter_and_wait(&self) {
+        *self.entered.lock().unwrap() = true;
+        let mut open = self.open.lock().unwrap();
+        while !*open {
+            open = self.wait_open.wait(open).unwrap();
+        }
+    }
+
+    fn release(&self) {
+        *self.open.lock().unwrap() = true;
+        self.wait_open.notify_all();
+    }
+
+    /// Asynchronous observation of the entry: it yields to the runtime instead of
+    /// blocking the only worker thread, so the competing request really is dispatched.
+    async fn wait_entered_async(&self, limit: Duration) {
+        let deadline = Instant::now() + limit;
+        while !*self.entered.lock().unwrap() {
+            assert!(
+                Instant::now() < deadline,
+                "the native session never entered the synthetic adapter"
+            );
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -148,7 +217,21 @@ impl SyntheticAdapter {
             mode_answer,
             calls: AtomicUsize::new(0),
             cancelled: Mutex::new(None),
+            gate: None,
         })
+    }
+
+    fn gated(width: u32, height: u32, mode_answer: Answer) -> (Arc<Self>, Arc<Gate>) {
+        let gate = Arc::new(Gate::default());
+        let adapter = Arc::new(Self {
+            width,
+            height,
+            mode_answer,
+            calls: AtomicUsize::new(0),
+            cancelled: Mutex::new(None),
+            gate: Some(gate.clone()),
+        });
+        (adapter, gate)
     }
 
     fn frame(&self, request: &CaptureRequest) -> CapturedDib {
@@ -169,6 +252,9 @@ impl NativeCaptureAdapter for SyntheticAdapter {
     fn capture(&self, request: CaptureRequest) -> Result<CaptureOutcome, CaptureError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         *self.cancelled.lock().unwrap() = Some(request.operation_id());
+        if let Some(gate) = &self.gate {
+            gate.enter_and_wait();
+        }
         match self.mode_answer {
             Answer::Accept => Ok(CaptureOutcome::Accepted(Box::new(CaptureResult {
                 context: CaptureContext {
@@ -248,8 +334,9 @@ fn s02_capture_host_01_command_commits_a_canonical_record_and_serves_its_bytes()
         assert!(methods.contains(&"capture.command"));
         assert!(methods.contains(&"library.asset.read"));
         assert_eq!(methods.len(), 6);
+        let params = command(CaptureMode::Region);
         let outcome = client
-            .capture_command(command(CaptureMode::Region), 10_000, None)
+            .capture_command(params.clone(), 10_000, None)
             .await
             .unwrap();
         let receipt = match outcome {
@@ -327,6 +414,22 @@ fn s02_capture_host_01_command_commits_a_canonical_record_and_serves_its_bytes()
             offset = chunk.next_offset;
         }
         assert_eq!(collected, bytes);
+        // Simulate a lost first reply: discard the original connection, reconnect with a
+        // new transport request id, and demand the identical committed wire receipt.
+        drop(client);
+        let client = connect(&roots, library, &store).await;
+        let replayed = client.capture_command(params, 10_000, None).await.unwrap();
+        let replayed = match replayed {
+            WireCaptureOutcome::Saved { receipt } => receipt,
+            other => panic!("reconnect must replay the saved receipt: {other:?}"),
+        };
+        assert_eq!(
+            serde_json::to_vec(&replayed).unwrap(),
+            serde_json::to_vec(&receipt).unwrap(),
+            "the replay must be byte-equivalent even across a new session"
+        );
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(roots.published_files(), vec![published]);
         // A missing asset is a typed refusal, never an empty success.
         match client
             .read_asset(LibraryAssetRequest {
@@ -413,6 +516,154 @@ fn s02_capture_host_03_composition_without_a_capture_owner_supports_no_capture()
             other => panic!("a composition without a capture owner must refuse: {other:?}"),
         }
         stop(&client, handle).await;
+    });
+}
+
+#[test]
+fn s02_capture_host_05_mode_and_foreign_principal_conflict_without_metadata() {
+    let rt = runtime();
+    rt.block_on(async {
+        let roots = Roots::new();
+        let store = Arc::new(MemoryStore::default());
+        // Seed a foreign journal entry through the real SQLite writer in this owned
+        // synthetic root. The host's owner credential is enrolled only after reopening.
+        let foreign = command(CaptureMode::Region);
+        let worker = StorageWorker::start(roots.lease()).unwrap();
+        let image = sm_codec::RgbaImage::from_rgba(2, 2, vec![0x77; 16]).unwrap();
+        let canonical = sm_codec::encode_exact_lossless_verified(&image)
+            .unwrap()
+            .into_canonical();
+        worker
+            .commit_image_capture(CommitImageCapture {
+                operation_id: foreign.operation_id,
+                principal_id: PrincipalId::new(Uuid::new_v4()),
+                record_id: RecordId::new(Uuid::new_v4()),
+                asset_id: AssetId::new(Uuid::new_v4()),
+                asset_type: AssetType::Original,
+                mode: CaptureTarget::Region,
+                width: 2,
+                height: 2,
+                capture_context: CaptureContext {
+                    device: "synthetic-display".into(),
+                    app: "synthetic-adapter".into(),
+                    title: "Synthetic frame".into(),
+                    target: CaptureTarget::Region,
+                    sources: vec![CaptureTarget::Region],
+                    bounds: PhysicalBounds {
+                        x: 0,
+                        y: 0,
+                        width: 2,
+                        height: 2,
+                    },
+                },
+                provenances: vec![Provenance::Manual {
+                    when: "2026-09-28T09:15:00.000Z".into(),
+                }],
+                warnings: vec!["synthetic_adapter".into()],
+                canonical: canonical.bytes().to_vec(),
+            })
+            .await
+            .unwrap();
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        let adapter = SyntheticAdapter::new(4, 4, Answer::Accept);
+        let host = bootstrap(options(
+            &roots.path(),
+            CaptureOptions::Injected(adapter.clone()),
+            store.clone(),
+        ))
+        .await
+        .unwrap();
+        let library = host.library_id();
+        let handle = tokio::spawn(async move { host.serve(DEFAULT_DRAIN).await });
+        let client = connect(&roots, library, &store).await;
+        let own = command(CaptureMode::Region);
+        assert!(matches!(
+            client
+                .capture_command(own.clone(), 10_000, None)
+                .await
+                .unwrap(),
+            WireCaptureOutcome::Saved { .. }
+        ));
+        let changed_mode = client
+            .capture_command(
+                CaptureCommandParams {
+                    operation_id: own.operation_id,
+                    mode: CaptureMode::Desktop,
+                },
+                10_000,
+                None,
+            )
+            .await;
+        let foreign_principal = client.capture_command(foreign, 10_000, None).await;
+        let conflicts: Vec<_> = [changed_mode, foreign_principal]
+            .into_iter()
+            .map(|outcome| match outcome {
+                Err(ClientError::Application(error)) => error,
+                other => panic!("conflict must reveal no receipt: {other:?}"),
+            })
+            .collect();
+        assert_eq!(conflicts[0].code, ErrorCode::InvalidRequest);
+        assert_eq!(
+            serde_json::to_vec(&conflicts[0]).unwrap(),
+            serde_json::to_vec(&conflicts[1]).unwrap(),
+            "foreign and changed-mode conflicts must have identical generic envelopes"
+        );
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(roots.published_files().len(), 2);
+        stop(&client, handle).await;
+    });
+}
+
+#[test]
+fn s02_capture_host_06_concurrent_same_id_never_runs_two_native_sessions() {
+    let rt = runtime();
+    rt.block_on(async {
+        let roots = Roots::new();
+        let store = Arc::new(MemoryStore::default());
+        let (adapter, gate) = SyntheticAdapter::gated(8, 8, Answer::Accept);
+        let host = bootstrap(options(
+            &roots.path(),
+            CaptureOptions::Injected(adapter.clone()),
+            store.clone(),
+        ))
+        .await
+        .unwrap();
+        let library = host.library_id();
+        let handle = tokio::spawn(async move { host.serve(DEFAULT_DRAIN).await });
+        let first = connect(&roots, library, &store).await;
+        let second = connect(&roots, library, &store).await;
+        let params = command(CaptureMode::Region);
+        let first_call = tokio::spawn({
+            let params = params.clone();
+            async move { first.capture_command(params, 10_000, None).await }
+        });
+        gate.wait_entered_async(Duration::from_secs(5)).await;
+        let concurrent = tokio::time::timeout(
+            Duration::from_secs(5),
+            second.capture_command(params.clone(), 10_000, None),
+        )
+        .await;
+        // Always unblock the native thread before inspecting the competing result.
+        gate.release();
+        match concurrent.expect("duplicate must get a bounded response") {
+            Err(ClientError::Application(error)) => {
+                assert_eq!(error.code, ErrorCode::CaptureBusy);
+                assert!(error.retryable);
+            }
+            Ok(WireCaptureOutcome::Saved { .. }) => {}
+            other => panic!("duplicate must be Busy or saved: {other:?}"),
+        }
+        let saved = first_call.await.unwrap().unwrap();
+        assert!(matches!(saved, WireCaptureOutcome::Saved { .. }));
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(roots.published_files().len(), 1);
+        let replay = second.capture_command(params, 10_000, None).await.unwrap();
+        assert_eq!(
+            serde_json::to_vec(&replay).unwrap(),
+            serde_json::to_vec(&saved).unwrap()
+        );
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+        stop(&second, handle).await;
     });
 }
 

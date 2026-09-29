@@ -113,7 +113,7 @@ assert 'rusqlite::' not in (root / 'crates/application/src/storage.rs').read_tex
 # the closed canonical-format vocabulary; the codec never reaches the filesystem.
 storage_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/storage/src').rglob('*.rs')}
 assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'tests.rs', 'image_tests.rs'}
-assert {path.name for path in (root / 'crates/storage/migrations').glob('*.sql')} == {'0001_foundation.sql', '0002_images.sql'}
+assert {path.name for path in (root / 'crates/storage/migrations').glob('*.sql')} == {'0001_foundation.sql', '0002_images.sql', '0003_operations.sql'}
 images_sql = (root / 'crates/storage/migrations/0002_images.sql').read_text(encoding='utf-8')
 assert "format IN ('webp_lossless')" in images_sql and "'avif'" not in images_sql
 assert "asset_type IN ('original', 'preview', 'edited')" in images_sql
@@ -121,10 +121,18 @@ assert 'PRIMARY KEY AUTOINCREMENT' in images_sql, 'bounded pages need the orderi
 assert '"assets/{file_relative}"' in storage_sources['images.rs']
 assert '"{month}/{record_id}/{asset_type}.webp"' in storage_sources['images.rs']
 assert 'BEGIN IMMEDIATE' not in images_sql and 'TransactionBehavior::Immediate' in storage_sources['images.rs']
+# S02-T09a journal replay: the saved row keeps the replayable receipt metadata, and the
+# closed mode vocabulary and positive geometry bounds live in the migration itself.
+operations_sql = (root / 'crates/storage/migrations/0003_operations.sql').read_text(encoding='utf-8')
+assert "mode IN ('region', 'active_window', 'monitor', 'desktop')" in operations_sql, \
+    'the journal mode vocabulary must match the typed CaptureTarget names, not the wire aliases'
+assert 'width > 0 AND width <= 16383' in operations_sql and 'height > 0 AND height <= 16383' in operations_sql
+assert "json_type(warnings) = 'array'" in operations_sql
 application_storage = (root / 'crates/application/src/storage.rs').read_text(encoding='utf-8')
 assert 'sm_domain::{AssetId, RecordId}' in application_storage
 assert 'Page<Record>' in application_storage and 'RecordPageQuery' in application_storage
 assert 'CANONICAL_FORMAT_WEBP_LOSSLESS' in application_storage
+assert 'LookupOutcome' in application_storage and 'Saved(' in application_storage and 'Conflict' in application_storage
 assert "'avif'" not in application_storage, 'the images vocabulary has no AVIF value'
 codec_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/codec/src').rglob('*.rs')}
 assert set(codec_sources) == {'lib.rs', 'error.rs', 'limits.rs', 'native.rs'}

@@ -6,10 +6,18 @@ use uuid::Uuid;
 
 /// Canonical format vocabulary of the images schema (S02: WebP lossless only).
 pub const CANONICAL_FORMAT_WEBP_LOSSLESS: &str = "webp_lossless";
+/// MIME of the one canonical stored format; recovered from the asset row, never guessed.
+pub const CANONICAL_MIME_WEBP: &str = "image/webp";
 /// Longest accepted capture-context title.
 pub const MAX_TITLE_LENGTH: usize = 160;
 /// Longest accepted provenance description.
 pub const MAX_PROVENANCE_LENGTH: usize = 160;
+/// Longest accepted surface-size of one canonical capture; the WebP lossless bound.
+pub const MAX_CAPTURE_SIDE: u32 = 16_383;
+/// Largest number of diagnostic warnings a saved capture row may carry.
+pub const MAX_WARNINGS: usize = 16;
+/// Longest accepted single diagnostic warning; a stable code, never free-form text.
+pub const MAX_WARNING_LENGTH: usize = 64;
 
 /// Images-schema state of an open library.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,6 +82,18 @@ impl CaptureTarget {
             Self::ActiveWindow => "active_window",
             Self::Monitor => "monitor",
             Self::Desktop => "desktop",
+        }
+    }
+
+    /// Closed stored name of one capture target. A value outside the vocabulary is an
+    /// integrity failure, never a silently repaired or newly invented target.
+    pub fn parse(raw: &str) -> Result<Self, StorageError> {
+        match raw {
+            "region" => Ok(Self::Region),
+            "active_window" => Ok(Self::ActiveWindow),
+            "monitor" => Ok(Self::Monitor),
+            "desktop" => Ok(Self::Desktop),
+            _ => Err(StorageError::IntegrityFailed),
         }
     }
 }
@@ -223,6 +243,39 @@ pub fn provenances_from_json(raw: &str) -> Result<Vec<Provenance>, StorageError>
     Ok(values)
 }
 
+/// Stored diagnostic-warning list, bounded and validated before the value can reach SQL.
+///
+/// A warning is a short stable code (`display_unknown`), never free-form text or a path,
+/// so the stored receipt cannot smuggle content into the journal. The list is capped in
+/// count and per-entry length so a tampered row is refused instead of read back.
+pub fn warnings_to_json(warnings: &[String]) -> Result<String, StorageError> {
+    validate_warnings(warnings)?;
+    serde_json::to_string(warnings).map_err(|_| StorageError::InvalidPayload)
+}
+
+/// Re-validated stored warning list; a tampered array is refused, not repaired.
+pub fn warnings_from_json(raw: &str) -> Result<Vec<String>, StorageError> {
+    let values: Vec<String> =
+        serde_json::from_str(raw).map_err(|_| StorageError::InvalidPayload)?;
+    validate_warnings(&values)?;
+    Ok(values)
+}
+
+fn validate_warnings(warnings: &[String]) -> Result<(), StorageError> {
+    if warnings.len() > MAX_WARNINGS
+        || warnings.iter().any(|warning| {
+            warning.is_empty()
+                || warning.len() > MAX_WARNING_LENGTH
+                || !warning
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+        })
+    {
+        return Err(StorageError::InvalidPayload);
+    }
+    Ok(())
+}
+
 /// Canonical UTC millisecond timestamp shape: `YYYY-MM-DDTHH:MM:SS.mmmZ`.
 pub fn is_canonical_utc_timestamp(raw: &str) -> bool {
     let bytes = raw.as_bytes();
@@ -348,24 +401,60 @@ impl RecordPageQuery {
 /// One accepted image waiting for its durable record, asset row and file.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CommitImageCapture {
+    pub operation_id: sm_domain::OperationId,
+    pub principal_id: sm_domain::PrincipalId,
     pub record_id: RecordId,
     pub asset_id: AssetId,
     pub asset_type: AssetType,
+    /// Closed capture target of the accepted frame; part of both the semantic fingerprint
+    /// and the replayable saved receipt metadata.
+    pub mode: CaptureTarget,
+    /// Positive canonical pixel geometry of the accepted crop.
+    pub width: u32,
+    pub height: u32,
     pub capture_context: CaptureContext,
     pub provenances: Vec<Provenance>,
+    /// Bounded, validated diagnostic codes; stored atomically with the saved row.
+    pub warnings: Vec<String>,
     /// Verified canonical container bytes; the worker re-checks the container shape.
     pub canonical: Vec<u8>,
 }
 
-/// Receipt of one committed image; paths are library-relative only.
+/// Replayable receipt metadata of one committed image; paths are library-relative only.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CommittedImage {
+    pub operation_id: sm_domain::OperationId,
+    pub principal_id: sm_domain::PrincipalId,
     pub record_id: RecordId,
     pub asset_id: AssetId,
+    pub mode: CaptureTarget,
+    pub width: u32,
+    pub height: u32,
+    /// MIME of the stored canonical asset format, recovered from the asset row.
+    pub canonical_mime: &'static str,
+    pub warnings: Vec<String>,
     pub created_at: String,
     pub relative_path: String,
     pub size_bytes: u64,
     pub sha256: String,
+}
+
+/// Typed, ownership-scoped outcome of one operation lookup (S02 §8.7).
+///
+/// A caller can only ever observe the receipt of its **own** saved operation. A foreign
+/// principal, or a replay whose capture mode differs from the stored one, yields the
+/// same safe [`LookupOutcome::Conflict`] carrying **no** receipt metadata. Only a truly
+/// absent operation id is [`LookupOutcome::Unknown`]. A saved row whose stored metadata
+/// is malformed is an error, never a fabricated receipt.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LookupOutcome {
+    /// The caller's own saved operation, with its committed receipt metadata.
+    Saved(CommittedImage),
+    /// The operation id is truly absent from the journal.
+    Unknown,
+    /// The id is owned by another principal or was committed with a different mode; no
+    /// stored metadata is disclosed.
+    Conflict,
 }
 
 /// One bounded chunk of a committed canonical asset; the digest covers the whole file.
@@ -391,6 +480,13 @@ pub trait FoundationRepository: Send + Sync {
         &self,
         command: CommitImageCapture,
     ) -> Result<CommittedImage, StorageError>;
+    /// Idempotent, ownership-scoped replay lookup of one operation.
+    async fn lookup_operation(
+        &self,
+        operation_id: sm_domain::OperationId,
+        principal_id: sm_domain::PrincipalId,
+        mode: CaptureTarget,
+    ) -> Result<LookupOutcome, StorageError>;
     /// Bounded, snapshot-stable page of committed records with their assets.
     async fn page_records(&self, query: RecordPageQuery) -> Result<Page<Record>, StorageError>;
     /// Read one bounded chunk of a committed canonical asset. The path is never supplied

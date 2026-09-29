@@ -11,8 +11,8 @@ mod tests;
 use async_trait::async_trait;
 use rusqlite::{Connection, OpenFlags};
 use sm_application::storage::{
-    AssetChunk, CommitImageCapture, CommittedImage, FoundationRepository, Page, Record,
-    RecordPageQuery, SchemaSnapshot, StorageError,
+    AssetChunk, CommitImageCapture, CommittedImage, FoundationRepository, LookupOutcome, Page,
+    Record, RecordPageQuery, SchemaSnapshot, StorageError,
 };
 use sm_isolation::{HostLease, LeaseError};
 use std::{
@@ -39,6 +39,7 @@ enum Request {
     AiEnabled(Response<bool>),
     SqliteVersion(Response<String>),
     CommitImage(Response<CommittedImage>, Box<CommitImageCapture>),
+    LookupOperation(Response<LookupOutcome>, String, String, String),
     PageRecords(Response<Page<Record>>, RecordPageQuery),
     ReadAssetChunk(Response<AssetChunk>, String, u64, u32),
     #[cfg(test)]
@@ -181,6 +182,13 @@ fn run(
                 );
                 let _ = tx.send(result);
             }
+            Request::LookupOperation(tx, op_id, principal_id, mode) => {
+                let result =
+                    sm_application::storage::CaptureTarget::parse(&mode).and_then(|mode| {
+                        images::lookup_operation(&db, &assets, &op_id, &principal_id, mode)
+                    });
+                let _ = tx.send(result);
+            }
             Request::PageRecords(tx, query) => {
                 let _ = tx.send(images::page_records(&db, query));
             }
@@ -247,6 +255,22 @@ impl FoundationRepository for StorageWorker {
     ) -> Result<CommittedImage, StorageError> {
         self.ask(|tx| Request::CommitImage(tx, Box::new(command)))
             .await
+    }
+    async fn lookup_operation(
+        &self,
+        operation_id: sm_domain::OperationId,
+        principal_id: sm_domain::PrincipalId,
+        mode: sm_application::storage::CaptureTarget,
+    ) -> Result<LookupOutcome, StorageError> {
+        self.ask(|tx| {
+            Request::LookupOperation(
+                tx,
+                operation_id.as_uuid().to_string(),
+                principal_id.as_uuid().to_string(),
+                mode.as_str().to_owned(),
+            )
+        })
+        .await
     }
     async fn page_records(&self, query: RecordPageQuery) -> Result<Page<Record>, StorageError> {
         self.ask(|tx| Request::PageRecords(tx, query)).await

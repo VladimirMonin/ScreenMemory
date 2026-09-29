@@ -18,8 +18,8 @@ use sm_application::{
         Component, EventId, Level, Operation, Outcome, SafeCode, SafeEvent, SafeEventSink,
     },
     storage::{
-        AssetChunk, AssetType, CommitImageCapture, FoundationRepository, Provenance, StorageError,
-        ASSET_CHUNK_BYTES,
+        AssetChunk, AssetType, CommitImageCapture, CommittedImage, FoundationRepository,
+        LookupOutcome, Provenance, StorageError, ASSET_CHUNK_BYTES,
     },
     RequestContext, Scope,
 };
@@ -36,9 +36,10 @@ use sm_protocol::{
 };
 use sm_storage::StorageWorker;
 use std::{
+    collections::HashSet,
     sync::{
         atomic::{AtomicU8, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -50,6 +51,55 @@ use uuid::Uuid;
 pub const MAX_ACCEPTED_SAVES: u8 = 2;
 /// Bounded slot count of the hotkey persistence channel; a full queue is backpressure.
 pub const HOTKEY_QUEUE: usize = 2;
+
+/// Operation ids that currently own a native session in this composition (S02 §8.7).
+///
+/// The journal only becomes visible after a commit, so two concurrent requests for one
+/// id would both read "unknown" and both start a native session. This in-memory set
+/// closes that window without asking SQLite before the freeze. The entry is released by
+/// an RAII guard, so every exit path (answer, typed failure, cancel, unwind) releases the
+/// id exactly once.
+#[derive(Default)]
+struct InFlight {
+    ids: Mutex<HashSet<Uuid>>,
+}
+
+impl InFlight {
+    /// Claim one operation id; `None` means a session for this id is already running.
+    fn begin(self: &Arc<Self>, operation_id: Uuid) -> Option<InFlightGuard> {
+        let mut ids = lock_recovering(&self.ids);
+        if !ids.insert(operation_id) {
+            return None;
+        }
+        drop(ids);
+        Some(InFlightGuard {
+            owner: self.clone(),
+            operation_id,
+        })
+    }
+}
+
+/// One claimed operation id; dropping it releases the claim, never leaving a stale id
+/// behind a cancelled or failed session.
+struct InFlightGuard {
+    owner: Arc<InFlight>,
+    operation_id: Uuid,
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        lock_recovering(&self.owner.ids).remove(&self.operation_id);
+    }
+}
+
+/// A poisoned mutex still holds a consistent set of ids: recovering it keeps the guard
+/// releasable instead of turning a panic elsewhere into a permanently busy operation id.
+fn lock_recovering(ids: &Mutex<HashSet<Uuid>>) -> std::sync::MutexGuard<'_, HashSet<Uuid>> {
+    match ids.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
 
 /// One typed refusal or failure with the stable S01 error envelope.
 fn app_error(code: ErrorCode, message: &'static str, retryable: bool) -> AppError {
@@ -178,13 +228,25 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 
 /// The one commit command of an accepted native result: verified canonical bytes, the
 /// observed context and the provenance of the frame's own freeze instant.
-fn commit_command(result: &CaptureResult, canonical: Vec<u8>) -> CommitImageCapture {
+fn commit_command(
+    result: &CaptureResult,
+    canonical: Vec<u8>,
+    principal_id: sm_domain::PrincipalId,
+) -> CommitImageCapture {
     CommitImageCapture {
+        operation_id: sm_domain::OperationId::new(result.request.operation_id()),
+        principal_id,
         record_id: RecordId::new(Uuid::new_v4()),
         asset_id: AssetId::new(Uuid::new_v4()),
         asset_type: AssetType::Original,
+        // The accepted frame's own mode and positive canonical geometry; the storage
+        // boundary re-validates the bounds and the bounded warning codes before store.
+        mode: result.request.target(),
+        width: result.dib.width(),
+        height: result.dib.height(),
         capture_context: result.context.clone(),
         provenances: vec![capture_provenance(result)],
+        warnings: result.warnings.clone(),
         canonical,
     }
 }
@@ -198,12 +260,31 @@ fn hex_encode(bytes: &[u8]) -> String {
     out
 }
 
+/// Replayable receipt of one already committed operation: the stored identity, geometry,
+/// digest, size, library-relative path and bounded warnings, never a fresh capture.
+fn replay_receipt(stored: CommittedImage) -> CaptureReceipt {
+    CaptureReceipt {
+        operation_id: stored.operation_id,
+        record_id: stored.record_id,
+        asset_id: stored.asset_id,
+        canonical_mime: stored.canonical_mime.to_string(),
+        canonical_sha256: stored.sha256,
+        width: stored.width,
+        height: stored.height,
+        byte_size: stored.size_bytes.to_string(),
+        relative_path: stored.relative_path,
+        warnings: stored.warnings,
+    }
+}
+
 /// Owned capture handler of one host composition.
 pub struct CaptureIngest {
     adapter: Arc<dyn NativeCaptureAdapter>,
     storage: StorageWorker,
     logger: Logger,
     slots: Arc<AtomicU8>,
+    owner_principal: sm_domain::PrincipalId,
+    in_flight: Arc<InFlight>,
 }
 
 impl CaptureIngest {
@@ -211,12 +292,15 @@ impl CaptureIngest {
         adapter: Arc<dyn NativeCaptureAdapter>,
         storage: StorageWorker,
         logger: Logger,
+        owner_principal: sm_domain::PrincipalId,
     ) -> Arc<Self> {
         Arc::new(Self {
             adapter,
             storage,
             logger,
             slots: Arc::new(AtomicU8::new(0)),
+            owner_principal,
+            in_flight: Arc::new(InFlight::default()),
         })
     }
 
@@ -244,7 +328,11 @@ impl CaptureIngest {
     }
 
     /// Encode the accepted pixels and commit them with their context in one transaction.
-    async fn commit(&self, result: &CaptureResult) -> Result<CaptureReceipt, AppError> {
+    async fn commit(
+        &self,
+        result: &CaptureResult,
+        principal_id: sm_domain::PrincipalId,
+    ) -> Result<CaptureReceipt, AppError> {
         let dib = &result.dib;
         let image =
             RgbaImage::from_rgba(dib.width(), dib.height(), dib.rgba8()).map_err(codec_failure)?;
@@ -253,7 +341,7 @@ impl CaptureIngest {
         let canonical = encode_exact_lossless_verified(&image)
             .map_err(codec_failure)?
             .into_canonical();
-        let command = commit_command(result, canonical.bytes().to_vec());
+        let command = commit_command(result, canonical.bytes().to_vec(), principal_id);
         let committed = self
             .storage
             .commit_image_capture(command)
@@ -287,6 +375,38 @@ impl CaptureIngest {
                 false,
             ));
         }
+        // Authorized intent first: the trigger and the target stay trusted, and the
+        // requested operation/mode pair is fixed before any durable or native work.
+        let request = CaptureRequest::from_command(params, CaptureTrigger::ClientCommand);
+        // Claim the operation id **before** the journal lookup, and hold the claim across
+        // the lookup, the native session and the commit. The journal only becomes visible
+        // at commit, so a duplicate that looked up first could still observe `Unknown`,
+        // wait for the owner to finish, and then recapture under an id that is now `Saved`
+        // (S02 §8.7). With the claim first, a concurrent duplicate is refused with the safe
+        // retryable `Busy` while this session runs, and a request that arrives after the
+        // commit replays the stored receipt without any native work.
+        let Some(_in_flight) = self.in_flight.begin(request.operation_id()) else {
+            emit(
+                &self.logger,
+                EventId::CaptureRefused,
+                Outcome::Failed,
+                Some(SafeCode::QueueFull),
+            );
+            // The stable S01 vocabulary already has the truthful code for "a capture
+            // session is running": a second overlay is never created, and the caller may
+            // retry, which then replays the committed receipt instead of re-freezing.
+            return Err(app_error(
+                ErrorCode::CaptureBusy,
+                "A capture session is already running for this operation.",
+                true,
+            ));
+        };
+        // A committed operation is answered from the journal **before** the freeze: a lost
+        // reply or a reconnect must not take a second screenshot of a different scene
+        // under the same id (S02 §8.7).
+        if let Some(receipt) = self.replay(&request, ctx.principal_id()).await? {
+            return Ok(WireCaptureOutcome::Saved { receipt });
+        }
         if !self.reserve() {
             emit(
                 &self.logger,
@@ -300,7 +420,6 @@ impl CaptureIngest {
                 true,
             ));
         }
-        let request = CaptureRequest::from_command(params, CaptureTrigger::ClientCommand);
         emit(
             &self.logger,
             EventId::CaptureStarted,
@@ -309,9 +428,61 @@ impl CaptureIngest {
         );
         let adapter = self.adapter.clone();
         let outcome = run_blocking_session(adapter, request, cancel).await;
-        let answer = self.finish(outcome).await;
+        let answer = self.finish(outcome, ctx.principal_id()).await;
         self.release();
         answer
+    }
+
+    /// Stored answer of an operation this caller already committed.
+    ///
+    /// `Ok(Some(receipt))` is the caller's own saved operation under the requested mode;
+    /// `Ok(None)` is a genuinely unknown id and is the only case that may proceed to a
+    /// capture. A foreign principal or a replay with a changed mode yields the same safe
+    /// refusal carrying **no** stored metadata, and never touches the native adapter.
+    ///
+    /// Residual contract: the S01 registry has no `IDEMPOTENCY_CONFLICT`/
+    /// `OPERATION_STATE_UNKNOWN` code yet, so both conflicts are reported as the stable
+    /// `InvalidRequest` with a generic safe message (no path, digest or identity). Adding
+    /// those codes is a separate contract change with regenerated schemas/TS.
+    async fn replay(
+        &self,
+        request: &CaptureRequest,
+        principal_id: sm_domain::PrincipalId,
+    ) -> Result<Option<CaptureReceipt>, AppError> {
+        let outcome = self
+            .storage
+            .lookup_operation(
+                sm_domain::OperationId::new(request.operation_id()),
+                principal_id,
+                request.target(),
+            )
+            .await
+            .map_err(storage_failure)?;
+        match outcome {
+            LookupOutcome::Saved(stored) => {
+                emit(
+                    &self.logger,
+                    EventId::CaptureCompleted,
+                    Outcome::Succeeded,
+                    None,
+                );
+                Ok(Some(replay_receipt(stored)))
+            }
+            LookupOutcome::Unknown => Ok(None),
+            LookupOutcome::Conflict => {
+                emit(
+                    &self.logger,
+                    EventId::CaptureRefused,
+                    Outcome::Failed,
+                    Some(SafeCode::InternalFailure),
+                );
+                Err(app_error(
+                    ErrorCode::InvalidRequest,
+                    "The operation id was already used for a different request.",
+                    false,
+                ))
+            }
+        }
     }
 
     /// Persistence of an outcome the native hotkey path already produced. The accepted
@@ -326,35 +497,38 @@ impl CaptureIngest {
             );
             return;
         }
-        let _ = self.finish(outcome).await;
+        let _ = self.finish(outcome, self.owner_principal).await;
         self.release();
     }
 
     async fn finish(
         &self,
         outcome: Result<CaptureOutcome, CaptureError>,
+        principal_id: sm_domain::PrincipalId,
     ) -> Result<WireCaptureOutcome, AppError> {
         match outcome {
-            Ok(CaptureOutcome::Accepted(result)) => match self.commit(&result).await {
-                Ok(receipt) => {
-                    emit(
-                        &self.logger,
-                        EventId::CaptureCompleted,
-                        Outcome::Succeeded,
-                        None,
-                    );
-                    Ok(WireCaptureOutcome::Saved { receipt })
+            Ok(CaptureOutcome::Accepted(result)) => {
+                match self.commit(&result, principal_id).await {
+                    Ok(receipt) => {
+                        emit(
+                            &self.logger,
+                            EventId::CaptureCompleted,
+                            Outcome::Succeeded,
+                            None,
+                        );
+                        Ok(WireCaptureOutcome::Saved { receipt })
+                    }
+                    Err(error) => {
+                        emit(
+                            &self.logger,
+                            EventId::CaptureFailed,
+                            Outcome::Failed,
+                            Some(SafeCode::InternalFailure),
+                        );
+                        Err(error)
+                    }
                 }
-                Err(error) => {
-                    emit(
-                        &self.logger,
-                        EventId::CaptureFailed,
-                        Outcome::Failed,
-                        Some(SafeCode::InternalFailure),
-                    );
-                    Err(error)
-                }
-            },
+            }
             Ok(CaptureOutcome::Cancelled {
                 reason,
                 operation_id,
@@ -661,7 +835,10 @@ mod tests {
             canonical_utc_millis_from_unix_ms(1_790_586_900_000),
             "2026-09-28T09:15:00.000Z"
         );
-        assert_eq!(canonical_utc_millis_from_unix_ms(0), "1970-01-01T00:00:00.000Z");
+        assert_eq!(
+            canonical_utc_millis_from_unix_ms(0),
+            "1970-01-01T00:00:00.000Z"
+        );
         // A remainder stays a millisecond remainder, never a rounded second.
         assert_eq!(
             canonical_utc_millis_from_unix_ms(1_709_209_815_123),
@@ -672,11 +849,20 @@ mod tests {
         ));
     }
 
+    /// A deterministic, non-nil synthetic principal for the pure commit-command tests.
+    fn synthetic_principal() -> sm_domain::PrincipalId {
+        sm_domain::PrincipalId::new(Uuid::from_u128(0x5c02_0004_0000_4000_8000_0000_0000_0001))
+    }
+
     #[test]
     fn s02_host_05_committed_provenance_is_the_freeze_not_the_commit_instant() {
         let frame = synthetic_frame(1_790_586_900_000);
-        let command = commit_command(&frame, vec![0x01, 0x02, 0x03, 0x04]);
+        let principal = synthetic_principal();
+        let command = commit_command(&frame, vec![0x01, 0x02, 0x03, 0x04], principal);
         assert_eq!(command.asset_type, AssetType::Original);
+        // The commit carries exactly the principal it was given, never a placeholder.
+        assert_eq!(command.principal_id, principal);
+        assert!(!command.principal_id.as_uuid().is_nil());
         assert_eq!(command.capture_context, frame.context);
         assert_eq!(command.canonical, vec![0x01, 0x02, 0x03, 0x04]);
         assert_eq!(command.record_id.as_uuid().get_version_num(), 4);
@@ -691,7 +877,8 @@ mod tests {
         );
         // A capture time is never the clock of the later encode/commit: an epoch freeze stays
         // an epoch freeze even though this commit happens now.
-        let epoch = commit_command(&synthetic_frame(0), Vec::new());
+        let epoch = commit_command(&synthetic_frame(0), Vec::new(), principal);
+        assert_eq!(epoch.principal_id, principal);
         assert_eq!(
             epoch.provenances,
             vec![Provenance::Automatic {

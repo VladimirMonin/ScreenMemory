@@ -15,7 +15,7 @@ use sm_application::{
     storage::{FoundationRepository, StorageError},
 };
 use sm_capture::{CaptureHostConfig, WindowsCaptureAdapter};
-use sm_domain::{HostInstanceId, LibraryId};
+use sm_domain::{HostInstanceId, LibraryId, PrincipalId};
 use sm_framing::BufferBudget;
 use sm_isolation::{HostLease, LeaseError, LibraryRootResolver, RootError, RootSource};
 use sm_observability::{
@@ -250,25 +250,34 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
     let phase = FoundationServices::new_phase();
     // S02 step: the capture owner exists before the listener, so a readiness claim is
     // never made by a host whose advertised capture handler could not be constructed.
-    let (capture, hotkey_task) =
-        match start_capture(capture, prepared.storage.clone(), logger.producer()).await {
-            Ok(pair) => pair,
-            Err(error) => {
-                // A capture owner that cannot start is a startup failure, never a host that
-                // advertises a handler it does not own.
-                let mut failed = SafeEvent::new(
-                    Level::Error,
-                    Component::Host,
-                    EventId::HostFailed,
-                    Operation::Startup,
-                );
-                failed.outcome = Some(Outcome::Failed);
-                failed.safe_code = Some(SafeCode::InternalFailure);
-                logger.producer().emit(failed);
-                let _ = logger.shutdown(LOG_FLUSH_BUDGET);
-                return Err(error);
-            }
-        };
+    // Only the explicitly enrolled owner credential identifies the trusted native hotkey
+    // path; client requests keep their authenticated session principal.
+    let owner_principal = owner.principal();
+    let (capture, hotkey_task) = match start_capture(
+        capture,
+        prepared.storage.clone(),
+        logger.producer(),
+        owner_principal,
+    )
+    .await
+    {
+        Ok(pair) => pair,
+        Err(error) => {
+            // A capture owner that cannot start is a startup failure, never a host that
+            // advertises a handler it does not own.
+            let mut failed = SafeEvent::new(
+                Level::Error,
+                Component::Host,
+                EventId::HostFailed,
+                Operation::Startup,
+            );
+            failed.outcome = Some(Outcome::Failed);
+            failed.safe_code = Some(SafeCode::InternalFailure);
+            logger.producer().emit(failed);
+            let _ = logger.shutdown(LOG_FLUSH_BUDGET);
+            return Err(error);
+        }
+    };
     let services = Arc::new(FoundationServices::new(
         prepared.storage.clone(),
         library,
@@ -343,6 +352,7 @@ async fn start_capture(
     options: CaptureOptions,
     storage: StorageWorker,
     logger: Logger,
+    owner_principal: PrincipalId,
 ) -> Result<
     (
         Option<Arc<dyn CaptureApi>>,
@@ -369,7 +379,7 @@ async fn start_capture(
             )
         }
     };
-    let ingest = CaptureIngest::new(adapter, storage, logger);
+    let ingest = CaptureIngest::new(adapter, storage, logger, owner_principal);
     let api: Arc<dyn CaptureApi> = HostCaptureApi::new(ingest.clone());
     let task = hotkeys.map(|receiver| tokio::spawn(drain_hotkeys(ingest, receiver)));
     Ok((Some(api), task))

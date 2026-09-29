@@ -95,7 +95,7 @@ impl CredentialKey {
     pub fn profile(&self) -> Profile {
         self.profile
     }
-    fn principal(&self) -> PrincipalId {
+    pub fn principal(&self) -> PrincipalId {
         use sha2::{Digest, Sha256};
         // Non-secret identity scoped by namespace, library and profile, never client_kind.
         let digest = Sha256::digest(self.target().as_bytes());
@@ -209,6 +209,10 @@ impl Authenticator {
         use sha2::{Digest, Sha256};
         let verifier: [u8; 32] = Sha256::digest(secret.as_bytes()).into();
         Ok(Self { key, verifier })
+    }
+    /// Principal derived from the credential's fixed identity key.
+    pub fn principal(&self) -> PrincipalId {
+        self.key.principal()
     }
     /// Private handshake boundary: reject library mismatch before entering any handler.
     /// `client_kind` is deliberately absent; caller metadata never confers scopes.

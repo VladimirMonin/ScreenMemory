@@ -148,20 +148,22 @@ fn s01_host_cli_01_status_doctor_stop_and_lease_release() {
         let library = host.library_id();
         let host_instance = host.host_instance_id();
         assert_eq!(host.bootstrap_report().library_id, library);
-        // The images migration (0002) is applied by the same worker, so the host
-        // reports the fully migrated library schema.
-        assert_eq!(host.bootstrap_report().schema_version, 2);
+        // The images (0002) and operations (0003) migrations are applied by the same
+        // worker, so the host reports the fully migrated library schema.
+        assert_eq!(host.bootstrap_report().schema_version, 3);
         assert!(fs::metadata(roots.data().join("library.sqlite3")).is_ok());
         let handle = tokio::spawn(async move { host.serve(DEFAULT_DRAIN).await });
         let client = connect(&roots, library, Some(host_instance), &store).await;
         let status = client.status().await.unwrap();
         assert_eq!(status.library_id, library);
         assert_eq!(status.host_instance_id, host_instance);
-        assert_eq!(status.schema_version, 2);
+        assert_eq!(status.schema_version, 3);
         assert!(!status.ai_enabled);
         assert!(matches!(status.bridge_state, BridgeState::Stopped));
         assert!(matches!(status.state, HostState::Ready));
-        assert_eq!(status.available_methods.len(), 3);
+        // The four foundation handlers this host always owns (status, doctor,
+        // request_shutdown, list_records); this composition has no capture adapter.
+        assert_eq!(status.available_methods.len(), 4);
         let doctor = client.doctor().await.unwrap();
         assert_eq!(doctor.host.library_id, library);
         assert_eq!(doctor.host.host_instance_id, host_instance);
