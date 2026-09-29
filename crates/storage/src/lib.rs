@@ -291,18 +291,26 @@ impl StorageWorker {
     ) -> Result<staging_files::Staged, StageOwnedError> {
         input.checked()?;
         let (tx, rx) = oneshot::channel();
-        let queued = {
-            let gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
-            if gate.closing {
-                return Err(StageOwnedError::Unavailable);
+        let mut request = FileRequest::Stage(tx, Box::new(input));
+        loop {
+            let queued = {
+                let gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+                if gate.closing {
+                    return Err(StageOwnedError::Unavailable);
+                }
+                self.file_sender.try_send(request)
+            };
+            match queued {
+                Ok(()) => break,
+                Err(TrySendError::Disconnected(_)) => return Err(StageOwnedError::Unavailable),
+                Err(TrySendError::Full(pending)) => request = pending,
             }
-            self.file_sender
-                .try_send(FileRequest::Stage(tx, Box::new(input)))
-        };
-        match queued {
-            Ok(()) => rx.await.unwrap_or(Err(StageOwnedError::Unavailable)),
-            Err(_) => Err(StageOwnedError::Unavailable),
+            // A probe can occupy the one queued slot while another stage executes.
+            // Retain this caller-owned allocation until admission; never enqueue a
+            // second file request or spin while the file thread is blocked.
+            tokio::time::sleep(Duration::from_millis(1)).await;
         }
+        rx.await.unwrap_or(Err(StageOwnedError::Unavailable))
     }
     /// A path-free, file-lane-ordered preflight. Only a genuinely missing fixed
     /// operation directory is Absent; unsafe entries and root IO fail closed.

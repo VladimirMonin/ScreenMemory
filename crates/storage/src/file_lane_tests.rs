@@ -146,16 +146,28 @@ fn s02_t09c_02_cancelled_waiter_drains_fifo_and_queue_is_bounded() {
             async move { worker.stage_capture_owned(second_input).await }
         });
         tokio::task::yield_now().await;
-        assert!(matches!(
-            worker.stage_capture_owned(f.input()).await,
-            Err(StageOwnedError::Unavailable)
-        ));
+        let pending_input = f.input();
+        let pending_op = pending_input.operation_id;
+        let pending = tokio::spawn({
+            let worker = worker.clone();
+            async move { worker.stage_capture_owned(pending_input).await }
+        });
+        tokio::task::yield_now().await;
+        assert!(!pending.is_finished());
         second.abort(); // Only the waiter is cancelled; admitted file write remains FIFO.
         let stopping = tokio::spawn({
             let worker = worker.clone();
             async move { worker.shutdown(Duration::from_secs(5)).await }
         });
         tokio::task::yield_now().await;
+        assert!(matches!(
+            pending.await.unwrap(),
+            Err(StageOwnedError::Unavailable)
+        ));
+        assert!(
+            !stopping.is_finished(),
+            "stop cannot acknowledge a paused file stage"
+        );
         assert!(matches!(
             worker.stage_capture_owned(f.input()).await,
             Err(StageOwnedError::Unavailable)
@@ -171,6 +183,11 @@ fn s02_t09c_02_cancelled_waiter_drains_fifo_and_queue_is_bounded() {
             .join("staging")
             .join(second_op.as_uuid().to_string())
             .join("manifest.json")
+            .exists());
+        assert!(!f
+            .0
+            .join("staging")
+            .join(pending_op.as_uuid().to_string())
             .exists());
         drop(f.try_lease().unwrap());
     });
@@ -354,6 +371,73 @@ fn s02_t09d_02_probe_is_fifo_with_stage_and_stop() {
         release_tx.send(()).unwrap();
         stage.await.unwrap().unwrap();
         assert_eq!(probe.await.unwrap(), Ok(StagePresence::Present));
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        drop(f.try_lease().unwrap());
+    });
+}
+
+#[test]
+fn s02_t09g_stage_waits_behind_queued_probe_without_losing_owned_pixels() {
+    let f = Fixture::new();
+    let (entered_tx, entered_rx) = mpsc::sync_channel(2);
+    let (release_tx, release_rx) = mpsc::sync_channel(2);
+    let worker =
+        StorageWorker::start_with_file_pause(f.try_lease().unwrap(), entered_tx, release_rx)
+            .unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let first_input = f.input();
+        let first_op = first_input.operation_id;
+        let first = tokio::spawn({
+            let worker = worker.clone();
+            async move { worker.stage_capture_owned(first_input).await }
+        });
+        tokio::task::yield_now().await;
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        // A is executing; B takes the only queued slot. C must retain its original
+        // owned allocation in its caller task until the file lane can accept it.
+        let probe = tokio::spawn({
+            let worker = worker.clone();
+            async move { worker.probe_stage_presence(first_op).await }
+        });
+        tokio::task::yield_now().await;
+        assert!(!probe.is_finished());
+        let third_input = f.input();
+        let third_op = third_input.operation_id;
+        let third = tokio::spawn({
+            let worker = worker.clone();
+            async move { worker.stage_capture_owned(third_input).await }
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(
+            !third.is_finished(),
+            "accepted C cannot be dropped on a full file queue"
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), worker.schema_snapshot())
+                .await
+                .unwrap()
+                .is_ok()
+        );
+        assert!(matches!(f.try_lease(), Err(LeaseError::Busy)));
+
+        release_tx.send(()).unwrap();
+        assert_eq!(first.await.unwrap().unwrap().operation_id(), first_op);
+        assert_eq!(probe.await.unwrap(), Ok(StagePresence::Present));
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(!third.is_finished());
+        release_tx.send(()).unwrap();
+        assert_eq!(third.await.unwrap().unwrap().operation_id(), third_op);
+        assert!(f
+            .0
+            .join("staging")
+            .join(third_op.as_uuid().to_string())
+            .join("manifest.json")
+            .exists());
         worker.shutdown(Duration::from_secs(5)).await.unwrap();
         drop(f.try_lease().unwrap());
     });

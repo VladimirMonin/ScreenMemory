@@ -6,7 +6,7 @@
 //! * the native session runs on a blocking thread, so no GDI or overlay work ever runs
 //!   inside a Tokio worker (S02 §4.3);
 //! * the canonical asset exists only after a verified encode **and** a committed record;
-//!   a failure before the commit leaves neither a row nor a file (S02 §8.5).
+//!   failures leave accepted staging files untouched, never a false Saved (S02 §8.5).
 use crate::services::storage_error;
 use async_trait::async_trait;
 use sm_application::{
@@ -25,8 +25,8 @@ use sm_application::{
 };
 use sm_capture::HotkeyReservation;
 use sm_capture::HotkeySink;
-use sm_codec::{encode_exact_lossless_verified, CodecError, RgbaImage};
-use sm_domain::{AssetId, RecordId};
+use sm_codec::{encode_exact_lossless_verified, encoder_fingerprint, CodecError, RgbaImage};
+use sm_domain::{AssetId, LibraryId, RecordId};
 use sm_observability::Logger;
 use sm_protocol::{
     application::{
@@ -36,7 +36,7 @@ use sm_protocol::{
     errors::{AppError, ErrorCode},
     values::SafeMessage,
 };
-use sm_storage::{StagePresence, StorageWorker};
+use sm_storage::{OwnedStageInput, StagePresence, StorageWorker};
 use std::{
     collections::HashSet,
     sync::{
@@ -310,8 +310,8 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     )
 }
 
-/// Trusted IDs reserved for one accepted image. Frame identity is held for a later
-/// staging seam; it is not a DB column or part of the persisted commit command.
+/// Trusted IDs reserved for one accepted image. Frame identity is staged but is not
+/// a DB column or part of the persisted commit command.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct AcceptedSaveIds {
     operation_id: sm_domain::OperationId,
@@ -330,7 +330,7 @@ impl AcceptedSaveIds {
         }
     }
 
-    /// Future staging identity; the current database does not store a frame ID.
+    /// Staged frame identity; the current database does not store a frame ID.
     fn frame_id(&self) -> Uuid {
         self.frame_id
     }
@@ -395,6 +395,7 @@ pub struct CaptureIngest {
     logger: Logger,
     slots: Arc<AtomicU8>,
     owner_principal: sm_domain::PrincipalId,
+    library_id: LibraryId,
     in_flight: Arc<InFlight>,
     command_tasks: Arc<CommandTasks>,
 }
@@ -405,6 +406,7 @@ impl CaptureIngest {
         storage: StorageWorker,
         logger: Logger,
         owner_principal: sm_domain::PrincipalId,
+        library_id: LibraryId,
         command_tasks: Arc<CommandTasks>,
         slots: Arc<AtomicU8>,
     ) -> Arc<Self> {
@@ -414,29 +416,77 @@ impl CaptureIngest {
             logger,
             slots,
             owner_principal,
+            library_id,
             in_flight: Arc::new(InFlight::default()),
             command_tasks,
         })
     }
 
-    /// Encode the accepted pixels and commit them with their context in one transaction.
+    /// Stage the accepted frame before encoding its retained DIB and committing the canon.
+    /// The file lane takes ownership of exactly one normalized allocation; encoding later
+    /// re-normalizes the SAME retained BGRX DIB, never freezes the screen a second time.
     async fn commit(
         &self,
         result: &CaptureResult,
         principal_id: sm_domain::PrincipalId,
         ids: AcceptedSaveIds,
     ) -> Result<CaptureReceipt, AppError> {
-        // Retain a valid frame identity for the later stage seam; do not persist it
-        // in the current DB command or silently mint another after acceptance.
-        debug_assert_eq!(ids.frame_id().get_version_num(), 4);
         let dib = &result.dib;
-        let image =
-            RgbaImage::from_rgba(dib.width(), dib.height(), dib.rgba8()).map_err(codec_failure)?;
+        let captured_at = canonical_utc_millis_from_unix_ms(result.frozen_at_ms);
+        let fingerprint = encoder_fingerprint();
+        let width = dib.width();
+        let height = dib.height();
+        let mode = result.request.target();
+        let expected_bytes = u64::from(width)
+            .checked_mul(u64::from(height))
+            .and_then(|n| n.checked_mul(4))
+            .ok_or_else(stage_failure)?;
+        let staged = self
+            .storage
+            .stage_capture_owned(OwnedStageInput {
+                library_id: self.library_id,
+                principal_id,
+                operation_id: ids.operation_id,
+                record_id: ids.record_id,
+                asset_id: ids.asset_id,
+                frame_id: ids.frame_id(),
+                mode,
+                context: result.context.clone(),
+                captured_at: captured_at.clone(),
+                encoder_fingerprint: fingerprint.clone(),
+                pixels: dib.rgba8(),
+            })
+            .await
+            .map_err(|_| stage_failure())?;
+        // A Staged value is a validated file publication, NOT Saved. Compare every
+        // identity and capture property with the still-owned accepted outcome before
+        // spending CPU on the canonical format or admitting a DB transaction.
+        if staged.library_id() != self.library_id
+            || staged.principal_id() != principal_id
+            || staged.operation_id() != ids.operation_id
+            || staged.record_id() != ids.record_id
+            || staged.asset_id() != ids.asset_id
+            || staged.frame_id() != ids.frame_id()
+            || staged.mode() != mode
+            || staged.width() != width
+            || staged.height() != height
+            || staged.stride() != width.checked_mul(4).ok_or_else(stage_failure)?
+            || staged.byte_length() != expected_bytes
+            || staged.context() != &result.context
+            || staged.captured_at() != captured_at
+            || staged.encoder_fingerprint() != fingerprint
+        {
+            return Err(stage_failure());
+        }
+        let image = RgbaImage::from_rgba(width, height, dib.rgba8()).map_err(codec_failure)?;
         // Verification is part of the canonical path: an encode that cannot reproduce its
         // input never becomes a stored asset.
         let canonical = encode_exact_lossless_verified(&image)
             .map_err(codec_failure)?
             .into_canonical();
+        if canonical.encoder_fingerprint() != fingerprint {
+            return Err(stage_failure());
+        }
         let command = commit_command(result, canonical.bytes().to_vec(), principal_id, ids);
         let committed = self
             .storage
@@ -784,6 +834,14 @@ async fn run_blocking_session(
             }
         }
     }
+}
+
+fn stage_failure() -> AppError {
+    app_error(
+        ErrorCode::RuntimeUnavailable,
+        "The accepted image could not be staged.",
+        false,
+    )
 }
 
 fn codec_failure(error: CodecError) -> AppError {

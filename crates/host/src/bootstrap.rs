@@ -279,6 +279,7 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
         prepared.storage.clone(),
         logger.producer(),
         owner_principal,
+        library,
         command_tasks.clone(),
     )
     .await
@@ -400,6 +401,7 @@ async fn start_capture(
     storage: StorageWorker,
     logger: Logger,
     owner_principal: PrincipalId,
+    library_id: LibraryId,
     command_tasks: Arc<CommandTasks>,
 ) -> Result<(Option<Arc<dyn CaptureApi>>, Option<HotkeyConsumer>), HostError> {
     let slots = Arc::new(AtomicU8::new(0));
@@ -434,6 +436,7 @@ async fn start_capture(
         storage,
         logger,
         owner_principal,
+        library_id,
         command_tasks,
         slots,
     );

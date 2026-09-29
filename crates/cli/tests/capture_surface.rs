@@ -7,7 +7,7 @@ use sm_application::{
         NativeCaptureAdapter,
     },
     credentials::{CredentialKey, Secret, SecretStore, StoreError},
-    storage::{CaptureContext, CaptureTarget, PhysicalBounds},
+    storage::{CaptureContext, PhysicalBounds},
 };
 use sm_cli::{run, CliDeps, HostLauncher, LaunchError, LaunchedHost, EXIT_OK, EXIT_USAGE};
 use sm_domain::LibraryId;
@@ -113,13 +113,14 @@ impl NativeCaptureAdapter for SyntheticAdapter {
                 bytes.extend_from_slice(&[(x % 97) as u8, (y % 89) as u8, 0x33, 0xff]);
             }
         }
+        let target = request.target();
         Ok(CaptureOutcome::Accepted(Box::new(CaptureResult {
             context: CaptureContext {
                 device: "synthetic-display".to_string(),
                 app: "synthetic-cli-adapter".to_string(),
                 title: "Synthetic frame".to_string(),
-                target: CaptureTarget::Region,
-                sources: vec![CaptureTarget::Region],
+                target,
+                sources: vec![target],
                 bounds: PhysicalBounds {
                     x: -60,
                     y: 20,

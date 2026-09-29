@@ -28,7 +28,10 @@ use sm_protocol::{
     errors::ErrorCode,
 };
 use sm_session::{ApplicationClient, ClientError, CredentialSource};
-use sm_storage::StorageWorker;
+use sm_storage::{
+    staging::{validate_staging, StagingExpectations},
+    StorageWorker,
+};
 use std::{
     collections::HashMap,
     fs,
@@ -351,6 +354,79 @@ fn options(root: &Path, capture: CaptureOptions, store: Arc<MemoryStore>) -> Boo
     }
 }
 
+/// Reopen the real published stage and validate its fixed files against bootstrap and
+/// authenticated owner values, not merely a mock or a self-reported host receipt.
+fn check_stage(
+    roots: &Roots,
+    library: LibraryId,
+    principal: PrincipalId,
+    operation: sm_domain::OperationId,
+    record: RecordId,
+    asset: AssetId,
+    dimensions: (u32, u32),
+) {
+    let (width, height) = dimensions;
+    let dir = roots
+        .path()
+        .join("staging")
+        .join(operation.as_uuid().to_string());
+    let manifest = fs::read(dir.join("manifest.json")).unwrap();
+    let context = fs::read(dir.join("context.json")).unwrap();
+    let pixels = fs::read(dir.join("pixels.rgba")).unwrap();
+    let canonical_files = roots.published_files();
+    assert_eq!(canonical_files.len(), 1);
+    let canonical = fs::read(&canonical_files[0]).unwrap();
+    let decoded = sm_codec::decode_rgba(&canonical).unwrap();
+    assert_eq!(
+        decoded.pixels(),
+        pixels,
+        "verified canonical is this staged frame"
+    );
+    let profile = sm_codec::encoder_fingerprint();
+    let validated = validate_staging(
+        &manifest,
+        &context,
+        &pixels,
+        StagingExpectations {
+            library_id: library,
+            principal_id: principal,
+            operation_id: operation,
+            mode: CaptureTarget::Region,
+            encoder_fingerprint: &profile,
+        },
+    )
+    .unwrap();
+    assert_eq!(validated.record_id(), record);
+    assert_eq!(validated.asset_id(), asset);
+    assert_eq!(validated.frame_id().get_version_num(), 4);
+    assert_eq!((validated.width(), validated.height()), (width, height));
+    assert_eq!(validated.stride(), width * 4);
+    assert_eq!(
+        validated.byte_length(),
+        u64::from(width) * u64::from(height) * 4
+    );
+    assert_eq!(validated.captured_at(), "2026-09-28T09:15:00.000Z");
+    assert_eq!(
+        validated.context().bounds,
+        PhysicalBounds {
+            x: -120,
+            y: 40,
+            width,
+            height,
+        }
+    );
+    assert_eq!(validated.context().app, "synthetic-adapter");
+    for y in 0..height {
+        for x in 0..width {
+            let offset = ((y * width + x) * 4) as usize;
+            assert_eq!(
+                &pixels[offset..offset + 4],
+                &[0x40, (y % 241) as u8, (x % 251) as u8, 0xff]
+            );
+        }
+    }
+}
+
 fn command(mode: CaptureMode) -> CaptureCommandParams {
     CaptureCommandParams {
         operation_id: sm_domain::OperationId::new(Uuid::new_v4()),
@@ -395,6 +471,21 @@ fn s02_capture_host_01_command_commits_a_canonical_record_and_serves_its_bytes()
             other => panic!("the injected adapter must produce a committed record: {other:?}"),
         };
         assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+        let principal = Authenticator::enroll_owner(
+            store.as_ref(),
+            CredentialKey::owner(CredentialEnvironment::Test, library),
+        )
+        .unwrap()
+        .principal();
+        check_stage(
+            &roots,
+            library,
+            principal,
+            receipt.operation_id,
+            receipt.record_id,
+            receipt.asset_id,
+            (64, 48),
+        );
         // The receipt is the committed truth: library-relative path, no absolute path.
         assert_eq!(receipt.canonical_mime, "image/webp");
         assert_eq!((receipt.width, receipt.height), (64, 48));
@@ -1094,6 +1185,69 @@ fn s02_t09e_shutdown_timeout_keeps_lease_until_admitted_command_finishes() {
 }
 
 #[test]
+fn s02_t09g_command_stage_failure_after_preflight_never_saves_or_refreezes() {
+    runtime().block_on(async {
+        let roots = Roots::new();
+        let store = Arc::new(MemoryStore::default());
+        let (adapter, gate) = SyntheticAdapter::gated(8, 8, Answer::Accept);
+        let host = bootstrap(options(
+            &roots.path(),
+            CaptureOptions::Injected(adapter.clone()),
+            store.clone(),
+        ))
+        .await
+        .unwrap();
+        let library = host.library_id();
+        let handle = tokio::spawn(async move { host.serve(DEFAULT_DRAIN).await });
+        let waiter = connect(&roots, library, &store).await;
+        let params = command(CaptureMode::Region);
+        let request = tokio::spawn({
+            let params = params.clone();
+            async move { waiter.capture_command(params, 10_000, None).await }
+        });
+        gate.wait_entered_async(Duration::from_secs(5)).await;
+        // Preflight already returned Absent. Own a synthetic operation directory now;
+        // stage's exclusive create must fail, preserving its sentinel untouched.
+        let dir = roots
+            .path()
+            .join("staging")
+            .join(params.operation_id.as_uuid().to_string());
+        fs::create_dir_all(&dir).unwrap();
+        let sentinel = dir.join("keep.sentinel");
+        fs::write(&sentinel, b"owned-stage-sentinel").unwrap();
+        gate.release();
+        let failure = request.await.unwrap();
+        assert!(matches!(failure, Err(ClientError::Application(_))));
+        assert_eq!(fs::read(&sentinel).unwrap(), b"owned-stage-sentinel");
+        assert!(!dir.join("manifest.json").exists());
+        assert!(roots.published_files().is_empty());
+        let client = connect(&roots, library, &store).await;
+        assert!(matches!(
+            client.capture_command(params.clone(), 10_000, None).await,
+            Err(ClientError::Application(_))
+        ));
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+        stop(&client, handle).await;
+        let principal = Authenticator::enroll_owner(
+            store.as_ref(),
+            CredentialKey::owner(CredentialEnvironment::Test, library),
+        )
+        .unwrap()
+        .principal();
+        let worker = StorageWorker::start(roots.lease()).unwrap();
+        assert!(matches!(
+            worker
+                .lookup_operation(params.operation_id, principal, CaptureTarget::Region)
+                .await
+                .unwrap(),
+            LookupOutcome::Unknown
+        ));
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        assert_eq!(fs::read(sentinel).unwrap(), b"owned-stage-sentinel");
+    });
+}
+
+#[test]
 fn s02_t09f_hotkey_consumer_persists_without_shutdown() {
     runtime().block_on(async {
         let roots = Roots::new();
@@ -1144,6 +1298,68 @@ fn s02_t09f_hotkey_consumer_persists_without_shutdown() {
                 .await
                 .unwrap(),
             LookupOutcome::Saved(_)
+        ));
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+    });
+}
+
+#[test]
+fn s02_t09g_hotkey_stage_failure_preserves_incomplete_input_without_saved() {
+    runtime().block_on(async {
+        let roots = Roots::new();
+        let store = Arc::new(MemoryStore::default());
+        let adapter = SyntheticAdapter::new(8, 8, Answer::Accept);
+        let outlet = Arc::new(OnceLock::<Arc<dyn HotkeySink>>::new());
+        let host = bootstrap(options(
+            &roots.path(),
+            CaptureOptions::InjectedHotkey {
+                adapter: adapter.clone(),
+                sink: outlet.clone(),
+            },
+            store.clone(),
+        ))
+        .await
+        .unwrap();
+        let library = host.library_id();
+        let handle = tokio::spawn(async move { host.serve(DEFAULT_DRAIN).await });
+        let operation = Uuid::new_v4();
+        let dir = roots.path().join("staging").join(operation.to_string());
+        fs::create_dir_all(&dir).unwrap();
+        let sentinel = dir.join("keep.sentinel");
+        fs::write(&sentinel, b"hotkey-incomplete-sentinel").unwrap();
+        let reservation = outlet
+            .get()
+            .unwrap()
+            .try_reserve(CaptureMode::Region)
+            .unwrap();
+        reservation.deliver(adapter.capture(CaptureRequest::new(
+            operation,
+            CaptureMode::Region,
+            CaptureTrigger::Hotkey,
+        )));
+        let client = connect(&roots, library, &store).await;
+        stop(&client, handle).await; // joins the hotkey consumer and its file lane
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(fs::read(sentinel).unwrap(), b"hotkey-incomplete-sentinel");
+        assert!(!dir.join("manifest.json").exists());
+        assert!(roots.published_files().is_empty());
+        let principal = Authenticator::enroll_owner(
+            store.as_ref(),
+            CredentialKey::owner(CredentialEnvironment::Test, library),
+        )
+        .unwrap()
+        .principal();
+        let worker = StorageWorker::start(roots.lease()).unwrap();
+        assert!(matches!(
+            worker
+                .lookup_operation(
+                    sm_domain::OperationId::new(operation),
+                    principal,
+                    CaptureTarget::Region,
+                )
+                .await
+                .unwrap(),
+            LookupOutcome::Unknown
         ));
         worker.shutdown(Duration::from_secs(5)).await.unwrap();
     });
@@ -1229,6 +1445,15 @@ fn s02_t09f_hotkey_permits_survive_shutdown_and_commit_under_owner() {
         };
         assert_eq!(saved.principal_id, principal);
         assert_eq!(saved.operation_id.as_uuid(), operation_id);
+        check_stage(
+            &roots,
+            library,
+            principal,
+            saved.operation_id,
+            saved.record_id,
+            saved.asset_id,
+            (8, 8),
+        );
         let asset = worker
             .read_asset_chunk(saved.asset_id, 0, 1024 * 1024)
             .await
