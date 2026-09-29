@@ -131,6 +131,96 @@ impl HostLease {
         windows::DatabaseEntry::inspect(&self._layout.data.native)
             .map(|native| DatabaseEntry { native })
     }
+
+    /// Borrowed, pinned authority only while this original host lease is held.
+    /// The staging directory is the fixed sibling of the resolved data directory.
+    pub fn staging_root(&self) -> Result<StagingRoot<'_>, StagingError> {
+        let native = windows::staging_directory(&self._layout.data.native)?;
+        Ok(StagingRoot {
+            _lease: self,
+            native,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StagingError {
+    InvalidOperation,
+    AlreadyExists,
+    UnsafeEntry,
+}
+
+/// No path or arbitrary filename is exported from this write authority.
+pub struct StagingRoot<'lease> {
+    _lease: &'lease HostLease,
+    native: windows::Directory,
+}
+impl<'lease> StagingRoot<'lease> {
+    pub fn create_operation<'root>(
+        &'root self,
+        id: sm_domain::OperationId,
+    ) -> Result<StagingOperation<'root, 'lease>, StagingError> {
+        let uuid = id.as_uuid();
+        if uuid.is_nil() {
+            return Err(StagingError::InvalidOperation);
+        }
+        let native = windows::create_operation_directory(&self.native, &uuid.to_string())?;
+        Ok(StagingOperation {
+            _root: self,
+            native,
+        })
+    }
+}
+
+pub struct StagingOperation<'root, 'lease> {
+    _root: &'root StagingRoot<'lease>,
+    native: windows::Directory,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StagingTempKind {
+    PixelsRgba,
+    ContextJson,
+    ManifestJson,
+}
+impl StagingTempKind {
+    const fn filename(self) -> &'static str {
+        match self {
+            Self::PixelsRgba => "pixels.rgba.tmp",
+            Self::ContextJson => "context.json.tmp",
+            Self::ManifestJson => "manifest.json.tmp",
+        }
+    }
+}
+impl<'root, 'lease> StagingOperation<'root, 'lease> {
+    /// Exclusive CREATE_NEW on a pinned directory; no overwrite or reparse following.
+    pub fn create_temp<'operation>(
+        &'operation self,
+        kind: StagingTempKind,
+    ) -> Result<StagingTemp<'operation, 'root, 'lease>, StagingError> {
+        let file = windows::create_temp(&self.native, kind.filename())?;
+        Ok(StagingTemp {
+            _operation: self,
+            file,
+        })
+    }
+}
+
+pub struct StagingTemp<'operation, 'root, 'lease> {
+    _operation: &'operation StagingOperation<'root, 'lease>,
+    file: std::fs::File,
+}
+impl StagingTemp<'_, '_, '_> {
+    pub fn sync_all(&self) -> std::io::Result<()> {
+        self.file.sync_all()
+    }
+}
+impl std::io::Write for StagingTemp<'_, '_, '_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        std::io::Write::write(&mut self.file, bytes)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        std::io::Write::flush(&mut self.file)
+    }
 }
 
 pub struct DatabaseEntry {

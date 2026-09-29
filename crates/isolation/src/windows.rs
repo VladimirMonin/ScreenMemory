@@ -1,8 +1,9 @@
 //! Narrow direct bindings to the Windows SDK kernel32 ABI (no downloaded Win32 crate).
 //! All OS/unsafe operations stay in this module. No network path is probed.
-use crate::RootError;
+use crate::{RootError, StagingError};
 use std::ffi::{c_void, OsStr};
 use std::os::windows::ffi::OsStrExt;
+use std::os::windows::io::FromRawHandle;
 use std::path::{Path, PathBuf};
 
 // Metadata-only FILE_READ_ATTRIBUTES does NOT pin directory rename on NTFS.
@@ -16,6 +17,7 @@ const DIRECTORY_READ: u32 = FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES;
 const SHARE_PINNED: u32 = 0x1 | 0x2;
 const OPEN_EXISTING: u32 = 3;
 const OPEN_ALWAYS: u32 = 4;
+const CREATE_NEW: u32 = 1;
 const READ_WRITE: u32 = 0x8000_0000 | 0x4000_0000;
 const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 const LOCK_EXCLUSIVE_NOWAIT: u32 = 0x1 | 0x2; // LOCKFILE_FAIL_IMMEDIATELY | LOCKFILE_EXCLUSIVE_LOCK
@@ -86,11 +88,22 @@ struct OwnedHandle(Handle);
 // Kernel HANDLE values are process-wide and may be moved to a single owner thread;
 // no borrowed thread-affine state or concurrent mutable access crosses this edge.
 unsafe impl Send for OwnedHandle {}
+// Shared references only inspect immutable metadata; the owner cannot close the
+// OS handle until all borrowed scoped children end. Win32 HANDLE is process-wide.
+unsafe impl Sync for OwnedHandle {}
 impl Drop for OwnedHandle {
     fn drop(&mut self) {
         unsafe {
             CloseHandle(self.0);
         }
+    }
+}
+impl OwnedHandle {
+    fn into_file(self) -> std::fs::File {
+        let raw = self.0;
+        std::mem::forget(self);
+        // A successfully validated exclusively-created file transfers sole handle ownership.
+        unsafe { std::fs::File::from_raw_handle(raw) }
     }
 }
 
@@ -267,6 +280,90 @@ impl Directory {
             _handles: handles,
         })
     }
+}
+
+/// Require the opened child to be on the same volume and directly under the
+/// retained parent identity, not merely under a matching pathname.
+fn pinned_child(parent: &Directory, child: &Directory) -> Result<(), StagingError> {
+    if child.volume != parent.volume
+        || child.ancestors.len() != parent.ancestors.len() + 1
+        || child.ancestors[..parent.ancestors.len()] != parent.ancestors
+    {
+        return Err(StagingError::UnsafeEntry);
+    }
+    Ok(())
+}
+
+pub(super) fn staging_directory(data: &Directory) -> Result<Directory, StagingError> {
+    let parent = data.path.parent().ok_or(StagingError::UnsafeEntry)?;
+    let path = parent.join("staging");
+    // First initialization is create_new, never adopt a different existing entry.
+    match std::fs::create_dir(&path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(_) => return Err(StagingError::UnsafeEntry),
+    }
+    let root = Directory::open(&path).map_err(|_| StagingError::UnsafeEntry)?;
+    if root.volume != data.volume
+        || root.ancestors.len() != data.ancestors.len()
+        || root.ancestors[..data.ancestors.len() - 1] != data.ancestors[..data.ancestors.len() - 1]
+        || root.file == data.file
+    {
+        return Err(StagingError::UnsafeEntry);
+    }
+    Ok(root)
+}
+
+pub(super) fn create_operation_directory(
+    root: &Directory,
+    canonical_id: &str,
+) -> Result<Directory, StagingError> {
+    let path = root.path.join(canonical_id);
+    std::fs::create_dir(&path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            StagingError::AlreadyExists
+        } else {
+            StagingError::UnsafeEntry
+        }
+    })?;
+    let operation = Directory::open(&path).map_err(|_| StagingError::UnsafeEntry)?;
+    pinned_child(root, &operation)?;
+    Ok(operation)
+}
+
+pub(super) fn create_temp(root: &Directory, leaf: &str) -> Result<std::fs::File, StagingError> {
+    let path = wide(root.path.join(leaf).as_os_str());
+    let raw = unsafe {
+        CreateFileW(
+            path.as_ptr(),
+            READ_WRITE,
+            SHARE_PINNED,
+            std::ptr::null(),
+            CREATE_NEW,
+            OPEN_REPARSE_POINT,
+            std::ptr::null_mut(),
+        )
+    };
+    if raw == INVALID {
+        return if std::io::Error::last_os_error().raw_os_error() == Some(80) {
+            Err(StagingError::AlreadyExists)
+        } else {
+            Err(StagingError::UnsafeEntry)
+        };
+    }
+    let handle = OwnedHandle(raw);
+    let mut info = std::mem::MaybeUninit::<FileInfo>::uninit();
+    if unsafe { GetFileInformationByHandle(handle.0, info.as_mut_ptr()) } == 0 {
+        return Err(StagingError::UnsafeEntry);
+    }
+    let info = unsafe { info.assume_init() };
+    if info.dwFileAttributes & (REPARSE_POINT | DIRECTORY) != 0
+        || info.nNumberOfLinks != 1
+        || info.dwVolumeSerialNumber != root.volume
+    {
+        return Err(StagingError::UnsafeEntry);
+    }
+    Ok(handle.into_file())
 }
 
 /// Pinned existing entries prevent replacement between preflight and SQLite open.

@@ -11,7 +11,7 @@ allowed = {
     'protocol': {'sm-domain', 'serde', 'serde_json', 'schemars', 'time'},
     'application': {'sm-domain', 'sm-protocol', 'async-trait', 'tokio-util', 'serde', 'serde_json', 'uuid', 'getrandom', 'sha2', 'subtle', 'zeroize'},
     'observability': {'sm-application', 'serde', 'serde_json'},
-    'isolation': {'sm-application'},
+    'isolation': {'sm-application', 'sm-domain'},
     'storage': {'sm-application', 'sm-domain', 'sm-isolation', 'async-trait', 'rusqlite', 'sha2', 'serde', 'serde_json', 'uuid', 'tokio'},
     'codec': {'libwebp-sys'},
     'credentials': {'sm-application', 'sm-isolation', 'windows-sys', 'zeroize'},
