@@ -112,7 +112,7 @@ assert 'rusqlite::' not in (root / 'crates/application/src/storage.rs').read_tex
 # S02 images storage: the owner keeps its single writer, the canonical file layout and
 # the closed canonical-format vocabulary; the codec never reaches the filesystem.
 storage_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/storage/src').rglob('*.rs')}
-assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_tests.rs', 'tests.rs', 'image_tests.rs'}
+assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_files.rs', 'staging_tests.rs', 'staging_files_tests.rs', 'tests.rs', 'image_tests.rs'}
 # S02-T09b staging validator: pure schema decoding only. It must not reach a filesystem,
 # a SQLite connection, a process or the network, and it never publishes a path or a
 # durable-input claim from manifest content.
@@ -130,6 +130,17 @@ assert storage_sources['staging.rs'].count('MAX_CAPTURE_SIDE') == 3, \
 assert 'is_canonical_utc_timestamp' in storage_sources['staging.rs']
 assert 'CaptureContext::from_json' in storage_sources['staging.rs']
 assert 'pub mod staging;' in storage_sources['lib.rs']
+assert 'pub mod staging_files;' in storage_sources['lib.rs']
+# S02-T09b manifest-last coordinator: it wraps the borrowed lease capability only. It may
+# not own a path, a SQLite connection, a process, a wire or a host `durable_input` claim,
+# and it must validate through the same pure validator before writing.
+for forbidden in ('std::fs::', 'std::path', 'PathBuf', 'rusqlite', 'std::process', 'std::net',
+                  'durable_input', 'Saved('):
+    assert forbidden not in storage_sources['staging_files.rs'], ('storage', 'staging_files.rs', forbidden)
+assert 'validate_staging(' in storage_sources['staging_files.rs']
+assert 'StagingTempKind::ManifestJson' in storage_sources['staging_files.rs'], \
+    'the manifest must be the last published artifact'
+assert 'std::fs::' not in storage_sources['staging.rs'], ('storage', 'staging.rs')
 assert {path.name for path in (root / 'crates/storage/migrations').glob('*.sql')} == {'0001_foundation.sql', '0002_images.sql', '0003_operations.sql'}
 images_sql = (root / 'crates/storage/migrations/0002_images.sql').read_text(encoding='utf-8')
 assert "format IN ('webp_lossless')" in images_sql and "'avif'" not in images_sql

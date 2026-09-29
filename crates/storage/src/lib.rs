@@ -6,6 +6,7 @@ mod image_tests;
 mod images;
 mod migration;
 pub mod staging;
+pub mod staging_files;
 #[cfg(test)]
 mod tests;
 
