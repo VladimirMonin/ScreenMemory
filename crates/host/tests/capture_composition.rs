@@ -10,7 +10,7 @@ use sm_application::{
     credentials::{CredentialEnvironment, CredentialKey, Secret, SecretStore, StoreError},
     storage::{
         AssetType, CaptureContext, CaptureTarget, CommitImageCapture, FoundationRepository,
-        PhysicalBounds, Provenance,
+        LookupOutcome, PhysicalBounds, Provenance,
     },
 };
 use sm_domain::{AssetId, LibraryId, PrincipalId, RecordId};
@@ -46,7 +46,7 @@ impl Roots {
         fs::create_dir_all(&parent).unwrap();
         let parent = fs::canonicalize(parent).unwrap();
         let parent = PathBuf::from(parent.to_string_lossy().trim_start_matches(r"\\?\"));
-        let root = parent.join(format!("sm-capture-host-{}", Uuid::new_v4()));
+        let root = parent.join(Uuid::new_v4().to_string());
         fs::create_dir(&root).unwrap();
         for child in ["data", "config", "cache", "webview"] {
             fs::create_dir(root.join(child)).unwrap();
@@ -291,6 +291,51 @@ impl NativeCaptureAdapter for SyntheticAdapter {
     }
 }
 
+/// A native adapter that accepts pixels but substitutes the returned intent. It uses the
+/// real synthetic frame source and composition, not a mocked storage or command handler.
+#[derive(Clone, Copy)]
+enum Spoof {
+    Operation,
+    Mode,
+    Trigger,
+}
+
+struct SpoofingAdapter {
+    inner: Arc<SyntheticAdapter>,
+    spoof: Spoof,
+}
+
+impl NativeCaptureAdapter for SpoofingAdapter {
+    fn capture(&self, request: CaptureRequest) -> Result<CaptureOutcome, CaptureError> {
+        let outcome = self.inner.capture(request.clone())?;
+        match outcome {
+            CaptureOutcome::Accepted(mut result) => {
+                result.request = match self.spoof {
+                    Spoof::Operation => {
+                        CaptureRequest::new(Uuid::new_v4(), request.mode(), request.trigger())
+                    }
+                    Spoof::Mode => CaptureRequest::new(
+                        request.operation_id(),
+                        CaptureMode::Desktop,
+                        request.trigger(),
+                    ),
+                    Spoof::Trigger => CaptureRequest::new(
+                        request.operation_id(),
+                        request.mode(),
+                        CaptureTrigger::Hotkey,
+                    ),
+                };
+                Ok(CaptureOutcome::Accepted(result))
+            }
+            other => Ok(other),
+        }
+    }
+
+    fn cancel(&self, operation_id: Uuid) -> bool {
+        self.inner.cancel(operation_id)
+    }
+}
+
 fn options(root: &Path, capture: CaptureOptions, store: Arc<MemoryStore>) -> BootstrapOptions {
     BootstrapOptions {
         root: root.to_path_buf(),
@@ -444,6 +489,63 @@ fn s02_capture_host_01_command_commits_a_canonical_record_and_serves_its_bytes()
             other => panic!("an unknown asset must be refused: {other:?}"),
         }
         stop(&client, handle).await;
+    });
+}
+
+#[test]
+fn s02_t09d_host_rejects_spoofed_accepted_request_without_saving_or_replaying() {
+    let rt = runtime();
+    rt.block_on(async {
+        for spoof in [Spoof::Operation, Spoof::Mode, Spoof::Trigger] {
+            let roots = Roots::new();
+            let store = Arc::new(MemoryStore::default());
+            let inner = SyntheticAdapter::new(4, 4, Answer::Accept);
+            let adapter = Arc::new(SpoofingAdapter {
+                inner: inner.clone(),
+                spoof,
+            });
+            let host = bootstrap(options(
+                &roots.path(),
+                CaptureOptions::Injected(adapter),
+                store.clone(),
+            ))
+            .await
+            .unwrap();
+            let library = host.library_id();
+            let handle = tokio::spawn(async move { host.serve(DEFAULT_DRAIN).await });
+            let client = connect(&roots, library, &store).await;
+            let params = command(CaptureMode::Region);
+            // A second invocation after a failed session may try capture again; it must
+            // never replay a spoofed receipt or trigger extra native work per invocation.
+            for expected_calls in 1..=2 {
+                match client.capture_command(params.clone(), 10_000, None).await {
+                    Err(ClientError::Application(error)) => {
+                        assert_eq!(error.code, ErrorCode::InvalidRequest);
+                        assert!(!error.retryable);
+                        let safe = serde_json::to_string(&error).unwrap();
+                        assert!(!safe.contains(&params.operation_id.as_uuid().to_string()));
+                        assert!(!safe.contains("assets/"));
+                    }
+                    other => panic!("spoofed native request must be refused: {other:?}"),
+                }
+                assert_eq!(inner.calls.load(Ordering::SeqCst), expected_calls);
+                assert!(roots.published_files().is_empty());
+            }
+            stop(&client, handle).await;
+            let worker = StorageWorker::start(roots.lease()).unwrap();
+            assert!(matches!(
+                worker
+                    .lookup_operation(
+                        params.operation_id,
+                        PrincipalId::new(Uuid::new_v4()),
+                        CaptureTarget::Region,
+                    )
+                    .await
+                    .unwrap(),
+                LookupOutcome::Unknown
+            ));
+            worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        }
     });
 }
 

@@ -226,18 +226,45 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     )
 }
 
+/// Trusted IDs reserved for one accepted image. Frame identity is held for a later
+/// staging seam; it is not a DB column or part of the persisted commit command.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AcceptedSaveIds {
+    operation_id: sm_domain::OperationId,
+    record_id: RecordId,
+    asset_id: AssetId,
+    frame_id: Uuid,
+}
+
+impl AcceptedSaveIds {
+    fn for_operation(operation_id: Uuid) -> Self {
+        Self {
+            operation_id: sm_domain::OperationId::new(operation_id),
+            record_id: RecordId::new(Uuid::new_v4()),
+            asset_id: AssetId::new(Uuid::new_v4()),
+            frame_id: Uuid::new_v4(),
+        }
+    }
+
+    /// Future staging identity; the current database does not store a frame ID.
+    fn frame_id(&self) -> Uuid {
+        self.frame_id
+    }
+}
+
 /// The one commit command of an accepted native result: verified canonical bytes, the
 /// observed context and the provenance of the frame's own freeze instant.
 fn commit_command(
     result: &CaptureResult,
     canonical: Vec<u8>,
     principal_id: sm_domain::PrincipalId,
+    ids: AcceptedSaveIds,
 ) -> CommitImageCapture {
     CommitImageCapture {
-        operation_id: sm_domain::OperationId::new(result.request.operation_id()),
+        operation_id: ids.operation_id,
         principal_id,
-        record_id: RecordId::new(Uuid::new_v4()),
-        asset_id: AssetId::new(Uuid::new_v4()),
+        record_id: ids.record_id,
+        asset_id: ids.asset_id,
         asset_type: AssetType::Original,
         // The accepted frame's own mode and positive canonical geometry; the storage
         // boundary re-validates the bounds and the bounded warning codes before store.
@@ -332,7 +359,11 @@ impl CaptureIngest {
         &self,
         result: &CaptureResult,
         principal_id: sm_domain::PrincipalId,
+        ids: AcceptedSaveIds,
     ) -> Result<CaptureReceipt, AppError> {
+        // Retain a valid frame identity for the later stage seam; do not persist it
+        // in the current DB command or silently mint another after acceptance.
+        debug_assert_eq!(ids.frame_id().get_version_num(), 4);
         let dib = &result.dib;
         let image =
             RgbaImage::from_rgba(dib.width(), dib.height(), dib.rgba8()).map_err(codec_failure)?;
@@ -341,14 +372,14 @@ impl CaptureIngest {
         let canonical = encode_exact_lossless_verified(&image)
             .map_err(codec_failure)?
             .into_canonical();
-        let command = commit_command(result, canonical.bytes().to_vec(), principal_id);
+        let command = commit_command(result, canonical.bytes().to_vec(), principal_id, ids);
         let committed = self
             .storage
             .commit_image_capture(command)
             .await
             .map_err(storage_failure)?;
         Ok(CaptureReceipt {
-            operation_id: sm_domain::OperationId::new(result.request.operation_id()),
+            operation_id: ids.operation_id,
             record_id: committed.record_id,
             asset_id: committed.asset_id,
             canonical_mime: canonical.mime().to_string(),
@@ -456,6 +487,8 @@ impl CaptureIngest {
                 true,
             ));
         }
+        // Reserve the identity once, after replay/probe/admission and before native freeze.
+        let ids = AcceptedSaveIds::for_operation(request.operation_id());
         emit(
             &self.logger,
             EventId::CaptureStarted,
@@ -463,8 +496,13 @@ impl CaptureIngest {
             None,
         );
         let adapter = self.adapter.clone();
+        // Keep the submitted intent across the blocking adapter boundary. The returned
+        // result is not allowed to change its operation, mode or trusted trigger.
+        let expected_request = request.clone();
         let outcome = run_blocking_session(adapter, request, cancel).await;
-        let answer = self.finish(outcome, ctx.principal_id()).await;
+        let answer = self
+            .finish(outcome, ctx.principal_id(), Some((expected_request, ids)))
+            .await;
         self.release();
         answer
     }
@@ -533,7 +571,7 @@ impl CaptureIngest {
             );
             return;
         }
-        let _ = self.finish(outcome, self.owner_principal).await;
+        let _ = self.finish(outcome, self.owner_principal, None).await;
         self.release();
     }
 
@@ -541,10 +579,32 @@ impl CaptureIngest {
         &self,
         outcome: Result<CaptureOutcome, CaptureError>,
         principal_id: sm_domain::PrincipalId,
+        command: Option<(CaptureRequest, AcceptedSaveIds)>,
     ) -> Result<WireCaptureOutcome, AppError> {
         match outcome {
             Ok(CaptureOutcome::Accepted(result)) => {
-                match self.commit(&result, principal_id).await {
+                if command
+                    .as_ref()
+                    .is_some_and(|(expected, _)| result.request != *expected)
+                {
+                    emit(
+                        &self.logger,
+                        EventId::CaptureFailed,
+                        Outcome::Failed,
+                        Some(SafeCode::InternalFailure),
+                    );
+                    return Err(app_error(
+                        ErrorCode::InvalidRequest,
+                        "The screen capture could not produce a stored image.",
+                        false,
+                    ));
+                }
+                // Hotkeys have no command preflight: mint only after native acceptance.
+                let ids = command.map_or_else(
+                    || AcceptedSaveIds::for_operation(result.request.operation_id()),
+                    |(_, ids)| ids,
+                );
+                match self.commit(&result, principal_id, ids).await {
                     Ok(receipt) => {
                         emit(
                             &self.logger,
@@ -894,7 +954,8 @@ mod tests {
     fn s02_host_05_committed_provenance_is_the_freeze_not_the_commit_instant() {
         let frame = synthetic_frame(1_790_586_900_000);
         let principal = synthetic_principal();
-        let command = commit_command(&frame, vec![0x01, 0x02, 0x03, 0x04], principal);
+        let ids = AcceptedSaveIds::for_operation(frame.request.operation_id());
+        let command = commit_command(&frame, vec![0x01, 0x02, 0x03, 0x04], principal, ids);
         assert_eq!(command.asset_type, AssetType::Original);
         // The commit carries exactly the principal it was given, never a placeholder.
         assert_eq!(command.principal_id, principal);
@@ -913,7 +974,8 @@ mod tests {
         );
         // A capture time is never the clock of the later encode/commit: an epoch freeze stays
         // an epoch freeze even though this commit happens now.
-        let epoch = commit_command(&synthetic_frame(0), Vec::new(), principal);
+        let epoch_frame = synthetic_frame(0);
+        let epoch = commit_command(&epoch_frame, Vec::new(), principal, ids);
         assert_eq!(epoch.principal_id, principal);
         assert_eq!(
             epoch.provenances,
@@ -927,5 +989,104 @@ mod tests {
             .expect("a canonical instant is storable");
         assert!(canonical.contains("1970-01-01T00:00:00.000Z"));
         assert!(!canonical.contains(&canonical_utc_millis(SystemTime::now())));
+    }
+
+    #[test]
+    fn s02_t09d_supplied_identity_is_not_reminted_by_commit_command() {
+        let frame = synthetic_frame(1_790_586_900_000);
+        let ids = AcceptedSaveIds {
+            operation_id: sm_domain::OperationId::new(frame.request.operation_id()),
+            record_id: RecordId::new(Uuid::from_u128(0x0190_0000_0000_4000_8000_0000_0000_0011)),
+            asset_id: AssetId::new(Uuid::from_u128(0x0190_0000_0000_4000_8000_0000_0000_0012)),
+            frame_id: Uuid::from_u128(0x0190_0000_0000_4000_8000_0000_0000_0013),
+        };
+        let principal = synthetic_principal();
+        let command = commit_command(&frame, vec![1, 2, 3], principal, ids);
+        assert_eq!(command.operation_id, ids.operation_id);
+        assert_eq!(command.record_id, ids.record_id);
+        assert_eq!(command.asset_id, ids.asset_id);
+        assert_eq!(
+            ids.frame_id(),
+            Uuid::from_u128(0x0190_0000_0000_4000_8000_0000_0000_0013)
+        );
+        assert_eq!(command.mode, frame.request.target());
+        assert_eq!(command.provenances, vec![capture_provenance(&frame)]);
+        assert_eq!(command.canonical, vec![1, 2, 3]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn s02_t09d_supplied_ids_reach_saved_lookup_without_changing_frame() {
+        use sm_isolation::{HostLease, LibraryRootResolver, RootSource};
+        let parent = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.pi/temporary");
+        std::fs::create_dir_all(&parent).unwrap();
+        let parent = std::fs::canonicalize(parent).unwrap();
+        let parent = std::path::PathBuf::from(parent.to_string_lossy().trim_start_matches(r"\\?\"));
+        let root = parent.join(Uuid::new_v4().to_string());
+        std::fs::create_dir(&root).unwrap();
+        for child in ["data", "config", "cache", "webview"] {
+            std::fs::create_dir(root.join(child)).unwrap();
+        }
+        let layout = LibraryRootResolver::resolve(RootSource::Test {
+            root: &root,
+            forbidden_donor_roots: &[],
+        })
+        .unwrap();
+        let worker = StorageWorker::start(HostLease::acquire(layout).unwrap()).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let frame = synthetic_frame(1_790_586_900_000);
+            let ids = AcceptedSaveIds {
+                operation_id: sm_domain::OperationId::new(frame.request.operation_id()),
+                record_id: RecordId::new(Uuid::from_u128(
+                    0x0190_0000_0000_4000_8000_0000_0000_0011,
+                )),
+                asset_id: AssetId::new(Uuid::from_u128(0x0190_0000_0000_4000_8000_0000_0000_0012)),
+                frame_id: Uuid::from_u128(0x0190_0000_0000_4000_8000_0000_0000_0013),
+            };
+            let principal = synthetic_principal();
+            let image =
+                RgbaImage::from_rgba(frame.dib.width(), frame.dib.height(), frame.dib.rgba8())
+                    .unwrap();
+            let canonical = encode_exact_lossless_verified(&image)
+                .unwrap()
+                .into_canonical();
+            let command = commit_command(&frame, canonical.bytes().to_vec(), principal, ids);
+            let committed = worker.commit_image_capture(command).await.unwrap();
+            let stored = match worker
+                .lookup_operation(ids.operation_id, principal, frame.request.target())
+                .await
+                .unwrap()
+            {
+                LookupOutcome::Saved(stored) => stored,
+                other => panic!("expected a saved lookup: {other:?}"),
+            };
+            let receipt = replay_receipt(stored.clone());
+            assert_eq!(
+                (committed.record_id, committed.asset_id),
+                (ids.record_id, ids.asset_id)
+            );
+            assert_eq!(
+                (receipt.operation_id, receipt.record_id, receipt.asset_id),
+                (ids.operation_id, ids.record_id, ids.asset_id)
+            );
+            assert_eq!(
+                (stored.operation_id, stored.record_id, stored.asset_id),
+                (ids.operation_id, ids.record_id, ids.asset_id)
+            );
+            assert_eq!(stored.mode, frame.request.target());
+            assert_eq!(
+                (stored.width, stored.height),
+                (frame.dib.width(), frame.dib.height())
+            );
+            assert_eq!(stored.size_bytes, canonical.bytes().len() as u64);
+            assert_eq!(stored.warnings, frame.warnings);
+            assert_eq!(stored.sha256, committed.sha256);
+            worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        });
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
