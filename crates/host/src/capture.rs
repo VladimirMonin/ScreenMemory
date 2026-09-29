@@ -23,6 +23,8 @@ use sm_application::{
     },
     RequestContext, Scope,
 };
+use sm_capture::HotkeyReservation;
+use sm_capture::HotkeySink;
 use sm_codec::{encode_exact_lossless_verified, CodecError, RgbaImage};
 use sm_domain::{AssetId, RecordId};
 use sm_observability::Logger;
@@ -38,12 +40,12 @@ use sm_storage::{StagePresence, StorageWorker};
 use std::{
     collections::HashSet,
     sync::{
-        atomic::{AtomicU8, Ordering},
+        atomic::{AtomicU32, AtomicU8, Ordering},
         Arc, Mutex,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::sync::{oneshot, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -128,6 +130,10 @@ impl CommandTasks {
 
     fn register(self: &Arc<Self>) -> Option<CommandTaskGuard> {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        self.register_locked(&mut state)
+    }
+
+    fn register_locked(self: &Arc<Self>, state: &mut CommandTaskState) -> Option<CommandTaskGuard> {
         if state.closing {
             return None;
         }
@@ -163,11 +169,20 @@ impl Drop for CommandTaskGuard {
 
 /// One reserved save slot travels with the command task through native acceptance and
 /// commit, even after the waiter has been cancelled or disconnected.
-struct SaveSlot(Arc<CaptureIngest>);
+struct SaveSlot(Arc<AtomicU8>);
 impl Drop for SaveSlot {
     fn drop(&mut self) {
-        self.0.release();
+        self.0.fetch_sub(1, Ordering::AcqRel);
     }
+}
+
+fn reserve_slot(slots: &Arc<AtomicU8>) -> Option<SaveSlot> {
+    slots
+        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+            (count < MAX_ACCEPTED_SAVES).then_some(count + 1)
+        })
+        .ok()
+        .map(|_| SaveSlot(slots.clone()))
 }
 
 /// One typed refusal or failure with the stable S01 error envelope.
@@ -391,39 +406,17 @@ impl CaptureIngest {
         logger: Logger,
         owner_principal: sm_domain::PrincipalId,
         command_tasks: Arc<CommandTasks>,
+        slots: Arc<AtomicU8>,
     ) -> Arc<Self> {
         Arc::new(Self {
             adapter,
             storage,
             logger,
-            slots: Arc::new(AtomicU8::new(0)),
+            slots,
             owner_principal,
             in_flight: Arc::new(InFlight::default()),
             command_tasks,
         })
-    }
-
-    /// Non-blocking reservation of one accepted-save slot.
-    fn reserve(&self) -> bool {
-        let mut current = self.slots.load(Ordering::Acquire);
-        loop {
-            if current >= MAX_ACCEPTED_SAVES {
-                return false;
-            }
-            match self.slots.compare_exchange_weak(
-                current,
-                current + 1,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => return true,
-                Err(observed) => current = observed,
-            }
-        }
-    }
-
-    fn release(&self) {
-        self.slots.fetch_sub(1, Ordering::AcqRel);
     }
 
     /// Encode the accepted pixels and commit them with their context in one transaction.
@@ -546,7 +539,7 @@ impl CaptureIngest {
                 ));
             }
         }
-        if !self.reserve() {
+        let Some(slot) = reserve_slot(&self.slots) else {
             emit(
                 &self.logger,
                 EventId::CaptureRefused,
@@ -558,7 +551,7 @@ impl CaptureIngest {
                 "The library already has the maximum accepted saves in flight.",
                 true,
             ));
-        }
+        };
         // Reserve the identity once, after replay/probe/admission and before native freeze.
         let ids = AcceptedSaveIds::for_operation(request.operation_id());
         emit(
@@ -570,14 +563,12 @@ impl CaptureIngest {
         // Closing admission and registration share a synchronous lock. No await (or
         // waiter-owned native result) may fall between registration and spawn.
         let Some(registration) = self.command_tasks.register() else {
-            self.release();
             return Err(app_error(
                 ErrorCode::RuntimeUnavailable,
                 "The host is stopping.",
                 true,
             ));
         };
-        let slot = SaveSlot(self.clone());
         let ingest = self.clone();
         let principal_id = ctx.principal_id();
         let (answer_tx, answer_rx) = oneshot::channel();
@@ -652,22 +643,6 @@ impl CaptureIngest {
                 ))
             }
         }
-    }
-
-    /// Persistence of an outcome the native hotkey path already produced. The accepted
-    /// outcome carries its own trusted request, so no separate intent is needed.
-    pub async fn persist(&self, outcome: Result<CaptureOutcome, CaptureError>) {
-        if !self.reserve() {
-            emit(
-                &self.logger,
-                EventId::CaptureFailed,
-                Outcome::Failed,
-                Some(SafeCode::QueueFull),
-            );
-            return;
-        }
-        let _ = self.finish(outcome, self.owner_principal, None).await;
-        self.release();
     }
 
     async fn finish(
@@ -823,39 +798,161 @@ fn storage_failure(error: StorageError) -> AppError {
     storage_error(error)
 }
 
-/// Bounded sink of the native hotkey path: it only tries to enqueue, never blocks the
-/// native thread, and the consumer persists through the same ingest as a command.
+/// A delivered outcome retains the pre-freeze slot and host admission until persistence
+/// completes. Queued permits remain valid after receiver.close(), allowing true drain.
+pub struct HotkeyMessage {
+    outcome: Result<CaptureOutcome, CaptureError>,
+    _slot: SaveSlot,
+    _registration: CommandTaskGuard,
+}
+
+/// Bounded sink of the native hotkey path: no blocking lock, await, or allocation of
+/// image buffers occurs before the native freeze.
 pub struct HotkeyPersistence {
-    sender: tokio::sync::mpsc::Sender<Result<CaptureOutcome, CaptureError>>,
+    sender: mpsc::Sender<HotkeyMessage>,
+    slots: Arc<AtomicU8>,
+    tasks: Arc<CommandTasks>,
+    refused: AtomicU32,
+}
+
+struct ReservedHotkey {
+    permit: mpsc::OwnedPermit<HotkeyMessage>,
+    slot: SaveSlot,
+    registration: CommandTaskGuard,
+}
+
+impl HotkeyReservation for ReservedHotkey {
+    fn deliver(self: Box<Self>, outcome: Result<CaptureOutcome, CaptureError>) {
+        let Self {
+            permit,
+            slot,
+            registration,
+        } = *self;
+        // A pre-reserved permit cannot report Full or Closed, even during shutdown.
+        permit.send(HotkeyMessage {
+            outcome,
+            _slot: slot,
+            _registration: registration,
+        });
+    }
 }
 
 impl HotkeyPersistence {
-    /// Create the bounded channel and the sink consuming it.
-    pub fn channel() -> (
-        Arc<Self>,
-        tokio::sync::mpsc::Receiver<Result<CaptureOutcome, CaptureError>>,
-    ) {
-        let (sender, receiver) = tokio::sync::mpsc::channel(HOTKEY_QUEUE);
-        (Arc::new(Self { sender }), receiver)
+    /// Create the bounded channel with shared command/hotkey slot and admission owners.
+    pub fn channel(
+        slots: Arc<AtomicU8>,
+        tasks: Arc<CommandTasks>,
+    ) -> (Arc<Self>, mpsc::Receiver<HotkeyMessage>) {
+        let (sender, receiver) = mpsc::channel(HOTKEY_QUEUE);
+        (
+            Arc::new(Self {
+                sender,
+                slots,
+                tasks,
+                refused: AtomicU32::new(0),
+            }),
+            receiver,
+        )
     }
 }
 
-impl sm_capture::HotkeySink for HotkeyPersistence {
-    fn on_capture(&self, _mode: CaptureMode, outcome: Result<CaptureOutcome, CaptureError>) {
-        // A full slot means the library already has the maximum accepted saves in flight:
-        // the event is dropped with a bounded backpressure instead of blocking the native
-        // thread or queueing an unknown future scene.
-        let _ = self.sender.try_send(outcome);
+impl HotkeySink for HotkeyPersistence {
+    fn try_reserve(&self, _mode: CaptureMode) -> Option<Box<dyn HotkeyReservation>> {
+        let reservation = (|| {
+            // A contested gate is a bounded refusal, not a wait on the native dispatcher.
+            // Closing and registering share this lock; a shutdown cannot race a reservation.
+            let mut state = self.tasks.state.try_lock().ok()?;
+            if state.closing {
+                return None;
+            }
+            let slot = reserve_slot(&self.slots)?;
+            let permit = self.sender.clone().try_reserve_owned().ok()?;
+            let registration = self.tasks.register_locked(&mut state)?;
+            Some(Box::new(ReservedHotkey {
+                permit,
+                slot,
+                registration,
+            }) as Box<dyn HotkeyReservation>)
+        })();
+        if reservation.is_none() {
+            let _ = self
+                .refused
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
+                    (count < u32::MAX).then_some(count + 1)
+                });
+        }
+        reservation
     }
 }
 
-/// Consume the bounded hotkey queue until the host stops.
+/// The close signal closes the receiver but drains all already-issued owned permits.
+/// The caller must join this task before closing storage or releasing the lease.
 pub async fn drain_hotkeys(
     ingest: Arc<CaptureIngest>,
-    mut receiver: tokio::sync::mpsc::Receiver<Result<CaptureOutcome, CaptureError>>,
+    mut receiver: mpsc::Receiver<HotkeyMessage>,
+    mut close: oneshot::Receiver<()>,
 ) {
-    while let Some(outcome) = receiver.recv().await {
-        ingest.persist(outcome).await;
+    loop {
+        tokio::select! {
+            biased;
+            _ = &mut close => { receiver.close(); break; }
+            message = receiver.recv() => {
+                let Some(message) = message else { return; };
+                let _ = ingest.finish(message.outcome, ingest.owner_principal, None).await;
+            }
+        }
+    }
+    while let Some(message) = receiver.recv().await {
+        let _ = ingest
+            .finish(message.outcome, ingest.owner_principal, None)
+            .await;
+        // Slot and registration drop only after the terminal commit/failure.
+    }
+}
+
+#[cfg(test)]
+mod hotkey_admission_tests {
+    use super::*;
+
+    #[test]
+    fn full_queue_contention_close_and_dropped_permit_refuse_before_capture() {
+        let slots = Arc::new(AtomicU8::new(0));
+        let tasks = CommandTasks::new();
+        let (sink, mut receiver) = HotkeyPersistence::channel(slots.clone(), tasks.clone());
+        // The command and hotkey reserve the same two-slot counter.
+        let command_slot = reserve_slot(&slots).unwrap();
+        let first = sink.try_reserve(CaptureMode::Region).unwrap();
+        assert!(sink.try_reserve(CaptureMode::Region).is_none());
+        drop(command_slot);
+        let second = sink.try_reserve(CaptureMode::Region).unwrap();
+        assert!(sink.try_reserve(CaptureMode::Region).is_none());
+        assert_eq!(slots.load(Ordering::Acquire), 2);
+        // A contested native gate refuses immediately without awaiting a mutex.
+        let lock = tasks.state.lock().unwrap();
+        assert!(sink.try_reserve(CaptureMode::Region).is_none());
+        drop(lock);
+        drop(second);
+        assert_eq!(slots.load(Ordering::Acquire), 1);
+        let next = sink.try_reserve(CaptureMode::Region).unwrap();
+        tasks.close();
+        receiver.close();
+        assert!(sink.try_reserve(CaptureMode::Region).is_none());
+        first.deliver(Err(CaptureError::Cancelled));
+        next.deliver(Err(CaptureError::Unavailable));
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let first = receiver.recv().await.unwrap();
+            let second = receiver.recv().await.unwrap();
+            assert!(receiver.recv().await.is_none());
+            drop(first);
+            drop(second);
+            tasks.drain().await;
+        });
+        assert_eq!(slots.load(Ordering::Acquire), 0);
+        assert_eq!(sink.refused.load(Ordering::Relaxed), 4);
     }
 }
 

@@ -214,16 +214,29 @@ impl OverlayObserver for ScriptedOverlay {
 struct RecordingSink {
     sender: mpsc::SyncSender<(CaptureMode, bool, u32, u32)>,
 }
-impl HotkeySink for RecordingSink {
-    fn on_capture(&self, mode: CaptureMode, outcome: Result<CaptureOutcome, CaptureError>) {
+struct RecordingReservation {
+    mode: CaptureMode,
+    sender: mpsc::SyncSender<(CaptureMode, bool, u32, u32)>,
+}
+impl sm_capture::HotkeyReservation for RecordingReservation {
+    fn deliver(self: Box<Self>, outcome: Result<CaptureOutcome, CaptureError>) {
         let record = match outcome {
             Ok(CaptureOutcome::Accepted(result)) => {
-                (mode, true, result.dib.width(), result.dib.height())
+                (self.mode, true, result.dib.width(), result.dib.height())
             }
-            _ => (mode, false, 0, 0),
+            _ => (self.mode, false, 0, 0),
         };
-        // try_send keeps the native thread non-blocking; a full slot is lost on purpose.
-        let _ = self.sender.try_send(record);
+        self.sender
+            .try_send(record)
+            .expect("the synthetic hotkey test channel must have capacity");
+    }
+}
+impl HotkeySink for RecordingSink {
+    fn try_reserve(&self, mode: CaptureMode) -> Option<Box<dyn sm_capture::HotkeyReservation>> {
+        Some(Box::new(RecordingReservation {
+            mode,
+            sender: self.sender.clone(),
+        }))
     }
 }
 

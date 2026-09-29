@@ -15,11 +15,12 @@ use sm_application::{
         LookupOutcome, PhysicalBounds, Provenance,
     },
 };
+use sm_capture::HotkeySink;
 use sm_domain::{AssetId, LibraryId, PrincipalId, RecordId};
 use sm_framing::BufferBudget;
 use sm_host::{bootstrap, BootstrapMode, BootstrapOptions, CaptureOptions, DEFAULT_DRAIN};
 use sm_isolation::{HostLease, LibraryRootResolver, RootSource};
-use sm_pipe::TrustedServerImage;
+use sm_pipe::{Listener, TrustedServerImage};
 use sm_protocol::{
     application::{
         CaptureCommandParams, CaptureOutcome as WireCaptureOutcome, LibraryAssetRequest,
@@ -34,7 +35,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Condvar, Mutex,
+        Arc, Condvar, Mutex, OnceLock,
     },
     time::{Duration, Instant},
 };
@@ -1089,6 +1090,183 @@ fn s02_t09e_shutdown_timeout_keeps_lease_until_admitted_command_finishes() {
         );
         assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
         worker.shutdown(Duration::from_secs(5)).await.unwrap();
+    });
+}
+
+#[test]
+fn s02_t09f_hotkey_consumer_persists_without_shutdown() {
+    runtime().block_on(async {
+        let roots = Roots::new();
+        let store = Arc::new(MemoryStore::default());
+        let adapter = SyntheticAdapter::new(8, 8, Answer::Accept);
+        let outlet = Arc::new(OnceLock::<Arc<dyn HotkeySink>>::new());
+        let host = bootstrap(options(
+            &roots.path(),
+            CaptureOptions::InjectedHotkey {
+                adapter: adapter.clone(),
+                sink: outlet.clone(),
+            },
+            store.clone(),
+        ))
+        .await
+        .unwrap();
+        let library = host.library_id();
+        let handle = tokio::spawn(async move { host.serve(DEFAULT_DRAIN).await });
+        let sink = outlet.get().unwrap();
+        let reservation = sink.try_reserve(CaptureMode::Region).unwrap();
+        let operation_id = Uuid::new_v4();
+        let request =
+            CaptureRequest::new(operation_id, CaptureMode::Region, CaptureTrigger::Hotkey);
+        reservation.deliver(adapter.capture(request));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while roots.published_files().is_empty() {
+            assert!(Instant::now() < deadline, "hotkey consumer did not persist");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let control = connect(&roots, library, &store).await;
+        control.request_shutdown().await.unwrap();
+        let outcome = handle.await.unwrap().unwrap();
+        assert_eq!(outcome.exit_code(), sm_host::EXIT_OK);
+        let principal = Authenticator::enroll_owner(
+            store.as_ref(),
+            CredentialKey::owner(CredentialEnvironment::Test, library),
+        )
+        .unwrap()
+        .principal();
+        let worker = StorageWorker::start(roots.lease()).unwrap();
+        assert!(matches!(
+            worker
+                .lookup_operation(
+                    sm_domain::OperationId::new(operation_id),
+                    principal,
+                    CaptureTarget::Region
+                )
+                .await
+                .unwrap(),
+            LookupOutcome::Saved(_)
+        ));
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+    });
+}
+
+#[test]
+fn s02_t09f_hotkey_permits_survive_shutdown_and_commit_under_owner() {
+    runtime().block_on(async {
+        let roots = Roots::new();
+        let sentinel = roots.path().join("sentinel.txt");
+        fs::write(&sentinel, b"keep-hotkey-sentinel").unwrap();
+        let store = Arc::new(MemoryStore::default());
+        let adapter = SyntheticAdapter::new(8, 8, Answer::Accept);
+        let outlet = Arc::new(OnceLock::<Arc<dyn HotkeySink>>::new());
+        let host = bootstrap(options(
+            &roots.path(),
+            CaptureOptions::InjectedHotkey {
+                adapter: adapter.clone(),
+                sink: outlet.clone(),
+            },
+            store.clone(),
+        ))
+        .await
+        .unwrap();
+        let library = host.library_id();
+        let sink = outlet.get().unwrap().clone();
+        let first = sink.try_reserve(CaptureMode::Region).unwrap();
+        let second = sink.try_reserve(CaptureMode::Region).unwrap();
+        assert!(
+            sink.try_reserve(CaptureMode::Region).is_none(),
+            "full queue refuses pre-freeze"
+        );
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), 0);
+        let handle = tokio::spawn(async move { host.serve(DEFAULT_DRAIN).await });
+        let control = connect(&roots, library, &store).await;
+        control.request_shutdown().await.unwrap();
+        tokio::time::sleep(sm_host::SHUTDOWN_BUDGET + DEFAULT_DRAIN + Duration::from_millis(250))
+            .await;
+        assert!(
+            !handle.is_finished(),
+            "issued native permits keep the host and lease alive"
+        );
+        assert!(matches!(
+            HostLease::acquire(roots.layout()),
+            Err(sm_isolation::LeaseError::Busy)
+        ));
+        let operation_id = Uuid::new_v4();
+        assert_eq!(operation_id.get_version_num(), 4);
+        let request =
+            CaptureRequest::new(operation_id, CaptureMode::Region, CaptureTrigger::Hotkey);
+        first.deliver(adapter.capture(request));
+        // The second reservation has no accepted pixels; dropping it releases exactly one slot.
+        drop(second);
+        let outcome = tokio::time::timeout(Duration::from_secs(10), handle)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(outcome.storage_closed);
+        assert!(!outcome.command_drain_in_budget || !outcome.hotkey_drain_in_budget);
+        assert_ne!(outcome.exit_code(), sm_host::EXIT_OK);
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(fs::read(sentinel).unwrap(), b"keep-hotkey-sentinel");
+        assert_eq!(roots.published_files().len(), 1);
+        let principal = Authenticator::enroll_owner(
+            store.as_ref(),
+            CredentialKey::owner(CredentialEnvironment::Test, library),
+        )
+        .unwrap()
+        .principal();
+        let worker = StorageWorker::start(roots.lease()).unwrap();
+        let receipt = worker
+            .lookup_operation(
+                sm_domain::OperationId::new(operation_id),
+                principal,
+                CaptureTarget::Region,
+            )
+            .await
+            .unwrap();
+        let saved = match receipt {
+            LookupOutcome::Saved(saved) => saved,
+            other => panic!("accepted hotkey must have canonical DB receipt: {other:?}"),
+        };
+        assert_eq!(saved.principal_id, principal);
+        assert_eq!(saved.operation_id.as_uuid(), operation_id);
+        let asset = worker
+            .read_asset_chunk(saved.asset_id, 0, 1024 * 1024)
+            .await
+            .unwrap();
+        assert_eq!(asset.bytes, fs::read(&roots.published_files()[0]).unwrap());
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+    });
+}
+
+#[test]
+fn s02_t09f_bind_failure_joins_hotkey_consumer_and_releases_lease() {
+    runtime().block_on(async {
+        let roots = Roots::new();
+        let sentinel = roots.path().join("sentinel.txt");
+        fs::write(&sentinel, b"keep-bind-sentinel").unwrap();
+        // A sealed listener owns the endpoint but not the library lease.
+        let occupied = Listener::bind(roots.endpoint()).unwrap();
+        let store = Arc::new(MemoryStore::default());
+        let outlet = Arc::new(OnceLock::<Arc<dyn HotkeySink>>::new());
+        let adapter = SyntheticAdapter::new(8, 8, Answer::Accept);
+        let result = bootstrap(options(
+            &roots.path(),
+            CaptureOptions::InjectedHotkey {
+                adapter,
+                sink: outlet.clone(),
+            },
+            store,
+        ))
+        .await;
+        assert!(matches!(result, Err(sm_host::HostError::Endpoint)));
+        assert!(
+            outlet.get().is_some(),
+            "consumer was spawned before bind failed"
+        );
+        let lease = roots.lease();
+        drop(lease);
+        assert_eq!(fs::read(sentinel).unwrap(), b"keep-bind-sentinel");
+        drop(occupied);
     });
 }
 

@@ -14,7 +14,7 @@ use sm_application::{
     },
     storage::{FoundationRepository, StorageError},
 };
-use sm_capture::{CaptureHostConfig, WindowsCaptureAdapter};
+use sm_capture::{CaptureHostConfig, HotkeySink, WindowsCaptureAdapter};
 use sm_domain::{HostInstanceId, LibraryId, PrincipalId};
 use sm_framing::BufferBudget;
 use sm_isolation::{HostLease, LeaseError, LibraryRootResolver, RootError, RootSource};
@@ -25,7 +25,13 @@ use sm_observability::{
 use sm_pipe::{Endpoint, Listener};
 use sm_session::SessionHost;
 use sm_storage::StorageWorker;
-use std::{path::Path, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    path::Path,
+    path::PathBuf,
+    sync::{atomic::AtomicU8, Arc, OnceLock},
+    time::Duration,
+};
+use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -97,6 +103,12 @@ pub enum CaptureOptions {
     Native(Box<CaptureHostConfig>),
     /// Adapter supplied by the caller (composition/integration tests).
     Injected(Arc<dyn NativeCaptureAdapter>),
+    /// Trusted composition-only seam for synthetic hotkey delivery. Not a wire option;
+    /// the production binary constructs only `Native` or `Disabled`.
+    InjectedHotkey {
+        adapter: Arc<dyn NativeCaptureAdapter>,
+        sink: Arc<OnceLock<Arc<dyn HotkeySink>>>,
+    },
 }
 
 /// Explicit configuration of one owned root plus the host credential store of this process.
@@ -122,12 +134,18 @@ pub struct ShutdownOutcome {
     pub storage_closed: bool,
     pub log_flushed: bool,
     pub serve_ok: bool,
-    /// False when an admitted command outlived shutdown grace, even if it later saved.
+    /// False when a registered command or hotkey save outlived shutdown grace.
     pub command_drain_in_budget: bool,
+    /// False if the hotkey consumer outlived grace or unexpectedly stopped.
+    pub hotkey_drain_in_budget: bool,
 }
 impl ShutdownOutcome {
     pub fn exit_code(self) -> u8 {
-        if self.storage_closed && self.serve_ok && self.command_drain_in_budget {
+        if self.storage_closed
+            && self.serve_ok
+            && self.command_drain_in_budget
+            && self.hotkey_drain_in_budget
+        {
             crate::EXIT_OK
         } else {
             crate::EXIT_STORAGE
@@ -311,7 +329,15 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
         BootstrapMode::Initialize => None,
         BootstrapMode::Serve => match Listener::bind(prepared.endpoint) {
             Ok(listener) => Some(listener),
-            Err(_) => return Err(emit_startup_failure(logger, HostError::Endpoint)),
+            Err(_) => {
+                services.set_stopping();
+                command_tasks.close();
+                let _ = close_hotkeys(hotkey_task).await;
+                command_tasks.drain().await;
+                // No detached consumer or lease may survive a failed bind.
+                let _ = prepared.storage.shutdown(SHUTDOWN_BUDGET).await;
+                return Err(emit_startup_failure(logger, HostError::Endpoint));
+            }
         },
     };
     let mut started = SafeEvent::new(
@@ -352,6 +378,22 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
     })
 }
 
+/// Explicit close signal is required because the native owner keeps a sender alive.
+struct HotkeyConsumer {
+    close: oneshot::Sender<()>,
+    join: tokio::task::JoinHandle<()>,
+}
+
+async fn close_hotkeys(task: Option<HotkeyConsumer>) -> bool {
+    match task {
+        Some(task) => {
+            let _ = task.close.send(());
+            task.join.await.is_ok()
+        }
+        None => true,
+    }
+}
+
 /// Bring up the S02 capture owner and its bounded hotkey consumer.
 async fn start_capture(
     options: CaptureOptions,
@@ -359,20 +401,22 @@ async fn start_capture(
     logger: Logger,
     owner_principal: PrincipalId,
     command_tasks: Arc<CommandTasks>,
-) -> Result<
-    (
-        Option<Arc<dyn CaptureApi>>,
-        Option<tokio::task::JoinHandle<()>>,
-    ),
-    HostError,
-> {
+) -> Result<(Option<Arc<dyn CaptureApi>>, Option<HotkeyConsumer>), HostError> {
+    let slots = Arc::new(AtomicU8::new(0));
     let (adapter, hotkeys) = match options {
         CaptureOptions::Disabled => return Ok((None, None)),
         CaptureOptions::Injected(adapter) => (adapter, None),
+        CaptureOptions::InjectedHotkey { adapter, sink } => {
+            let (hotkey_sink, receiver) =
+                crate::capture::HotkeyPersistence::channel(slots.clone(), command_tasks.clone());
+            sink.set(hotkey_sink).map_err(|_| HostError::Compose)?;
+            (adapter, Some(receiver))
+        }
         CaptureOptions::Native(mut config) => {
             // The host owns the bounded sink of the hotkey path; the native thread only
             // enqueues a finished session.
-            let (sink, receiver) = crate::capture::HotkeyPersistence::channel();
+            let (sink, receiver) =
+                crate::capture::HotkeyPersistence::channel(slots.clone(), command_tasks.clone());
             config.hotkey_sink = Some(sink);
             let started =
                 tokio::task::spawn_blocking(move || WindowsCaptureAdapter::start(*config))
@@ -385,9 +429,22 @@ async fn start_capture(
             )
         }
     };
-    let ingest = CaptureIngest::new(adapter, storage, logger, owner_principal, command_tasks);
+    let ingest = CaptureIngest::new(
+        adapter,
+        storage,
+        logger,
+        owner_principal,
+        command_tasks,
+        slots,
+    );
     let api: Arc<dyn CaptureApi> = HostCaptureApi::new(ingest.clone());
-    let task = hotkeys.map(|receiver| tokio::spawn(drain_hotkeys(ingest, receiver)));
+    let task = hotkeys.map(|receiver| {
+        let (close, closed) = oneshot::channel();
+        HotkeyConsumer {
+            close,
+            join: tokio::spawn(drain_hotkeys(ingest, receiver, closed)),
+        }
+    });
     Ok((Some(api), task))
 }
 
@@ -403,7 +460,7 @@ pub struct BootstrappedHost {
     storage: StorageWorker,
     logger: BoundedLogger,
     services: Arc<FoundationServices>,
-    hotkey_task: Option<tokio::task::JoinHandle<()>>,
+    hotkey_task: Option<HotkeyConsumer>,
     command_tasks: Arc<CommandTasks>,
 }
 impl BootstrappedHost {
@@ -449,14 +506,15 @@ impl BootstrappedHost {
             command_tasks,
             ..
         } = self;
-        // The bounded hotkey consumer stops with the composition; a dropped sink would end
-        // it as well, and the abort makes the shutdown order explicit.
-        if let Some(task) = hotkey_task {
-            task.abort();
-        }
         services.set_stopping();
         command_tasks.close();
         drop(listener);
+        // Closing the receiver is explicit: the native adapter retains its sink sender.
+        // Its in-flight owned permits remain deliverable after close.
+        let hotkey_join = hotkey_task.map(|consumer| {
+            let _ = consumer.close.send(());
+            consumer.join
+        });
         let deadline = std::time::Instant::now() + SHUTDOWN_BUDGET;
         // A timeout is not permission to close the DB beneath an accepted save.
         // Keep this finish future (and the lease) alive until all admitted command tasks
@@ -470,6 +528,19 @@ impl BootstrappedHost {
         if !drained_in_budget {
             command_tasks.drain().await;
         }
+        let hotkey_drain_in_budget = if let Some(mut join) = hotkey_join {
+            match tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), &mut join).await
+            {
+                Ok(result) => result.is_ok(),
+                Err(_) => {
+                    // Never abort or release the lease before a queued crop is persisted.
+                    let _ = join.await;
+                    false
+                }
+            }
+        } else {
+            true
+        };
         let storage_closed = storage.shutdown(SHUTDOWN_BUDGET).await.is_ok();
         let sink_failed = logger.counters().sink_failed;
         let mut stopped = SafeEvent::new(
@@ -479,7 +550,12 @@ impl BootstrappedHost {
             Operation::Shutdown,
         );
         stopped.outcome = Some(
-            if storage_closed && drained_in_budget && serve_ok && sink_failed == 0 {
+            if storage_closed
+                && drained_in_budget
+                && hotkey_drain_in_budget
+                && serve_ok
+                && sink_failed == 0
+            {
                 Outcome::Succeeded
             } else {
                 Outcome::Unknown
@@ -499,6 +575,7 @@ impl BootstrappedHost {
             log_flushed,
             serve_ok,
             command_drain_in_budget: drained_in_budget,
+            hotkey_drain_in_budget,
         }
     }
 }

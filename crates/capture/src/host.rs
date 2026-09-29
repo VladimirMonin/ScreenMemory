@@ -5,8 +5,8 @@
 //!   created per capture and `PostQuitMessage` is never used to end a selection;
 //! * the command channel is bounded (`CAPTURE_BACKPRESSURE`), so a third capture is
 //!   refused before the freeze instead of queueing an unknown future scene;
-//! * a hotkey starts its session **inside the native dispatcher**: the pixels are frozen
-//!   before the bounded sink is called, and the sink itself must not block this thread.
+//! * a hotkey reserves persistence inside the native dispatcher before any freeze;
+//!   refusal never starts a native session and delivery must not block this thread.
 use crate::{
     context,
     gdi::FrozenFrame,
@@ -53,18 +53,25 @@ const POLL_MILLIS: u32 = 30;
 const COMMAND_CAPACITY: usize = 4;
 const HOST_WINDOW_CLASS: &str = "ScreenMemoryCaptureHostV1";
 
+/// One pre-freeze reservation. Dropping it without delivery releases its resources.
+pub trait HotkeyReservation: Send {
+    /// Transfer the owned outcome without waiting for persistence on the native thread.
+    fn deliver(self: Box<Self>, outcome: Result<CaptureOutcome, CaptureError>);
+}
+
 /// Boundary consumer of captures started by the native hotkey path.
 pub trait HotkeySink: Send + Sync {
-    /// Called on the native thread after the session finished. It must be bounded and
-    /// must never block this thread.
-    fn on_capture(&self, mode: CaptureMode, outcome: Result<CaptureOutcome, CaptureError>);
+    /// Nonblocking admission before a request, overlay, or frozen pixels exist.
+    fn try_reserve(&self, mode: CaptureMode) -> Option<Box<dyn HotkeyReservation>>;
 }
 
 /// Sink of a host that only serves explicit commands.
 pub struct NullHotkeySink;
 
 impl HotkeySink for NullHotkeySink {
-    fn on_capture(&self, _mode: CaptureMode, _outcome: Result<CaptureOutcome, CaptureError>) {}
+    fn try_reserve(&self, _mode: CaptureMode) -> Option<Box<dyn HotkeyReservation>> {
+        None
+    }
 }
 
 /// Trusted configuration of the native adapter. Every field is chosen by the host; no
@@ -557,15 +564,17 @@ fn hotkey_capture(state: &mut ThreadState, mode: CaptureMode) {
     if state.shared.busy.load(Ordering::Acquire) {
         return;
     }
-    let sink = state.config.hotkey_sink.clone();
-    if sink.is_none() {
+    let Some(reservation) = state
+        .config
+        .hotkey_sink
+        .as_ref()
+        .and_then(|sink| sink.try_reserve(mode))
+    else {
         return;
-    }
+    };
     let request = CaptureRequest::new(Uuid::new_v4(), mode, CaptureTrigger::Hotkey);
     let outcome = run_session(state, request);
-    if let Some(sink) = sink {
-        sink.on_capture(mode, outcome);
-    }
+    reservation.deliver(outcome);
 }
 
 /// One native session behind the single-session gate.
@@ -730,4 +739,14 @@ fn unix_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| elapsed.as_millis().min(u128::from(u64::MAX)) as u64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod hotkey_sink_tests {
+    use super::*;
+
+    #[test]
+    fn null_sink_refuses_pre_freeze() {
+        assert!(NullHotkeySink.try_reserve(CaptureMode::Region).is_none());
+    }
 }

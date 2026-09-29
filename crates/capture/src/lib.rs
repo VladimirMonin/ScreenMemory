@@ -39,7 +39,10 @@ pub use geometry::{cursor_position as observe_cursor, snapshot as observe_topolo
 pub use geometry::{
     ensure_per_monitor_awareness, process_is_per_monitor_aware, DisplayTopology, MonitorInfo,
 };
-pub use host::{CaptureHost, CaptureHostConfig, HotkeySink, NullHotkeySink, WindowsCaptureAdapter};
+pub use host::{
+    CaptureHost, CaptureHostConfig, HotkeyReservation, HotkeySink, NullHotkeySink,
+    WindowsCaptureAdapter,
+};
 pub use hotkeys::HotkeyBinding;
 pub use overlay::{OverlayInputPolicy, OverlayObserver};
 pub use window::{ForegroundWindowProvider, TargetWindow, TargetWindowProvider, WindowObservation};

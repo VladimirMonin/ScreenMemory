@@ -226,7 +226,7 @@ assert 'windows_sys::' not in application_capture and 'unsafe' not in applicatio
 host_capture = (root / 'crates/host/src/capture.rs').read_text(encoding='utf-8')
 assert 'commit_image_capture' in host_capture and 'encode_exact_lossless_verified' in host_capture, 'the host publishes only a verified canonical asset'
 assert 'provenances' in host_capture and 'Provenance::Automatic' in host_capture
-assert 'windows_sys::' not in host_capture and 'sm_capture::' not in host_capture.replace('sm_capture::HotkeySink', ''), 'the host never touches GDI directly'
+assert 'windows_sys::' not in host_capture and 'sm_capture::' not in host_capture.replace('sm_capture::HotkeySink', '').replace('sm_capture::HotkeyReservation', ''), 'the host never touches GDI directly'
 protocol_capture = (root / 'crates/protocol/src/application.rs').read_text(encoding='utf-8')
 assert '"capture.command"' in protocol_capture and '"library.asset.read"' in protocol_capture
 assert 'struct CaptureCommandParams' in protocol_capture and 'enum CaptureOutcome' in protocol_capture
