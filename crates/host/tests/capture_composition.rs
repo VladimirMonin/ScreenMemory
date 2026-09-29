@@ -7,7 +7,9 @@ use sm_application::{
         CancelReason, CaptureError, CaptureMode, CaptureOutcome, CaptureRequest, CaptureResult,
         CaptureTrigger, CapturedDib, NativeCaptureAdapter,
     },
-    credentials::{CredentialEnvironment, CredentialKey, Secret, SecretStore, StoreError},
+    credentials::{
+        Authenticator, CredentialEnvironment, CredentialKey, Secret, SecretStore, StoreError,
+    },
     storage::{
         AssetType, CaptureContext, CaptureTarget, CommitImageCapture, FoundationRepository,
         LookupOutcome, PhysicalBounds, Provenance,
@@ -159,6 +161,7 @@ struct SyntheticAdapter {
     height: u32,
     mode_answer: Answer,
     calls: AtomicUsize,
+    cancel_calls: AtomicUsize,
     cancelled: Mutex<Option<Uuid>>,
     /// Optional hold: a gated adapter keeps its *first* session inside `capture` until the
     /// test releases it, so a competing request can be observed while one native session
@@ -216,6 +219,7 @@ impl SyntheticAdapter {
             height,
             mode_answer,
             calls: AtomicUsize::new(0),
+            cancel_calls: AtomicUsize::new(0),
             cancelled: Mutex::new(None),
             gate: None,
         })
@@ -228,6 +232,7 @@ impl SyntheticAdapter {
             height,
             mode_answer,
             calls: AtomicUsize::new(0),
+            cancel_calls: AtomicUsize::new(0),
             cancelled: Mutex::new(None),
             gate: Some(gate.clone()),
         });
@@ -286,8 +291,8 @@ impl NativeCaptureAdapter for SyntheticAdapter {
     }
 
     fn cancel(&self, operation_id: Uuid) -> bool {
-        let matches = *self.cancelled.lock().unwrap() == Some(operation_id);
-        matches
+        self.cancel_calls.fetch_add(1, Ordering::SeqCst);
+        *self.cancelled.lock().unwrap() == Some(operation_id)
     }
 }
 
@@ -866,6 +871,224 @@ fn s02_capture_host_06_concurrent_same_id_never_runs_two_native_sessions() {
         );
         assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
         stop(&second, handle).await;
+    });
+}
+
+#[test]
+fn s02_t09e_disconnected_waiter_keeps_command_save_and_exact_replay() {
+    let rt = runtime();
+    rt.block_on(async {
+        let roots = Roots::new();
+        let sentinel = roots.path().join("sentinel.txt");
+        fs::write(&sentinel, b"owned-test-sentinel").unwrap();
+        let store = Arc::new(MemoryStore::default());
+        let (adapter, gate) = SyntheticAdapter::gated(16, 16, Answer::Accept);
+        let host = bootstrap(options(
+            &roots.path(),
+            CaptureOptions::Injected(adapter.clone()),
+            store.clone(),
+        ))
+        .await
+        .unwrap();
+        let library = host.library_id();
+        let handle = tokio::spawn(async move { host.serve(DEFAULT_DRAIN).await });
+        let waiter = connect(&roots, library, &store).await;
+        let params = command(CaptureMode::Region);
+        let first = tokio::spawn({
+            let params = params.clone();
+            async move { waiter.capture_command(params, 10_000, None).await }
+        });
+        gate.wait_entered_async(Duration::from_secs(5)).await;
+        // Abort the connection-owned waiter before the native adapter returns Accepted.
+        // The task registered at admission must still own its result and commit.
+        first.abort();
+        let _ = first.await;
+        let cancel_deadline = Instant::now() + Duration::from_secs(5);
+        while adapter.cancel_calls.load(Ordering::SeqCst) == 0 {
+            assert!(
+                Instant::now() < cancel_deadline,
+                "disconnect must signal native cancel"
+            );
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        gate.release();
+        let client = connect(&roots, library, &store).await;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let receipt = loop {
+            match client.capture_command(params.clone(), 10_000, None).await {
+                Ok(WireCaptureOutcome::Saved { receipt }) => break receipt,
+                Err(ClientError::Application(error)) if error.code == ErrorCode::CaptureBusy => {
+                    assert!(Instant::now() < deadline, "accepted task must finish");
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                other => panic!("only Busy then Saved replay is allowed: {other:?}"),
+            }
+        };
+        assert_eq!(receipt.operation_id, params.operation_id);
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(roots.published_files().len(), 1);
+        assert_eq!(fs::read(sentinel).unwrap(), b"owned-test-sentinel");
+        let replay = client.capture_command(params, 10_000, None).await.unwrap();
+        assert_eq!(
+            serde_json::to_vec(&replay).unwrap(),
+            serde_json::to_vec(&WireCaptureOutcome::Saved { receipt }).unwrap()
+        );
+        stop(&client, handle).await;
+    });
+}
+
+#[test]
+fn s02_t09e_two_registered_commands_refuse_third_before_freeze() {
+    let rt = runtime();
+    rt.block_on(async {
+        let roots = Roots::new();
+        let store = Arc::new(MemoryStore::default());
+        let (adapter, gate) = SyntheticAdapter::gated(8, 8, Answer::Accept);
+        let host = bootstrap(options(
+            &roots.path(),
+            CaptureOptions::Injected(adapter.clone()),
+            store.clone(),
+        ))
+        .await
+        .unwrap();
+        let library = host.library_id();
+        let handle = tokio::spawn(async move { host.serve(DEFAULT_DRAIN).await });
+        let mut waiting = Vec::new();
+        for _ in 0..2 {
+            let client = connect(&roots, library, &store).await;
+            let params = command(CaptureMode::Region);
+            waiting.push(tokio::spawn(async move {
+                client.capture_command(params, 10_000, None).await
+            }));
+        }
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while adapter.calls.load(Ordering::SeqCst) != 2 {
+            assert!(
+                Instant::now() < deadline,
+                "both admitted sessions must enter"
+            );
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        let third = connect(&roots, library, &store).await;
+        match third
+            .capture_command(command(CaptureMode::Region), 10_000, None)
+            .await
+        {
+            Err(ClientError::Application(error)) => {
+                assert_eq!(error.code, ErrorCode::CaptureBackpressure)
+            }
+            other => panic!("third command must be refused before freeze: {other:?}"),
+        }
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), 2);
+        gate.release();
+        for waiter in waiting {
+            assert!(matches!(
+                waiter.await.unwrap().unwrap(),
+                WireCaptureOutcome::Saved { .. }
+            ));
+        }
+        assert_eq!(roots.published_files().len(), 2);
+        stop(&third, handle).await;
+    });
+}
+
+#[test]
+fn s02_t09e_shutdown_timeout_keeps_lease_until_admitted_command_finishes() {
+    let rt = runtime();
+    rt.block_on(async {
+        let roots = Roots::new();
+        let sentinel = roots.path().join("sentinel.txt");
+        fs::write(&sentinel, b"preserve-on-timeout").unwrap();
+        let store = Arc::new(MemoryStore::default());
+        let (adapter, gate) = SyntheticAdapter::gated(8, 8, Answer::Accept);
+        let host = bootstrap(options(
+            &roots.path(),
+            CaptureOptions::Injected(adapter.clone()),
+            store.clone(),
+        ))
+        .await
+        .unwrap();
+        let library = host.library_id();
+        let handle = tokio::spawn(async move { host.serve(DEFAULT_DRAIN).await });
+        let waiter = connect(&roots, library, &store).await;
+        let params = command(CaptureMode::Region);
+        let request = tokio::spawn({
+            let params = params.clone();
+            async move { waiter.capture_command(params, 10_000, None).await }
+        });
+        gate.wait_entered_async(Duration::from_secs(5)).await;
+        let control = connect(&roots, library, &store).await;
+        assert!(matches!(
+            control.request_shutdown().await.unwrap().state,
+            sm_protocol::application::HostState::Stopping
+        ));
+        request.abort();
+        let _ = request.await;
+        tokio::time::sleep(sm_host::SHUTDOWN_BUDGET + DEFAULT_DRAIN + Duration::from_millis(250))
+            .await;
+        assert!(
+            !handle.is_finished(),
+            "stop cannot close while native result is pending"
+        );
+        assert!(matches!(
+            HostLease::acquire(roots.layout()),
+            Err(sm_isolation::LeaseError::Busy)
+        ));
+        gate.release();
+        let outcome = tokio::time::timeout(Duration::from_secs(5), handle)
+            .await
+            .expect("admitted command must drain after release")
+            .unwrap()
+            .unwrap();
+        assert!(outcome.storage_closed);
+        assert!(
+            outcome.serve_ok,
+            "the listener itself drained without failure"
+        );
+        assert!(!outcome.command_drain_in_budget);
+        assert_ne!(outcome.exit_code(), sm_host::EXIT_OK);
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(roots.published_files().len(), 1);
+        assert_eq!(fs::read(sentinel).unwrap(), b"preserve-on-timeout");
+        // Reopen the DB under the same enrolled principal and verify the committed
+        // identity, rather than inferring success from the asset alone.
+        let principal = Authenticator::enroll_owner(
+            store.as_ref(),
+            CredentialKey::owner(CredentialEnvironment::Test, library),
+        )
+        .unwrap()
+        .principal();
+        let worker = StorageWorker::start(roots.lease()).unwrap();
+        let stored = worker
+            .lookup_operation(params.operation_id, principal, CaptureTarget::Region)
+            .await
+            .unwrap();
+        let stored = match stored {
+            LookupOutcome::Saved(stored) => stored,
+            other => panic!("the accepted image must survive shutdown: {other:?}"),
+        };
+        assert_eq!(stored.operation_id, params.operation_id);
+        assert_eq!(stored.principal_id, principal);
+        let asset = worker
+            .read_asset_chunk(stored.asset_id, 0, 1024 * 1024)
+            .await
+            .unwrap();
+        assert_eq!(asset.bytes, fs::read(&roots.published_files()[0]).unwrap());
+        assert!(stored.relative_path.starts_with("assets/"));
+        assert!(stored
+            .relative_path
+            .ends_with(&format!("/{}/original.webp", stored.record_id.as_uuid())));
+        assert_eq!(
+            stored.record_id.as_uuid().to_string(),
+            roots.published_files()[0]
+                .parent()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+        );
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
     });
 }
 

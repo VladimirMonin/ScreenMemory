@@ -1,6 +1,6 @@
 //! S01 §6.3 bootstrap order and §6.5 shutdown order for the single host owner.
 use crate::args::BootstrapMode;
-use crate::capture::{drain_hotkeys, CaptureIngest, HostCaptureApi};
+use crate::capture::{drain_hotkeys, CaptureIngest, CommandTasks, HostCaptureApi};
 use crate::services::FoundationServices;
 use serde::Serialize;
 use sm_application::{
@@ -122,10 +122,12 @@ pub struct ShutdownOutcome {
     pub storage_closed: bool,
     pub log_flushed: bool,
     pub serve_ok: bool,
+    /// False when an admitted command outlived shutdown grace, even if it later saved.
+    pub command_drain_in_budget: bool,
 }
 impl ShutdownOutcome {
     pub fn exit_code(self) -> u8 {
-        if self.storage_closed && self.serve_ok {
+        if self.storage_closed && self.serve_ok && self.command_drain_in_budget {
             crate::EXIT_OK
         } else {
             crate::EXIT_STORAGE
@@ -253,11 +255,13 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
     // Only the explicitly enrolled owner credential identifies the trusted native hotkey
     // path; client requests keep their authenticated session principal.
     let owner_principal = owner.principal();
+    let command_tasks = CommandTasks::new();
     let (capture, hotkey_task) = match start_capture(
         capture,
         prepared.storage.clone(),
         logger.producer(),
         owner_principal,
+        command_tasks.clone(),
     )
     .await
     {
@@ -344,6 +348,7 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
         logger,
         services,
         hotkey_task,
+        command_tasks,
     })
 }
 
@@ -353,6 +358,7 @@ async fn start_capture(
     storage: StorageWorker,
     logger: Logger,
     owner_principal: PrincipalId,
+    command_tasks: Arc<CommandTasks>,
 ) -> Result<
     (
         Option<Arc<dyn CaptureApi>>,
@@ -379,7 +385,7 @@ async fn start_capture(
             )
         }
     };
-    let ingest = CaptureIngest::new(adapter, storage, logger, owner_principal);
+    let ingest = CaptureIngest::new(adapter, storage, logger, owner_principal, command_tasks);
     let api: Arc<dyn CaptureApi> = HostCaptureApi::new(ingest.clone());
     let task = hotkeys.map(|receiver| tokio::spawn(drain_hotkeys(ingest, receiver)));
     Ok((Some(api), task))
@@ -398,6 +404,7 @@ pub struct BootstrappedHost {
     logger: BoundedLogger,
     services: Arc<FoundationServices>,
     hotkey_task: Option<tokio::task::JoinHandle<()>>,
+    command_tasks: Arc<CommandTasks>,
 }
 impl BootstrappedHost {
     pub fn library_id(&self) -> LibraryId {
@@ -439,6 +446,7 @@ impl BootstrappedHost {
             mut logger,
             services,
             hotkey_task,
+            command_tasks,
             ..
         } = self;
         // The bounded hotkey consumer stops with the composition; a dropped sink would end
@@ -447,8 +455,21 @@ impl BootstrappedHost {
             task.abort();
         }
         services.set_stopping();
+        command_tasks.close();
         drop(listener);
         let deadline = std::time::Instant::now() + SHUTDOWN_BUDGET;
+        // A timeout is not permission to close the DB beneath an accepted save.
+        // Keep this finish future (and the lease) alive until all admitted command tasks
+        // resolve; the process cannot report a successful stop after the grace elapsed.
+        let drained_in_budget = tokio::time::timeout_at(
+            tokio::time::Instant::from_std(deadline),
+            command_tasks.drain(),
+        )
+        .await
+        .is_ok();
+        if !drained_in_budget {
+            command_tasks.drain().await;
+        }
         let storage_closed = storage.shutdown(SHUTDOWN_BUDGET).await.is_ok();
         let sink_failed = logger.counters().sink_failed;
         let mut stopped = SafeEvent::new(
@@ -457,11 +478,13 @@ impl BootstrappedHost {
             EventId::HostStopped,
             Operation::Shutdown,
         );
-        stopped.outcome = Some(if storage_closed && serve_ok && sink_failed == 0 {
-            Outcome::Succeeded
-        } else {
-            Outcome::Unknown
-        });
+        stopped.outcome = Some(
+            if storage_closed && drained_in_budget && serve_ok && sink_failed == 0 {
+                Outcome::Succeeded
+            } else {
+                Outcome::Unknown
+            },
+        );
         if !storage_closed {
             stopped.safe_code = Some(SafeCode::InternalFailure);
         }
@@ -475,6 +498,7 @@ impl BootstrappedHost {
             storage_closed,
             log_flushed,
             serve_ok,
+            command_drain_in_budget: drained_in_budget,
         }
     }
 }

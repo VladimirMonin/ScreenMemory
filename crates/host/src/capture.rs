@@ -43,6 +43,7 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use tokio::sync::{oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -98,6 +99,74 @@ fn lock_recovering(ids: &Mutex<HashSet<Uuid>>) -> std::sync::MutexGuard<'_, Hash
     match ids.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+/// Command admission and completion belong to the host, not an IPC connection.
+/// Registration and closing are serialized by one mutex; the watch count lets shutdown
+/// wait without missing the transition to zero. Only already reserved save slots may
+/// register a task, so this registry cannot grow without bound.
+pub struct CommandTasks {
+    state: Mutex<CommandTaskState>,
+    changed: watch::Sender<usize>,
+}
+
+#[derive(Default)]
+struct CommandTaskState {
+    closing: bool,
+    active: usize,
+}
+
+impl CommandTasks {
+    pub fn new() -> Arc<Self> {
+        let (changed, _) = watch::channel(0);
+        Arc::new(Self {
+            state: Mutex::new(CommandTaskState::default()),
+            changed,
+        })
+    }
+
+    fn register(self: &Arc<Self>) -> Option<CommandTaskGuard> {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if state.closing {
+            return None;
+        }
+        state.active += 1;
+        self.changed.send_replace(state.active);
+        Some(CommandTaskGuard(self.clone()))
+    }
+
+    pub fn close(&self) {
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).closing = true;
+    }
+
+    pub async fn drain(&self) {
+        let mut changes = self.changed.subscribe();
+        loop {
+            if *changes.borrow_and_update() == 0 {
+                return;
+            }
+            // The sender is owned by this host and cannot close before drain completes.
+            let _ = changes.changed().await;
+        }
+    }
+}
+
+struct CommandTaskGuard(Arc<CommandTasks>);
+impl Drop for CommandTaskGuard {
+    fn drop(&mut self) {
+        let mut state = self.0.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.active -= 1;
+        self.0.changed.send_replace(state.active);
+    }
+}
+
+/// One reserved save slot travels with the command task through native acceptance and
+/// commit, even after the waiter has been cancelled or disconnected.
+struct SaveSlot(Arc<CaptureIngest>);
+impl Drop for SaveSlot {
+    fn drop(&mut self) {
+        self.0.release();
     }
 }
 
@@ -312,6 +381,7 @@ pub struct CaptureIngest {
     slots: Arc<AtomicU8>,
     owner_principal: sm_domain::PrincipalId,
     in_flight: Arc<InFlight>,
+    command_tasks: Arc<CommandTasks>,
 }
 
 impl CaptureIngest {
@@ -320,6 +390,7 @@ impl CaptureIngest {
         storage: StorageWorker,
         logger: Logger,
         owner_principal: sm_domain::PrincipalId,
+        command_tasks: Arc<CommandTasks>,
     ) -> Arc<Self> {
         Arc::new(Self {
             adapter,
@@ -328,6 +399,7 @@ impl CaptureIngest {
             slots: Arc::new(AtomicU8::new(0)),
             owner_principal,
             in_flight: Arc::new(InFlight::default()),
+            command_tasks,
         })
     }
 
@@ -394,7 +466,7 @@ impl CaptureIngest {
 
     /// Full command path: reserve a slot, run the native session, commit the accepted crop.
     async fn run_command(
-        &self,
+        self: &Arc<Self>,
         ctx: RequestContext,
         params: CaptureCommandParams,
         cancel: CancellationToken,
@@ -416,7 +488,7 @@ impl CaptureIngest {
         // (S02 §8.7). With the claim first, a concurrent duplicate is refused with the safe
         // retryable `Busy` while this session runs, and a request that arrives after the
         // commit replays the stored receipt without any native work.
-        let Some(_in_flight) = self.in_flight.begin(request.operation_id()) else {
+        let Some(in_flight) = self.in_flight.begin(request.operation_id()) else {
             emit(
                 &self.logger,
                 EventId::CaptureRefused,
@@ -495,16 +567,39 @@ impl CaptureIngest {
             Outcome::Succeeded,
             None,
         );
-        let adapter = self.adapter.clone();
-        // Keep the submitted intent across the blocking adapter boundary. The returned
-        // result is not allowed to change its operation, mode or trusted trigger.
-        let expected_request = request.clone();
-        let outcome = run_blocking_session(adapter, request, cancel).await;
-        let answer = self
-            .finish(outcome, ctx.principal_id(), Some((expected_request, ids)))
-            .await;
-        self.release();
-        answer
+        // Closing admission and registration share a synchronous lock. No await (or
+        // waiter-owned native result) may fall between registration and spawn.
+        let Some(registration) = self.command_tasks.register() else {
+            self.release();
+            return Err(app_error(
+                ErrorCode::RuntimeUnavailable,
+                "The host is stopping.",
+                true,
+            ));
+        };
+        let slot = SaveSlot(self.clone());
+        let ingest = self.clone();
+        let principal_id = ctx.principal_id();
+        let (answer_tx, answer_rx) = oneshot::channel();
+        tokio::spawn(async move {
+            let _registration = registration;
+            let _in_flight = in_flight;
+            let _slot = slot;
+            let expected_request = request.clone();
+            let outcome = run_blocking_session(ingest.adapter.clone(), request, cancel).await;
+            let answer = ingest
+                .finish(outcome, principal_id, Some((expected_request, ids)))
+                .await;
+            // A dropped IPC waiter only discards the reply, never the accepted save.
+            let _ = answer_tx.send(answer);
+        });
+        answer_rx.await.unwrap_or_else(|_| {
+            Err(app_error(
+                ErrorCode::RuntimeUnavailable,
+                "The capture task stopped.",
+                true,
+            ))
+        })
     }
 
     /// Stored answer of an operation this caller already committed.
