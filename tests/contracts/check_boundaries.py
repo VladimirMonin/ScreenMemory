@@ -112,7 +112,7 @@ assert 'rusqlite::' not in (root / 'crates/application/src/storage.rs').read_tex
 # S02 images storage: the owner keeps its single writer, the canonical file layout and
 # the closed canonical-format vocabulary; the codec never reaches the filesystem.
 storage_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/storage/src').rglob('*.rs')}
-assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_files.rs', 'staging_tests.rs', 'staging_files_tests.rs', 'file_lane_tests.rs', 'tests.rs', 'image_tests.rs'}
+assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_files.rs', 'staging_tests.rs', 'staging_recovery_tests.rs', 'staging_files_tests.rs', 'file_lane_tests.rs', 'tests.rs', 'image_tests.rs'}
 # S02-T09b staging validator: pure schema decoding only. It must not reach a filesystem,
 # a SQLite connection, a process or the network, and it never publishes a path or a
 # durable-input claim from manifest content.
@@ -129,6 +129,17 @@ assert storage_sources['staging.rs'].count('MAX_CAPTURE_SIDE') == 3, \
     'the side ceiling is only imported and applied, never redefined'
 assert 'is_canonical_utc_timestamp' in storage_sources['staging.rs']
 assert 'CaptureContext::from_json' in storage_sources['staging.rs']
+# S02-T09h is pure and not connected to stage/reopen or host. V1 still has an
+# exact 18-field decoder; v2 is explicitly versioned and receipt-ready only with
+# validated warnings, automatic provenance and the fixed current path policy.
+assert 'const MANIFEST_FIELDS: [&str; 18]' in storage_sources['staging.rs']
+for member in ('"warnings"', '"provenance_kind"', '"path_policy"'):
+    assert member in storage_sources['staging.rs']
+assert 'warnings_from_json' in storage_sources['staging.rs']
+assert 'RECOVERY_PATH_POLICY' in storage_sources['staging.rs']
+assert 'validate_recovery_envelope(' not in storage_sources['staging_files.rs']
+for forbidden in ('std::fs', 'std::path', 'rusqlite', 'std::process', 'std::net'):
+    assert forbidden not in storage_sources['staging_recovery_tests.rs']
 assert 'pub mod staging;' in storage_sources['lib.rs']
 assert 'pub mod staging_files;' in storage_sources['lib.rs']
 # S02-T09b manifest-last coordinator: it wraps the borrowed lease capability only. It may

@@ -35,8 +35,12 @@ use sm_domain::{AssetId, LibraryId, OperationId, PrincipalId, RecordId};
 use std::collections::HashSet;
 use uuid::Uuid;
 
-/// Only schema version 1 exists; any other version is refused, never upgraded in place.
+/// The original staging entry point accepts only schema version 1; never upgrade it.
 pub const STAGING_MANIFEST_SCHEMA_VERSION: u32 = 1;
+/// Separate recovery envelope schema; never interpreted by the original v1 validator.
+pub const RECOVERY_ENVELOPE_SCHEMA_VERSION: u32 = 2;
+/// Closed description of the current commit-month/record-id/original.webp layout.
+pub const RECOVERY_PATH_POLICY: &str = "commit_month_record_original_v1";
 /// Largest accepted manifest document (S02 §8.3).
 pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 /// Largest accepted capture-context document (S02 §8.3).
@@ -120,6 +124,12 @@ pub enum StagingError {
     InvalidContext,
     /// Context target or context bounds disagree with the manifest geometry/mode.
     ContextMismatch,
+    /// The required v2 warning list is not a valid bounded stable-code receipt.
+    InvalidWarnings,
+    /// The v2 provenance rule is not the closed automatic derivation.
+    InvalidProvenanceKind,
+    /// The v2 path policy differs from the current fixed canonical layout.
+    InvalidPathPolicy,
 }
 
 /// Raw manifest-v1 document. Identities stay text here so every refusal is typed.
@@ -483,6 +493,149 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hasher.update(bytes);
     format!("{:x}", hasher.finalize())
 }
+
+/// Versioned pure validation result. V1 is valid staged input but lacks receipt warnings;
+/// only a fully validated v2 carries the recovery-ready marker (no IO/durability claim).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ValidatedRecoveryEnvelope {
+    LegacyV1(ValidatedStagingManifest),
+    RecoveryReadyV2 {
+        staging: ValidatedStagingManifest,
+        warnings: Vec<String>,
+    },
+}
+
+impl ValidatedRecoveryEnvelope {
+    pub const fn is_recovery_ready(&self) -> bool {
+        matches!(self, Self::RecoveryReadyV2 { .. })
+    }
+
+    pub const fn schema_version(&self) -> u32 {
+        match self {
+            Self::LegacyV1(_) => STAGING_MANIFEST_SCHEMA_VERSION,
+            Self::RecoveryReadyV2 { .. } => RECOVERY_ENVELOPE_SCHEMA_VERSION,
+        }
+    }
+
+    /// Exact ordered receipt codes; `None` means unknown, not an empty receipt.
+    pub fn warnings(&self) -> Option<&[String]> {
+        match self {
+            Self::LegacyV1(_) => None,
+            Self::RecoveryReadyV2 { warnings, .. } => Some(warnings),
+        }
+    }
+
+    pub const fn staging(&self) -> &ValidatedStagingManifest {
+        match self {
+            Self::LegacyV1(staging) | Self::RecoveryReadyV2 { staging, .. } => staging,
+        }
+    }
+
+    /// V2 provenance is `Automatic { when: captured_at, source: context.target }`.
+    pub fn automatic_provenance(&self) -> Option<sm_application::storage::Provenance> {
+        match self {
+            Self::LegacyV1(_) => None,
+            Self::RecoveryReadyV2 { staging, .. } => {
+                Some(sm_application::storage::Provenance::Automatic {
+                    when: staging.captured_at().to_owned(),
+                    source: staging.context().target,
+                })
+            }
+        }
+    }
+
+    /// No path comes from the manifest: the policy is an exact closed discriminator.
+    pub const fn path_policy(&self) -> Option<&'static str> {
+        match self {
+            Self::LegacyV1(_) => None,
+            Self::RecoveryReadyV2 { .. } => Some(RECOVERY_PATH_POLICY),
+        }
+    }
+}
+
+/// Validate a versioned in-memory envelope without reading a file, cloning pixels, or
+/// synthesizing missing v1 receipt fields. This is NOT_WIRED to stage/reopen/host.
+pub fn validate_recovery_envelope(
+    manifest_bytes: &[u8],
+    context_bytes: &[u8],
+    pixels: &[u8],
+    expectations: StagingExpectations<'_>,
+) -> Result<ValidatedRecoveryEnvelope, StagingError> {
+    use sm_application::storage::{warnings_from_json, warnings_to_json};
+    if manifest_bytes.len() > MAX_MANIFEST_BYTES {
+        return Err(StagingError::ManifestBeyondLimit);
+    }
+    if context_bytes.len() > MAX_CONTEXT_BYTES {
+        return Err(StagingError::ContextBeyondLimit);
+    }
+    let text = std::str::from_utf8(manifest_bytes).map_err(|_| StagingError::NotUtf8)?;
+    let document: UniqueManifestObject =
+        serde_json::from_str(text).map_err(|_| StagingError::MalformedManifest)?;
+    let object = document
+        .0
+        .as_object()
+        .ok_or(StagingError::MalformedManifest)?;
+    let version = object
+        .get("schema_version")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or(StagingError::MalformedManifest)?;
+    match version {
+        1 => validate_staging(manifest_bytes, context_bytes, pixels, expectations)
+            .map(ValidatedRecoveryEnvelope::LegacyV1),
+        2 => {
+            const V2_FIELDS: [&str; 3] = ["warnings", "provenance_kind", "path_policy"];
+            if object.keys().any(|key| {
+                !MANIFEST_FIELDS.contains(&key.as_str()) && !V2_FIELDS.contains(&key.as_str())
+            }) {
+                return Err(StagingError::UnknownField);
+            }
+            if object.len() != MANIFEST_FIELDS.len() + V2_FIELDS.len() {
+                return Err(StagingError::MalformedManifest);
+            }
+            let provenance_kind = object
+                .get("provenance_kind")
+                .and_then(serde_json::Value::as_str)
+                .ok_or(StagingError::MalformedManifest)?;
+            if provenance_kind != "automatic" {
+                return Err(StagingError::InvalidProvenanceKind);
+            }
+            let path_policy = object
+                .get("path_policy")
+                .and_then(serde_json::Value::as_str)
+                .ok_or(StagingError::MalformedManifest)?;
+            if path_policy != RECOVERY_PATH_POLICY {
+                return Err(StagingError::InvalidPathPolicy);
+            }
+            let warning_value = object
+                .get("warnings")
+                .ok_or(StagingError::MalformedManifest)?;
+            // Application is the sole owner of the warning vocabulary/bounds.
+            let warning_json =
+                serde_json::to_string(warning_value).map_err(|_| StagingError::InvalidWarnings)?;
+            let warnings =
+                warnings_from_json(&warning_json).map_err(|_| StagingError::InvalidWarnings)?;
+            warnings_to_json(&warnings).map_err(|_| StagingError::InvalidWarnings)?;
+
+            // Reuse the *unchanged* v1 geometry, hash, identity, context, timestamp and
+            // trusted-profile checks on the same borrowed pixel slice. The temporary
+            // projection is bounded JSON metadata, not a pixel clone or v1 upgrade.
+            let mut base = object.clone();
+            for field in V2_FIELDS {
+                base.remove(field);
+            }
+            base.insert("schema_version".into(), serde_json::Value::from(1));
+            let projected =
+                serde_json::to_vec(&base).map_err(|_| StagingError::MalformedManifest)?;
+            let staging = validate_staging(&projected, context_bytes, pixels, expectations)?;
+            Ok(ValidatedRecoveryEnvelope::RecoveryReadyV2 { staging, warnings })
+        }
+        _ => Err(StagingError::UnsupportedSchemaVersion),
+    }
+}
+
+#[cfg(test)]
+#[path = "staging_recovery_tests.rs"]
+mod staging_recovery_tests;
 
 #[cfg(test)]
 #[path = "staging_tests.rs"]
