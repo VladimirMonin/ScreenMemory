@@ -112,7 +112,7 @@ assert 'rusqlite::' not in (root / 'crates/application/src/storage.rs').read_tex
 # S02 images storage: the owner keeps its single writer, the canonical file layout and
 # the closed canonical-format vocabulary; the codec never reaches the filesystem.
 storage_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/storage/src').rglob('*.rs')}
-assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_files.rs', 'staging_tests.rs', 'staging_recovery_tests.rs', 'staging_files_tests.rs', 'file_lane_tests.rs', 'tests.rs', 'image_tests.rs', 'intents.rs', 'intent_tests.rs'}
+assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_files.rs', 'staging_tests.rs', 'staging_recovery_tests.rs', 'staging_files_tests.rs', 'file_lane_tests.rs', 'tests.rs', 'image_tests.rs', 'intents.rs', 'intent_tests.rs', 'match_recovery.rs', 'match_recovery_tests.rs'}
 # T09m2: only the SQLite worker receives the path-free intent request; read scopes
 # principal/mode/request before projecting row contents and never writes stage/canonical.
 assert 'CreateIntent(' in storage_sources['lib.rs'] and 'intents::create(&mut db' in storage_sources['lib.rs']
@@ -154,6 +154,26 @@ assert 'pub fn reopen_staged_v2(' in storage_sources['staging_files.rs']
 reopened_v2 = storage_sources['staging_files.rs'].split('pub struct ReopenedV2 {', 1)[1].split('}', 1)[0]
 assert 'pub envelope:' not in reopened_v2 and 'pub pixels:' not in reopened_v2
 assert 'pub fn pixels(&self) -> &[u8]' in storage_sources['staging_files.rs']
+# T09m3: the public matcher accepts only a sealed storage witness, never the
+# constructible application DTO; a separate private equality helper stays pure.
+matcher = storage_sources['match_recovery.rs']
+assert 'pub mod match_recovery;' in storage_sources['lib.rs']
+assert 'pub struct DbValidatedIntent {\n    intent: PendingCaptureIntent,' in matcher
+assert 'pub enum ValidatedIntentRead {' in matcher
+assert "intent: &'a DbValidatedIntent" in matcher and "reopened: &'a ReopenedV2" in matcher
+assert 'pub fn match_pending_reopened_v2<' in matcher
+assert 'match_envelope(&intent.intent, reopened.envelope(), reopened.pixels())?' in matcher
+assert 'crate::intents::read(db, library_id, principal_id, request)?' in matcher
+assert 'ReadValidatedIntent(' in storage_sources['lib.rs']
+assert 'match_recovery::read_validated(' in storage_sources['lib.rs'].split('fn run(', 1)[1].split('fn file_loop(', 1)[0]
+assert 'pub async fn read_validated_capture_intent(' in storage_sources['lib.rs']
+assert 'stage.context_sha256() != expected_context_sha' in matcher
+assert 'stage.context() != &input.context' in matcher
+assert 'envelope.warnings() != Some(input.warnings.as_slice())' in matcher
+assert 'envelope.path_policy() != Some(RECOVERY_PATH_POLICY)' in matcher
+for forbidden in ('std::fs', 'std::path', 'std::process', 'std::net', 'encode(', 'commit_image_capture('):
+    assert forbidden not in matcher, ('storage', 'match_recovery.rs', forbidden)
+assert 'match_pending_reopened_v2(' not in storage_sources['lib.rs']
 assert 'pub async fn stage_capture_owned_v2(' in storage_sources['lib.rs']
 assert 'StageV2(' in storage_sources['lib.rs'] and 'stage_capture_v2(&root, v2)' in storage_sources['lib.rs']
 assert 'warnings_to_json(&self.warnings)' in storage_sources['lib.rs']

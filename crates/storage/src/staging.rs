@@ -1,11 +1,10 @@
-//! Pure staging-manifest-v1 parser and validator (S02 §8.3).
+//! Pure staging-manifest-v1 and recovery-envelope-v2 validators (S02 §8.3).
 //!
 //! This module is deliberately **not** a staging coordinator: it performs no filesystem,
 //! SQL or wire IO, it never creates a directory, it never writes or deletes a file and it
 //! publishes no durable receipt. It answers exactly one question, on caller-supplied
-//! bounded bytes: *is this manifest, this context and this pixel buffer a consistent
-//! schema-v1 record of one accepted `staged` capture for the trusted identity the host
-//! already knows?*
+//! bounded bytes: *does this manifest/context/pixel triple agree with trusted identity?*
+//! The original v1 validator remains separate from the v2 recovery-ready envelope.
 //!
 //! Ownership rules encoded here:
 //! * the library, principal, operation and capture mode are **trusted inputs** of the host;
@@ -554,7 +553,8 @@ impl ValidatedRecoveryEnvelope {
 }
 
 /// Validate a versioned in-memory envelope without reading a file, cloning pixels, or
-/// synthesizing missing v1 receipt fields. This is NOT_WIRED to stage/reopen/host.
+/// synthesizing missing v1 receipt fields. Used by the v2 stage/reopen file lane;
+/// matching an intent does not wire recovery into host startup or commit.
 pub fn validate_recovery_envelope(
     manifest_bytes: &[u8],
     context_bytes: &[u8],

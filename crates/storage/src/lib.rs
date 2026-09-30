@@ -9,6 +9,7 @@ mod images;
 #[cfg(test)]
 mod intent_tests;
 mod intents;
+pub mod match_recovery;
 mod migration;
 pub mod staging;
 pub mod staging_files;
@@ -240,6 +241,12 @@ enum Request {
     CreateIntent(Response<CreateIntentOutcome>, Box<CreateCaptureIntent>),
     ReadIntent(
         Response<ReadIntentOutcome>,
+        LibraryId,
+        PrincipalId,
+        CaptureRequest,
+    ),
+    ReadValidatedIntent(
+        Response<match_recovery::ValidatedIntentRead>,
         LibraryId,
         PrincipalId,
         CaptureRequest,
@@ -547,6 +554,17 @@ impl StorageWorker {
         .await
         .map_err(|_| StorageError::Unavailable)?
     }
+    /// Scoped SQLite read; unlike application DTOs, Pending carries a sealed DB witness.
+    /// The witness is a snapshot, not a lock on future changes to this operation.
+    pub async fn read_validated_capture_intent(
+        &self,
+        library_id: LibraryId,
+        principal_id: PrincipalId,
+        request: CaptureRequest,
+    ) -> Result<match_recovery::ValidatedIntentRead, StorageError> {
+        self.ask(|tx| Request::ReadValidatedIntent(tx, library_id, principal_id, request))
+            .await
+    }
     /// Actual bundled SQLite runtime version; NOT a sqlite-vec query proof.
     pub async fn sqlite_version(&self) -> Result<String, StorageError> {
         self.ask(Request::SqliteVersion).await
@@ -610,6 +628,11 @@ fn run(db: Connection, receiver: Receiver<Request>, assets: PathBuf, fault: Faul
             }
             Request::ReadIntent(tx, library, principal, request) => {
                 let _ = tx.send(intents::read(&db, library, principal, request));
+            }
+            Request::ReadValidatedIntent(tx, library, principal, request) => {
+                let _ = tx.send(match_recovery::read_validated(
+                    &db, library, principal, request,
+                ));
             }
             Request::PageRecords(tx, query) => {
                 let _ = tx.send(images::page_records(&db, query));
