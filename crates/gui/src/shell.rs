@@ -5,7 +5,10 @@
 //! protocol frame from the frontend, and no handler can stop the host: closing the window
 //! only closes this connection.
 use crate::{
-    model::{GuiCaptureAnswer, GuiDiagnostics, GuiLimits, OpenReportOutcome},
+    model::{
+        GuiAssetPreview, GuiCaptureAnswer, GuiDiagnostics, GuiLibraryPage, GuiLimits,
+        OpenReportOutcome,
+    },
     open::ReportOpener,
     session::GuiSession,
 };
@@ -74,6 +77,37 @@ pub async fn gui_doctor(app: AppHandle) -> GuiDiagnostics {
     diagnostics
 }
 
+/// A fixed first page; no renderer-supplied cursor, filter or path.
+#[tauri::command]
+pub async fn gui_library_recent(app: AppHandle) -> GuiLibraryPage {
+    let session = app.state::<ShellState>().session();
+    let mut guard = session.lock().await;
+    guard.list(24, None).await
+}
+
+/// Only a canonical UUIDv4 asset identity crosses the WebView boundary. The host
+/// still checks whether that asset exists and is readable in the authenticated library.
+pub fn parse_preview_asset_id(text: &str) -> Option<sm_domain::AssetId> {
+    let id = uuid::Uuid::parse_str(text).ok()?;
+    if text != id.hyphenated().to_string()
+        || id.get_version() != Some(uuid::Version::Random)
+        || id.get_variant() != uuid::Variant::RFC4122
+    {
+        return None;
+    }
+    Some(sm_domain::AssetId::new(id))
+}
+
+#[tauri::command]
+pub async fn gui_asset_preview(app: AppHandle, asset_id: String) -> GuiAssetPreview {
+    let Some(id) = parse_preview_asset_id(&asset_id) else {
+        return GuiAssetPreview::unavailable("PREVIEW_UNAVAILABLE");
+    };
+    let session = app.state::<ShellState>().session();
+    let mut guard = session.lock().await;
+    guard.read_asset_full(id).await
+}
+
 /// The «Открыть диагностический отчёт» action. The handler takes no path: only the
 /// validated cache/log directory of the explicit configuration can ever be opened.
 /// One capture command per mode. Every handler stays **argument free**, so the WebView
@@ -139,6 +173,8 @@ pub fn run_window(state: ShellState, webview_directory: std::path::PathBuf) -> t
             gui_capture_window,
             gui_capture_monitor,
             gui_capture_desktop,
+            gui_library_recent,
+            gui_asset_preview,
             gui_open_report
         ])
         .run(tauri::generate_context!())

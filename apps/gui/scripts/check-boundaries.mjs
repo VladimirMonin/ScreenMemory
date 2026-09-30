@@ -41,15 +41,22 @@ for (const name of readdirSync(new URL('../src/', import.meta.url))) {
   assert(!/\b(fetch|WebSocket|XMLHttpRequest|eval)\s*\(|import\s*\(/.test(text), `Forbidden transport in ${name}`);
   assert(!/require\s*\(/.test(text), `Forbidden require in ${name}`);
   if (isTest) continue;
-  // Every handler call is argument-free: no path, executable, frame or secret can be sent
-  // from the WebView, and an unknown handler name can never be reached.
-  const calls = [...text.matchAll(/invoke(?:<[^>]*>)?\(\s*'([a-z_]+)'\s*\)/g)].map((match) => match[1]);
+  // All handlers are argument-free except one typed, canonical UUID assetId.
+  // A caller cannot supply a path, command name, frame or transport parameter.
+  const previewCall = "invoke<AssetPreview>('gui_asset_preview', { assetId: assetId })";
+  if (text.includes("'gui_asset_preview'")) {
+    assert.equal(text.split("'gui_asset_preview'").length, 2, 'one fixed preview handler call');
+    assert(text.includes(previewCall), 'preview may send only the typed assetId');
+    assert(text.includes('canonicalAssetId(item.preview_asset_id)'), 'validate asset identity before invocation');
+    invoked.add('gui_asset_preview');
+  }
+  const withoutPreview = text.replace(previewCall, '');
+  const calls = [...withoutPreview.matchAll(/invoke(?:<[^>]*>)?\(\s*'([a-z_]+)'\s*\)/g)].map((match) => match[1]);
   for (const command of calls) invoked.add(command);
-  for (const call of text.matchAll(/invoke(?:<[^>]*>)?\(([^)]*)\)/g)) {
+  for (const call of withoutPreview.matchAll(/invoke(?:<[^>]*>)?\(([^)]*)\)/g)) {
     const argument = call[1].trim();
     assert(!argument.includes(','), `invoke in ${name} must take exactly one bare command name`);
-    // The only accepted dynamic form is the closed capture table of model.ts; every other
-    // call is a literal handler name. No path, frame, mode string or secret is ever sent.
+    // The only accepted dynamic form is the closed capture table of model.ts.
     assert(
       /^'[a-z_]+'$/.test(argument) || argument === 'command' || argument === 'captureCommand[mode]',
       `unexpected invoke argument ${argument} in ${name}`,
@@ -74,6 +81,15 @@ assert.deepEqual(pairs, [
 ]);
 assert(invoked.size >= 3, 'the window must drive its typed commands');
 for (const command of invoked) assert(registered.has(command), `Unknown tauri command ${command}`);
+
+// The preview's local Blob URL must load in the actual Tauri window; only image
+// sources gain blob:, never scripts, connections or the default directive.
+const csp = JSON.parse(repositoryFile('crates/gui/tauri.conf.json')).app.security.csp;
+const directives = Object.fromEntries(csp.split(';').map((part) => part.trim().split(/\s+/)).map(([name, ...values]) => [name, values]));
+assert.deepEqual(directives['img-src'], ["'self'", 'data:', 'blob:'], 'only local image Blob URLs');
+for (const name of ['default-src', 'connect-src', 'script-src', 'style-src']) {
+  assert(!directives[name]?.includes('blob:'), `${name} must not permit blob:`);
+}
 
 // The frontend never links the storage owner, the SDK or a capture binding.
 assert(!/sm_storage|sm-storage|rusqlite/.test(repositoryFile('apps/gui/src/model.ts')));

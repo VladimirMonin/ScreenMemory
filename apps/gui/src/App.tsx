@@ -10,6 +10,8 @@ import {
   doctorFailed,
   guiBuild,
   notImplemented,
+  canonicalAssetId,
+  previewBytes,
   stateText,
   statusFields,
   unfinishedChecks,
@@ -17,6 +19,9 @@ import {
   type CaptureMode,
   type Diagnostics,
   type GuiState,
+  type LibraryPage,
+  type LibraryRecord,
+  type AssetPreview,
 } from './model';
 import './style.css';
 
@@ -28,7 +33,8 @@ type Command =
   | 'gui_capture_region'
   | 'gui_capture_window'
   | 'gui_capture_monitor'
-  | 'gui_capture_desktop';
+  | 'gui_capture_desktop'
+  | 'gui_library_recent';
 
 /** One bounded wait for an answer; the handler's own bound is reported in `bounded_ms`. */
 const ANSWER_TIMEOUT_MS = 35_000;
@@ -44,6 +50,105 @@ export default function App() {
   const [mode, setMode] = useState<CaptureMode>('region');
   const [capture, setCapture] = useState<CaptureAnswer | null>(null);
   const inFlight = useRef(false);
+  const [recent, setRecent] = useState<LibraryPage | null>(null);
+  const [recentLoading, setRecentLoading] = useState(false);
+  const [recentError, setRecentError] = useState('');
+  const [selected, setSelected] = useState<LibraryRecord | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState('');
+  const previewUrlRef = useRef<string | null>(null);
+  const previewRequest = useRef(0);
+  const recentRequest = useRef(0);
+
+  function releasePreview() {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    previewUrlRef.current = null;
+    setPreviewUrl(null);
+  }
+
+  function clearRecent() {
+    setRecent(null);
+    previewRequest.current += 1;
+    releasePreview();
+    setSelected(null);
+    setPreviewLoading(false);
+  }
+
+  async function refreshRecent() {
+    const request = ++recentRequest.current;
+    setRecentLoading(true);
+    setRecentError('');
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const page = await Promise.race([
+        invoke<LibraryPage>('gui_library_recent'),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('timeout')), ANSWER_TIMEOUT_MS);
+        }),
+      ]);
+      if (request !== recentRequest.current) return;
+      if (page.safe_code || page.schema_version !== 1 || !Array.isArray(page.items) || page.items.length > 24) {
+        clearRecent();
+        setRecentError(page.safe_code ?? 'LIBRARY_UNAVAILABLE');
+        return;
+      }
+      setRecent(page);
+    } catch {
+      if (request === recentRequest.current) {
+        clearRecent();
+        setRecentError('LIBRARY_UNAVAILABLE');
+      }
+    } finally {
+      clearTimeout(timer);
+      if (request === recentRequest.current) setRecentLoading(false);
+    }
+  }
+
+  async function selectRecord(item: LibraryRecord) {
+    const request = ++previewRequest.current;
+    releasePreview();
+    setSelected(item);
+    setPreviewError('');
+    setPreviewLoading(false);
+    if (!item.preview_asset_id || !canonicalAssetId(item.preview_asset_id)) {
+      setPreviewError('PREVIEW_UNAVAILABLE');
+      return;
+    }
+    const assetId = item.preview_asset_id;
+    setPreviewLoading(true);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const value = await Promise.race([
+        invoke<AssetPreview>('gui_asset_preview', { assetId: assetId }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('timeout')), ANSWER_TIMEOUT_MS);
+        }),
+      ]);
+      if (request !== previewRequest.current) return;
+      const url = URL.createObjectURL(new Blob([previewBytes(value)], { type: 'image/webp' }));
+      previewUrlRef.current = url;
+      setPreviewUrl(url);
+    } catch (error) {
+      if (request === previewRequest.current) {
+        setPreviewError(error instanceof Error && error.message === 'PREVIEW_TOO_LARGE'
+          ? 'PREVIEW_TOO_LARGE' : 'PREVIEW_UNAVAILABLE');
+      }
+    } finally {
+      clearTimeout(timer);
+      if (request === previewRequest.current) setPreviewLoading(false);
+    }
+  }
+
+  useEffect(() => () => {
+    previewRequest.current += 1;
+    recentRequest.current += 1;
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (report?.host) void refreshRecent();
+  }, [report?.host]);
 
   async function run(command: Command) {
     if (inFlight.current) return;
@@ -114,6 +219,7 @@ export default function App() {
       ]);
       setCapture(answer);
       setNotice(captureStateText[answer.state]);
+      if (answer.state === 'saved') void refreshRecent();
     } catch {
       setNotice('CAPTURE_TRANSPORT_UNAVAILABLE');
     } finally {
@@ -179,6 +285,30 @@ export default function App() {
           ))}
         </dl>
       </section>
+      <section aria-label="Недавние снимки">
+        <h2>Недавние снимки</h2>
+        <button disabled={recentLoading} onClick={() => void refreshRecent()}>Обновить список</button>
+        {recentLoading && <p role="status">Загрузка снимков…</p>}
+        {recentError && <p role="alert">Список недоступен: {recentError}</p>}
+        {!recentLoading && !recentError && recent?.items.length === 0 && <p>Сохранённых снимков пока нет.</p>}
+        {!recent && !recentLoading && !recentError && <p>Для просмотра подключитесь к host.</p>}
+        {recent && <ul className="gallery">
+          {recent.items.map((item) => <li key={item.id}>
+            <button onClick={() => void selectRecord(item)} aria-pressed={selected?.id === item.id}>
+              <span>{item.title || 'Снимок'}</span>
+              <small>{item.created_at} · {item.target || 'Не определено'} · {item.width} × {item.height}</small>
+            </button>
+          </li>)}
+        </ul>}
+        {recent?.next_cursor && <p>Показаны первые 24; следующие страницы пока недоступны.</p>}
+        {selected && <div className="preview">
+          <h3>Просмотр: {selected.title || 'Снимок'}</h3>
+          {previewLoading && <p role="status">Загрузка изображения…</p>}
+          {previewError && <p role="alert">Изображение недоступно: {previewError}</p>}
+          {previewUrl && <img src={previewUrl} alt={selected.title || 'Сохранённый снимок'} />}
+          <button onClick={() => { previewRequest.current += 1; releasePreview(); setSelected(null); setPreviewLoading(false); }}>Закрыть просмотр</button>
+        </div>}
+      </section>
       <dl>
         {statusFields(report).map(([key, value]) => (
           <div key={key}>
@@ -210,7 +340,7 @@ export default function App() {
       )}
       <section>
         <h2>Вне текущего этапа</h2>
-        <p>Галерея, поиск, счётчики изображений, drop zone, настройки моделей и AI bridge — не реализовано на этом этапе.</p>
+        <p>Поиск, drop zone, настройки моделей и AI bridge — не реализовано на этом этапе. Галерея показывает только первую страницу без миниатюр; большие изображения не открываются.</p>
         {absentCapabilities.length > 0 && <p>Отсутствующие возможности по данным host: {absentCapabilities.join(', ')}.</p>}
       </section>
       <p>Закрытие окна не останавливает host. Вызовов моделей и загрузки весов нет.</p>

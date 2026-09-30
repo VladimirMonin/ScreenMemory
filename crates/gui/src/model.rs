@@ -18,13 +18,7 @@ pub const GUI_ENVELOPE_VERSION: u32 = 1;
 
 /// Capabilities still absent; the window marks them as not implemented. `capture` is no
 /// longer listed: S02 wires a real button through the same host command as `shot`.
-pub const NOT_IMPLEMENTED: [&str; 5] = [
-    "gallery",
-    "search",
-    "drop_zone",
-    "model_settings",
-    "bridge_runtime",
-];
+pub const NOT_IMPLEMENTED: [&str; 4] = ["search", "drop_zone", "model_settings", "bridge_runtime"];
 
 /// Capture modes the window may request; the vocabulary is the wire one.
 pub const CAPTURE_MODES: [&str; 4] = ["region", "window", "monitor", "desktop"];
@@ -342,7 +336,11 @@ impl GuiLibraryPage {
     }
     pub fn from_page(page: &sm_protocol::application::LibraryRecordsPage) -> Self {
         Self {
-            items: page.items.iter().map(GuiLibraryRecord::from_entry).collect(),
+            items: page
+                .items
+                .iter()
+                .map(GuiLibraryRecord::from_entry)
+                .collect(),
             next_cursor: page.next_cursor.clone(),
             ..Self::envelope()
         }
@@ -358,9 +356,13 @@ pub struct GuiAssetPreview {
     pub width: u32,
     pub height: u32,
     pub data_hex: String,
-    pub safe_code: Option<ErrorCode>,
+    pub safe_code: Option<String>,
     pub retryable: bool,
 }
+
+/// The legacy hex gateway is intentionally only for small previews. A too-large
+/// canonical remains saved; the GUI never fetches its remaining chunks.
+pub const MAX_PREVIEW_BYTES: usize = 8 * 1024 * 1024;
 
 impl GuiAssetPreview {
     fn envelope() -> Self {
@@ -376,26 +378,116 @@ impl GuiAssetPreview {
     }
     pub fn refused(failure: &sm_cli::ClientFailure) -> Self {
         Self {
-            safe_code: Some(failure.code),
+            safe_code: Some(
+                serde_json::to_value(failure.code)
+                    .expect("error code")
+                    .as_str()
+                    .expect("string code")
+                    .to_owned(),
+            ),
             retryable: failure.retryable,
             ..Self::envelope()
         }
     }
-    pub fn from_chunks(chunks: &[sm_protocol::application::LibraryAssetChunk]) -> Self {
-        let mut data_hex = String::new();
-        let mut mime = String::new();
-        let width = 0u32;
-        let height = 0u32;
-        for chunk in chunks {
-            data_hex.push_str(&chunk.data_hex);
-            if !chunk.mime.is_empty() { mime.clone_from(&chunk.mime); }
-        }
+    pub fn unavailable(code: &str) -> Self {
         Self {
-            mime,
-            width,
-            height,
-            data_hex,
+            safe_code: Some(code.to_owned()),
             ..Self::envelope()
         }
+    }
+}
+
+/// Incremental validation: never keep a Vec of whole chunks, and refuse announced
+/// oversized images before appending any hex to the result.
+pub struct PreviewAssembler {
+    asset_id: AssetId,
+    total: Option<usize>,
+    digest: Option<String>,
+    next: usize,
+    hash: sha2::Sha256,
+    hex: String,
+}
+
+impl PreviewAssembler {
+    pub fn new(asset_id: AssetId) -> Self {
+        Self {
+            asset_id,
+            total: None,
+            digest: None,
+            next: 0,
+            hash: sha2::Sha256::default(),
+            hex: String::new(),
+        }
+    }
+
+    /// Returns Some only on a verified EOF. All malformed transfers fail closed.
+    pub fn push(
+        &mut self,
+        chunk: sm_protocol::application::LibraryAssetChunk,
+    ) -> Result<Option<GuiAssetPreview>, &'static str> {
+        use sha2::Digest;
+        let total = chunk
+            .total_size
+            .parse::<usize>()
+            .map_err(|_| "PREVIEW_UNAVAILABLE")?;
+        if total > MAX_PREVIEW_BYTES {
+            return Err("PREVIEW_TOO_LARGE");
+        }
+        if total == 0
+            || chunk.total_size != total.to_string()
+            || chunk.mime != "image/webp"
+            || chunk.sha256.len() != 64
+            || !chunk
+                .sha256
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+            || chunk.asset_id != self.asset_id
+            || self.total.is_some_and(|previous| previous != total)
+            || self
+                .digest
+                .as_ref()
+                .is_some_and(|previous| previous != &chunk.sha256)
+            || chunk.offset as usize != self.next
+            || chunk.data_hex.is_empty()
+            || !chunk.data_hex.len().is_multiple_of(2)
+            || !chunk
+                .data_hex
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        {
+            return Err("PREVIEW_UNAVAILABLE");
+        }
+        let bytes = chunk.data_hex.len() / 2;
+        let next = self.next.checked_add(bytes).ok_or("PREVIEW_UNAVAILABLE")?;
+        if next > total || next != chunk.next_offset as usize || chunk.eof != (next == total) {
+            return Err("PREVIEW_UNAVAILABLE");
+        }
+        // Bounded by the chunk's framing limit and the cumulative 8 MiB ceiling.
+        for pair in chunk.data_hex.as_bytes().as_chunks::<2>().0 {
+            let byte = (pair[0] as char)
+                .to_digit(16)
+                .ok_or("PREVIEW_UNAVAILABLE")?
+                * 16
+                + (pair[1] as char)
+                    .to_digit(16)
+                    .ok_or("PREVIEW_UNAVAILABLE")?;
+            self.hash.update([byte as u8]);
+        }
+        self.hex.push_str(&chunk.data_hex);
+        self.next = next;
+        self.total = Some(total);
+        self.digest = Some(chunk.sha256);
+        if chunk.eof {
+            let actual = format!("{:x}", self.hash.clone().finalize());
+            if self.digest.as_deref() != Some(actual.as_str()) {
+                return Err("PREVIEW_UNAVAILABLE");
+            }
+            return Ok(Some(GuiAssetPreview {
+                mime: "image/webp".to_owned(),
+                data_hex: std::mem::take(&mut self.hex),
+                ..GuiAssetPreview::envelope()
+            }));
+        }
+        Ok(None)
     }
 }

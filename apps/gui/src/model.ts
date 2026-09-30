@@ -150,6 +150,53 @@ export const captureCommand: Record<CaptureMode, string> = {
   desktop: 'gui_capture_desktop',
 };
 
+export interface LibraryRecord {
+  id: string;
+  created_at: string;
+  title: string;
+  target: string;
+  width: number;
+  height: number;
+  byte_size: string;
+  preview_asset_id: string | null;
+}
+
+export interface LibraryPage {
+  schema_version: number;
+  items: LibraryRecord[];
+  next_cursor: string | null;
+  safe_code: string | null;
+  retryable: boolean;
+}
+
+export interface AssetPreview {
+  schema_version: number;
+  mime: string;
+  width: number;
+  height: number;
+  data_hex: string;
+  safe_code: string | null;
+  retryable: boolean;
+}
+
+export const MAX_PREVIEW_BYTES = 8 * 1024 * 1024;
+export const canonicalAssetId = (id: string): boolean =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id);
+
+/** Decode only the validated, size-capped WebP response; never feed raw hex to an URL. */
+export function previewBytes(preview: AssetPreview): Uint8Array<ArrayBuffer> {
+  if (preview.safe_code) throw new Error(preview.safe_code);
+  const hex = preview.data_hex;
+  if (preview.schema_version !== GUI_ENVELOPE_VERSION || preview.mime !== 'image/webp'
+      || hex.length === 0 || hex.length > MAX_PREVIEW_BYTES * 2
+      || hex.length % 2 !== 0 || !/^(?:[0-9a-f]{2})+$/.test(hex)) {
+    throw new Error('PREVIEW_UNAVAILABLE');
+  }
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i += 1) bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  return bytes;
+}
+
 export const captureStateText: Record<CaptureState, string> = {
   saved: 'Снимок сохранён в библиотеку.',
   cancelled: 'Захват отменён; изображение не создавалось.',

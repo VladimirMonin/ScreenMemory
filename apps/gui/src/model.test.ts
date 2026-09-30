@@ -7,6 +7,9 @@ import {
   captureModeText,
   captureModes,
   captureStateText,
+  canonicalAssetId,
+  previewBytes,
+  MAX_PREVIEW_BYTES,
   doctorFailed,
   guiBuild,
   notImplemented,
@@ -16,6 +19,7 @@ import {
   type CaptureAnswer,
   type Diagnostics,
   type GuiState,
+  type AssetPreview,
 } from './model';
 
 const readyHost: Diagnostics['host'] = {
@@ -41,8 +45,6 @@ const ready: Diagnostics = {
   bounded_ms: 5000,
   report_available: true,
   not_implemented: [
-    'library_counts',
-    'gallery',
     'search',
     'drop_zone',
     'model_settings',
@@ -150,7 +152,8 @@ describe('S01 diagnostic state mapping', () => {
   it('shows the owner list of unfinished capabilities and never invents one', () => {
     expect(notImplemented(null)).toEqual([]);
     const listed = notImplemented(ready);
-    expect(listed).toContain('library_counts');
+    expect(listed).toContain('search');
+    expect(listed).not.toContain('gallery');
     expect(listed).not.toContain('capture');
     expect(listed.every((name) => !name.includes('images'))).toBe(true);
   });
@@ -167,6 +170,27 @@ describe('S01 diagnostic envelope shape', () => {
   it('never exposes an image count, a path or a model field', () => {
     const keys = Object.keys(ready);
     expect(keys.some((key) => /count|path|model|image/i.test(key))).toBe(false);
+  });
+});
+
+describe('S02 bounded gallery preview decoder', () => {
+  const image: AssetPreview = {
+    schema_version: 1, mime: 'image/webp', width: 0, height: 0,
+    data_hex: '52494646', safe_code: null, retryable: false,
+  };
+  it('accepts only canonical v4 asset identities', () => {
+    expect(canonicalAssetId('01900000-0000-4000-8000-000000000001')).toBe(true);
+    expect(canonicalAssetId('01900000-0000-7000-8000-000000000001')).toBe(false);
+    expect(canonicalAssetId('../file.webp')).toBe(false);
+    expect(canonicalAssetId('01900000-0000-4000-8000-00000000000a'.toUpperCase())).toBe(false);
+  });
+  it('decodes only bounded WebP hex and rejects oversized/malformed/unavailable', () => {
+    expect([...previewBytes(image)]).toEqual([82, 73, 70, 70]);
+    expect(() => previewBytes({ ...image, mime: 'image/png' })).toThrow('PREVIEW_UNAVAILABLE');
+    expect(() => previewBytes({ ...image, safe_code: 'PREVIEW_TOO_LARGE' })).toThrow('PREVIEW_TOO_LARGE');
+    expect(() => previewBytes({ ...image, data_hex: '0' })).toThrow('PREVIEW_UNAVAILABLE');
+    expect(() => previewBytes({ ...image, data_hex: 'zz' })).toThrow('PREVIEW_UNAVAILABLE');
+    expect(() => previewBytes({ ...image, data_hex: '00'.repeat(MAX_PREVIEW_BYTES + 1) })).toThrow('PREVIEW_UNAVAILABLE');
   });
 });
 

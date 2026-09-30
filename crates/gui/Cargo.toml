@@ -22,6 +22,7 @@ sm-protocol = { path = "../protocol" }
 sm-session = { path = "../session" }
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 uuid = { workspace = true, features = ["v4"] }
 tauri.workspace = true
 tokio = { version = "=1.53.1", features = ["rt", "time", "io-util", "sync"] }

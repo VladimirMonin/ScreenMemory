@@ -21,7 +21,7 @@ allowed = {
     'session': {'sm-application', 'sm-domain', 'sm-protocol', 'sm-framing', 'sm-pipe', 'serde', 'serde_json', 'uuid', 'tokio-util', 'tokio'},
     'host': {'sm-application', 'sm-capture', 'sm-codec', 'sm-credentials', 'sm-domain', 'sm-framing', 'sm-isolation', 'sm-observability', 'sm-pipe', 'sm-protocol', 'sm-session', 'sm-storage', 'async-trait', 'serde', 'serde_json', 'tokio', 'tokio-util', 'uuid'},
     'cli': {'sm-application', 'sm-credentials', 'sm-domain', 'sm-framing', 'sm-isolation', 'sm-pipe', 'sm-protocol', 'sm-session', 'serde', 'serde_json', 'tokio', 'uuid', 'windows-sys'},
-    'gui': {'sm-application', 'sm-cli', 'sm-credentials', 'sm-domain', 'sm-isolation', 'sm-protocol', 'sm-session', 'serde', 'serde_json', 'tauri', 'tokio', 'uuid', 'windows-sys'},
+    'gui': {'sm-application', 'sm-cli', 'sm-credentials', 'sm-domain', 'sm-isolation', 'sm-protocol', 'sm-session', 'serde', 'serde_json', 'sha2', 'tauri', 'tokio', 'uuid', 'windows-sys'},
 }
 for crate, expected in allowed.items():
     manifest = tomllib.loads((root / 'crates' / crate / 'Cargo.toml').read_text(encoding='utf-8'))

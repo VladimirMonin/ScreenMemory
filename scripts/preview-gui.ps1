@@ -58,10 +58,11 @@ function Assert-GuiSelfCheckReport($Report, [string]$LibraryId, [string]$Label) 
     if ($diagnostics.runtime_available -ne $false) { throw "$Label claims a usable AI runtime while AI is disabled" }
     if ($diagnostics.report_available -ne $true) { throw "$Label reported an unavailable diagnostic report directory" }
     if ($null -ne $diagnostics.safe_code) { throw "$Label reported a safe code on success" }
-    # `capture` is deliberately NOT expected here: S02 wires a real capture command through the
-    # same host, so the window must not report it as unfinished any more.
-    if ($diagnostics.not_implemented -ccontains 'capture') { throw "$Label still reports the implemented capture command as unfinished" }
-    foreach ($capability in @('library_counts', 'gallery', 'search', 'drop_zone', 'model_settings', 'bridge_runtime')) {
+    # S02 capture and gallery are implemented; neither may be reported unfinished.
+    foreach ($implemented in @('capture', 'gallery')) {
+        if ($diagnostics.not_implemented -ccontains $implemented) { throw "$Label still reports the implemented $implemented capability as unfinished" }
+    }
+    foreach ($capability in @('search', 'drop_zone', 'model_settings', 'bridge_runtime')) {
         if ($diagnostics.not_implemented -cnotcontains $capability) { throw "$Label does not report the unfinished capability $capability" }
     }
     if ($null -eq $diagnostics.doctor) { throw "$Label did not run the foundation doctor" }
@@ -181,8 +182,8 @@ if ($hostDuring.Count -ne 1 -or $hostDuring[0].ProcessId -ne $hostPid) { throw '
 
 if ($WindowHoldSeconds -gt 0) { Start-Sleep -Seconds $WindowHoldSeconds }
 else { Write-Output '[window] press the window close button to continue (bounded wait 600s)'; $null = $window.WaitForExit(600000) }
-# A real close request, exactly like the user's window close button.
-if (-not $window.CloseMainWindow()) { throw 'The diagnostic window refused the close request' }
+# A user-closed window is already gone; only request close if it is still running.
+if (-not $window.HasExited -and -not $window.CloseMainWindow()) { throw 'The diagnostic window refused the close request' }
 if (-not $window.WaitForExit(30000)) { throw 'The diagnostic window did not exit within the bounded close wait' }
 Write-Output ('[window] closed with raw code ' + $window.ExitCode)
 if ($window.ExitCode -ne 0) { throw 'The closed window returned a non-zero exit code' }

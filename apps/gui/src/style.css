@@ -9,3 +9,8 @@ dt { font-weight: bold; }
 dd { margin: 3px 0 14px; overflow-wrap: anywhere; }
 section { border-top: 1px solid #637080; margin-top: 18px; }
 [role="alert"] { color: #ffb7b7; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; list-style: none; padding: 0; }
+.gallery button { width: 100%; text-align: left; background: #29394d; color: #e5eaf2; }
+.gallery button[aria-pressed="true"] { border: 2px solid #9dd4ff; }
+.gallery small { display: block; margin-top: 6px; overflow-wrap: anywhere; }
+.preview img { display: block; max-width: 100%; max-height: 65vh; object-fit: contain; margin: 12px 0; }

@@ -1,10 +1,10 @@
 ---
 applyTo: "crates/gui/**,apps/gui/**,scripts/preview-gui.ps1,scripts/preview-common.ps1,scripts/verify.ps1,scripts/test-verify.ps1,docs/progress/S01/t06d-gui.*"
 name: "APP.Gui"
-description: "Читай при работе с диагностическим окном Tauri+React, его командами, конфигом окна, --self-check и developer preview окна."
+description: "Читай при работе с окном Tauri+React, его диагностикой и галереей S02, командами, --self-check и developer preview окна."
 ---
 
-# APP — минимальное диагностическое окно S01
+# APP — диагностическое окно и первая галерея S02
 
 Источник: S01 §§10.1, 10.3, 5.3; [ADR-010](../docs/adr/010-diagnostic-window.md). `crates/gui`
 (package `sm-gui`, binary `screenmemory-gui`) — единственный Tauri-потребитель. Окно не
@@ -29,6 +29,20 @@ count/path/model полей: незавершённые возможности �
 этапе» из owner-списка `NOT_IMPLEMENTED`, а не показываются пустым «0 изображений».
 Закрытие окна закрывает только это соединение: host продолжает работать, повторное окно
 подключается к тому же `host_instance_id`.
+
+S02: `gui_library_recent` получает от authenticated `GuiSession::list` только первую
+фиксированную страницу из 24 committed records. `gui_asset_preview` принимает **только**
+канонический lowercase UUIDv4 `assetId`, без path/URL/transport; host проверяет наличие
+asset в этой библиотеке. Legacy `read_asset_full` для этого окна отказывает по
+`PREVIEW_TOO_LARGE` при объявленном размере >8 MiB **до** накопления hex, сверяет
+asset_id, offset, next_offset, total_size, WebP MIME, SHA256 по всем чанкам и EOF;
+прочие ошибки дают `PREVIEW_UNAVAILABLE` или безопасный host code. Канон при отказе
+не изменяется. React превращает только проверенный bounded hex в Blob URL `image/webp`,
+отзывает URL при смене/закрытии/unmount, не использует `file://` или сеть. Список
+обновляется на ready, после Saved и по кнопке; pagination, thumbnails, pin/editor,
+clipboard и пользовательское окно остаются отдельными задачами, а не обещанием этой
+галереи. Legacy host read реализует полную проверку canonical за один вызов и может
+аллоцировать полный файл до отказа GUI по размеру: это остаточный риск host-owner.
 
 Frontend (`apps/gui`, Vite+React+TS) импортирует только React, `@tauri-apps/api/core`,
 локальные модули и **типы** сгенерированного контракта; SDK LM Studio, SQLite, native

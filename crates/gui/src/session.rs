@@ -7,7 +7,8 @@
 //! to the same instance.
 use crate::{
     model::{
-        state_for_failure, GuiAssetPreview, GuiCaptureAnswer, GuiDiagnostics, GuiLibraryPage, OpenReportOutcome,
+        state_for_failure, GuiAssetPreview, GuiCaptureAnswer, GuiDiagnostics, GuiLibraryPage,
+        OpenReportOutcome, PreviewAssembler,
     },
     open::{safe_code, validated_report_directory, OpenReportError, ReportOpener},
 };
@@ -17,8 +18,7 @@ use sm_cli::{
 };
 use sm_domain::{LibraryId, OperationId};
 use sm_protocol::application::{
-    CaptureCommandParams, CaptureMode, DoctorReport, HostStatus, LibraryAssetChunk,
-    LibraryRecordsRequest,
+    CaptureCommandParams, CaptureMode, DoctorReport, HostStatus, LibraryRecordsRequest,
 };
 use sm_session::{ApplicationClient, ClientError};
 use std::path::PathBuf;
@@ -210,13 +210,10 @@ impl GuiSession {
         if let Err(failure) = self.ensure(true).await {
             return GuiAssetPreview::refused(&failure);
         }
-        let mut chunks: Vec<LibraryAssetChunk> = Vec::new();
+        let mut preview = PreviewAssembler::new(asset_id);
         let mut offset: u32 = 0;
         loop {
-            let request = sm_protocol::application::LibraryAssetRequest {
-                asset_id,
-                offset,
-            };
+            let request = sm_protocol::application::LibraryAssetRequest { asset_id, offset };
             match self
                 .client
                 .as_ref()
@@ -225,12 +222,12 @@ impl GuiSession {
                 .await
             {
                 Ok(chunk) => {
-                    let eof = chunk.eof;
-                    chunks.push(chunk.clone());
-                    if eof {
-                        break;
+                    let next = chunk.next_offset;
+                    match preview.push(chunk) {
+                        Ok(Some(image)) => return image,
+                        Ok(None) => offset = next,
+                        Err(code) => return GuiAssetPreview::unavailable(code),
                     }
-                    offset = chunk.next_offset;
                 }
                 Err(error) => {
                     self.client = None;
@@ -238,7 +235,6 @@ impl GuiSession {
                 }
             }
         }
-        GuiAssetPreview::from_chunks(&chunks)
     }
 
     /// Close this window's connection only; the host is never stopped from here.
