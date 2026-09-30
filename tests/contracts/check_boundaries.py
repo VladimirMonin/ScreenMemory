@@ -132,7 +132,8 @@ assert 'CaptureContext::from_json' in storage_sources['staging.rs']
 # S02-T09h stays pure. V1 retains its exact 18-field decoder; v2 is versioned and
 # receipt-ready only with validated warnings, automatic provenance and fixed policy.
 # T09j connects the owned v2 request to the existing file lane and host. T09k adds
-# only known-operation v2 reopen on that lane; no SQL recovery or enumeration.
+# known-operation v2 reopen. T09l2 adds bounded discovery only on the file lane;
+# there is still no SQL recovery or startup enumeration.
 assert 'const MANIFEST_FIELDS: [&str; 18]' in storage_sources['staging.rs']
 for member in ('"warnings"', '"provenance_kind"', '"path_policy"'):
     assert member in storage_sources['staging.rs']
@@ -150,6 +151,11 @@ assert 'warnings_to_json(&self.warnings)' in storage_sources['lib.rs']
 assert 'pub async fn reopen_stage_owned_v2(' in storage_sources['lib.rs']
 assert 'ReopenV2(' in storage_sources['lib.rs'] and 'staging_files::reopen_staged_v2(' in storage_sources['lib.rs']
 assert 'staging::StagingExpectations {' in storage_sources['lib.rs']
+assert 'pub async fn enumerate_stage_candidates(' in storage_sources['lib.rs']
+assert 'EnumerateCandidates(oneshot::Sender<Result<StagingCandidates, EnumerateCandidatesError>>)' in storage_sources['lib.rs']
+assert 'root.enumerate_candidates()' in storage_sources['lib.rs'].split('fn file_loop(', 1)[1]
+assert 'root.enumerate_candidates()' not in storage_sources['lib.rs'].split('fn run(', 1)[1].split('fn file_loop(', 1)[0]
+assert 'root.enumerate_candidates()' not in storage_sources['lib.rs'].split('fn start_inner(', 1)[1].split('pub async fn stage_capture_owned(', 1)[0]
 assert 'pub envelope:' not in reopened_v2 and 'pub pixels:' not in reopened_v2
 for forbidden in ('std::fs', 'std::path', 'rusqlite', 'std::process', 'std::net'):
     assert forbidden not in storage_sources['staging_recovery_tests.rs']

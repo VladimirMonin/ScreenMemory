@@ -77,6 +77,153 @@ fn reopen_input(input: &OwnedStageInput) -> OwnedReopenInputV2 {
 }
 
 #[test]
+fn s02_t09l2_01_reacquired_worker_discovers_untrusted_candidates_without_receipt() {
+    let f = Fixture::new();
+    let sentinel = f.0.join("sentinel");
+    fs::write(&sentinel, b"outside-staging").unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let input = f.input();
+        let trusted = reopen_input(&input);
+        let incomplete = f.input().operation_id;
+        let first = StorageWorker::start(f.try_lease().unwrap()).unwrap();
+        first
+            .stage_capture_owned_v2(OwnedStageInputV2 {
+                capture: input,
+                warnings: vec!["topology_changed".into()],
+            })
+            .await
+            .unwrap();
+        first.shutdown(Duration::from_secs(5)).await.unwrap();
+
+        let staging = f.0.join("staging");
+        let incomplete_dir = staging.join(incomplete.as_uuid().to_string());
+        fs::create_dir(&incomplete_dir).unwrap();
+        fs::write(incomplete_dir.join("pixels.rgba.tmp"), b"incomplete").unwrap();
+        fs::create_dir(staging.join("not-a-uuid")).unwrap();
+        fs::write(staging.join("unsafe-file"), b"keep").unwrap();
+        let second = StorageWorker::start(f.try_lease().unwrap()).unwrap();
+        let candidates = second.enumerate_stage_candidates().await.unwrap();
+        assert_eq!(candidates.ids.len(), 2);
+        assert!(candidates.ids.contains(&trusted.operation_id));
+        assert!(candidates.ids.contains(&incomplete));
+        assert_eq!(candidates.malformed_entries, 1);
+        assert_eq!(candidates.unsafe_entries, 1);
+        assert_eq!(candidates.reparse_entries, 0);
+        assert!(matches!(
+            second
+                .lookup_operation(trusted.operation_id, trusted.principal_id, trusted.mode)
+                .await,
+            Ok(LookupOutcome::Unknown)
+        ));
+        assert!(matches!(
+            second
+                .lookup_operation(incomplete, trusted.principal_id, trusted.mode)
+                .await,
+            Ok(LookupOutcome::Unknown)
+        ));
+        let reopened = second.reopen_stage_owned_v2(trusted).await.unwrap();
+        assert_eq!(reopened.envelope().schema_version(), 2);
+        assert_eq!(
+            reopened.envelope().warnings(),
+            Some(["topology_changed".to_owned()].as_slice())
+        );
+        second.shutdown(Duration::from_secs(5)).await.unwrap();
+        assert_eq!(
+            fs::read(incomplete_dir.join("pixels.rgba.tmp")).unwrap(),
+            b"incomplete"
+        );
+        assert_eq!(fs::read(staging.join("unsafe-file")).unwrap(), b"keep");
+        assert_eq!(fs::read(&sentinel).unwrap(), b"outside-staging");
+    });
+}
+
+#[test]
+fn s02_t09l2_02_full_gate_and_fifo_stop_retain_lease() {
+    let f = Fixture::new();
+    let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+    let (release_tx, release_rx) = mpsc::sync_channel(1);
+    let worker =
+        StorageWorker::start_with_file_pause(f.try_lease().unwrap(), entered_tx, release_rx)
+            .unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let input = f.input();
+        let operation = input.operation_id;
+        let stage = tokio::spawn({
+            let worker = worker.clone();
+            async move {
+                worker
+                    .stage_capture_owned_v2(OwnedStageInputV2 {
+                        capture: input,
+                        warnings: vec![],
+                    })
+                    .await
+            }
+        });
+        tokio::task::yield_now().await;
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let queued = tokio::spawn({
+            let worker = worker.clone();
+            async move { worker.enumerate_stage_candidates().await }
+        });
+        tokio::task::yield_now().await;
+        assert!(!queued.is_finished());
+        assert!(matches!(
+            worker.enumerate_stage_candidates().await,
+            Err(EnumerateCandidatesError::Unavailable)
+        ));
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), worker.schema_snapshot())
+                .await
+                .unwrap()
+                .is_ok()
+        );
+        assert_eq!(
+            worker.shutdown(Duration::from_millis(30)).await,
+            Err(StorageError::Unavailable)
+        );
+        assert!(matches!(
+            worker.enumerate_stage_candidates().await,
+            Err(EnumerateCandidatesError::Unavailable)
+        ));
+        assert!(matches!(f.try_lease(), Err(LeaseError::Busy)));
+        release_tx.send(()).unwrap();
+        stage.await.unwrap().unwrap();
+        let candidates = queued.await.unwrap().unwrap();
+        assert_eq!(candidates.ids, vec![operation]);
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        drop(f.try_lease().unwrap());
+    });
+}
+
+#[test]
+fn s02_t09l2_03_unsafe_staging_root_fails_closed_without_deletion() {
+    let f = Fixture::new();
+    let sentinel = f.0.join("staging");
+    fs::write(&sentinel, b"not-a-directory").unwrap();
+    let worker = StorageWorker::start(f.try_lease().unwrap()).unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        assert!(matches!(
+            worker.enumerate_stage_candidates().await,
+            Err(EnumerateCandidatesError::Enumeration(_))
+        ));
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+    });
+    assert_eq!(fs::read(sentinel).unwrap(), b"not-a-directory");
+}
+
+#[test]
 fn s02_t09k_empty_v2_profile_rejected_before_file_lane_write() {
     let f = Fixture::new();
     let rt = tokio::runtime::Builder::new_current_thread()

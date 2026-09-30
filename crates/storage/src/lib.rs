@@ -23,7 +23,7 @@ use sm_application::{
     storage::{CaptureContext, CaptureTarget},
 };
 use sm_domain::{AssetId, LibraryId, OperationId, PrincipalId, RecordId};
-use sm_isolation::{HostLease, LeaseError};
+use sm_isolation::{HostLease, LeaseError, StagingCandidates, StagingError};
 use std::{
     path::PathBuf,
     sync::{
@@ -126,6 +126,13 @@ pub enum ReopenOwnedError {
     Reopen(staging_files::ReopenFailure),
 }
 
+/// Failed discovery never masquerades as a complete (possibly empty) candidate set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EnumerateCandidatesError {
+    Unavailable,
+    Enumeration(StagingError),
+}
+
 impl OwnedStageInput {
     fn checked(&self) -> Result<(), StageOwnedError> {
         use staging::StagingError;
@@ -201,6 +208,7 @@ enum FileRequest {
         oneshot::Sender<Result<staging_files::ReopenedV2, ReopenOwnedError>>,
         OwnedReopenInputV2,
     ),
+    EnumerateCandidates(oneshot::Sender<Result<StagingCandidates, EnumerateCandidatesError>>),
     Stop,
 }
 struct Admission {
@@ -426,6 +434,27 @@ impl StorageWorker {
             Err(_) => Err(ReopenOwnedError::Unavailable),
         }
     }
+    /// Read-only discovery on the scoped file lane, not the SQLite worker. Returned IDs
+    /// remain untrusted; neither a manifest nor a DB receipt is validated or adopted.
+    pub async fn enumerate_stage_candidates(
+        &self,
+    ) -> Result<StagingCandidates, EnumerateCandidatesError> {
+        let (tx, rx) = oneshot::channel();
+        let queued = {
+            let gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+            if gate.closing {
+                return Err(EnumerateCandidatesError::Unavailable);
+            }
+            self.file_sender
+                .try_send(FileRequest::EnumerateCandidates(tx))
+        };
+        match queued {
+            Ok(()) => rx
+                .await
+                .unwrap_or(Err(EnumerateCandidatesError::Unavailable)),
+            Err(_) => Err(EnumerateCandidatesError::Unavailable),
+        }
+    }
     /// A path-free, file-lane-ordered preflight. Only a genuinely missing fixed
     /// operation directory is Absent; unsafe entries and root IO fail closed.
     pub async fn probe_stage_presence(
@@ -612,6 +641,13 @@ fn file_loop(
     for request in receiver {
         match request {
             FileRequest::Stop => break,
+            FileRequest::EnumerateCandidates(tx) => {
+                let result = lease
+                    .staging_root()
+                    .and_then(|root| root.enumerate_candidates())
+                    .map_err(EnumerateCandidatesError::Enumeration);
+                let _ = tx.send(result);
+            }
             FileRequest::Probe(tx, operation_id) => {
                 let result = lease
                     .staging_root()
