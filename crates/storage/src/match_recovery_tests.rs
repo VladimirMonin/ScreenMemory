@@ -1,6 +1,6 @@
 use super::*;
-use crate::PrepareCandidateError;
 use crate::{OwnedReopenInputV2, OwnedStageInput, OwnedStageInputV2, StorageWorker};
+use crate::{PrepareCandidateError, PublishCandidateError, VerifiedCandidate};
 use sm_application::{
     capture::{CaptureMode, CaptureRequest, CaptureTrigger},
     storage::{
@@ -672,5 +672,263 @@ fn s02_t09m3_02_foreign_and_tampered_stage_rejected_without_cleanup() {
             .is_err());
         again.shutdown(Duration::from_secs(5)).await.unwrap();
         assert_eq!(fs::read(&pixels).unwrap(), [9u8; 24]);
+    });
+}
+
+fn reopen_input(i: &CreateCaptureIntent) -> OwnedReopenInputV2 {
+    OwnedReopenInputV2 {
+        library_id: i.library_id,
+        principal_id: i.principal_id,
+        operation_id: OperationId::new(i.request.operation_id()),
+        mode: i.request.target(),
+        encoder_fingerprint: i.encoder_fingerprint.clone(),
+    }
+}
+
+async fn recovery_candidate(worker: &StorageWorker, i: &CreateCaptureIntent) -> VerifiedCandidate {
+    let ValidatedIntentRead::Pending(witness) = worker
+        .read_validated_capture_intent(i.library_id, i.principal_id, i.request.clone())
+        .await
+        .unwrap()
+    else {
+        panic!("expected sealed pending")
+    };
+    let reopened = worker.reopen_stage_owned_v2(reopen_input(i)).await.unwrap();
+    worker
+        .prepare_recovery_candidate(witness, reopened)
+        .await
+        .unwrap()
+}
+
+fn pending_and_no_saved(f: &Fixture) {
+    let db = rusqlite::Connection::open(f.0.join("data/library.sqlite3")).unwrap();
+    for (table, expected) in [
+        ("capture_intents", 1i64),
+        ("records", 0),
+        ("assets", 0),
+        ("ingest_operations", 0),
+    ] {
+        let count: i64 = db
+            .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, expected, "{table}");
+    }
+}
+
+#[test]
+fn s02_t09n3a_01_new_restart_existing_and_post_publish_fault() {
+    let f = Fixture::new();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let first = StorageWorker::start(f.lease()).unwrap();
+        let library = LibraryId::new(first.schema_snapshot().await.unwrap().library_id);
+        let pixels = vec![17u8; 24];
+        let mut i = input(library, &pixels);
+        i.encoder_fingerprint = sm_codec::encoder_fingerprint();
+        let CreateIntentOutcome::Created(pending) =
+            first.create_capture_intent(i.clone()).await.unwrap()
+        else {
+            panic!("pending created")
+        };
+        first
+            .stage_capture_owned_v2(stage(&i, pixels))
+            .await
+            .unwrap();
+        first.shutdown(Duration::from_secs(5)).await.unwrap();
+
+        let worker = StorageWorker::start(f.lease()).unwrap();
+        let candidate = recovery_candidate(&worker, &i).await;
+        let expected = candidate.encoded_bytes().to_vec();
+        let mut published = worker.publish_recovery_candidate(candidate).await.unwrap();
+        assert!(published.newly_published());
+        published.revalidate().unwrap();
+        let assets = f.0.join("assets");
+        assert!(fs::rename(&assets, f.0.join("assets-moved")).is_err());
+        let final_path =
+            f.0.join("assets")
+                .join(&pending.planned_created_at_utc[..7])
+                .join(i.record_id.as_uuid().to_string())
+                .join("original.webp");
+        assert_eq!(fs::read(&final_path).unwrap(), expected);
+        drop(published); // simulated fault after file publish, before hypothetical BEGIN
+        assert!(f
+            .0
+            .join("staging")
+            .join(i.request.operation_id().to_string())
+            .join("manifest.json")
+            .exists());
+        assert_eq!(
+            worker
+                .lookup_operation(
+                    OperationId::new(i.request.operation_id()),
+                    i.principal_id,
+                    i.request.target()
+                )
+                .await
+                .unwrap(),
+            LookupOutcome::Unknown
+        );
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        pending_and_no_saved(&f);
+
+        let restarted = StorageWorker::start(f.lease()).unwrap();
+        let mut again = restarted
+            .publish_recovery_candidate(recovery_candidate(&restarted, &i).await)
+            .await
+            .unwrap();
+        assert!(!again.newly_published());
+        again.revalidate().unwrap();
+        let month = final_path.parent().unwrap().parent().unwrap();
+        assert!(fs::rename(month, month.with_extension("moved")).is_err());
+        assert_eq!(
+            fs::read_dir(final_path.parent().unwrap()).unwrap().count(),
+            1
+        );
+        // The handle is pinned against rename, NOT against SHARE_WRITE mutation.
+        fs::write(&final_path, vec![0xA5; expected.len()]).unwrap();
+        assert!(matches!(
+            again.revalidate(),
+            Err(PublishCandidateError::IntegrityFailed)
+        ));
+        fs::write(&final_path, &expected).unwrap();
+        again.revalidate().unwrap();
+        drop(again);
+        restarted.shutdown(Duration::from_secs(5)).await.unwrap();
+        pending_and_no_saved(&f);
+    });
+}
+
+#[test]
+fn s02_t09n3a_02_same_length_different_bytes_and_oversize_refused() {
+    let f = Fixture::new();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let worker = StorageWorker::start(f.lease()).unwrap();
+        let library = LibraryId::new(worker.schema_snapshot().await.unwrap().library_id);
+        let pixels = vec![23u8; 24];
+        let mut i = input(library, &pixels);
+        i.encoder_fingerprint = sm_codec::encoder_fingerprint();
+        let CreateIntentOutcome::Created(pending) =
+            worker.create_capture_intent(i.clone()).await.unwrap()
+        else {
+            panic!("created")
+        };
+        worker
+            .stage_capture_owned_v2(stage(&i, pixels))
+            .await
+            .unwrap();
+        let candidate = recovery_candidate(&worker, &i).await;
+        let final_dir =
+            f.0.join("assets")
+                .join(&pending.planned_created_at_utc[..7])
+                .join(i.record_id.as_uuid().to_string());
+        fs::create_dir_all(&final_dir).unwrap();
+        let final_path = final_dir.join("original.webp");
+        let sentinel = vec![0xA5; candidate.length() as usize];
+        assert_ne!(sentinel, candidate.encoded_bytes());
+        fs::write(&final_path, &sentinel).unwrap();
+        assert!(matches!(
+            worker.publish_recovery_candidate(candidate).await,
+            Err(PublishCandidateError::IntegrityFailed)
+        ));
+        assert_eq!(fs::read(&final_path).unwrap(), sentinel);
+        assert_eq!(fs::read_dir(&final_dir).unwrap().count(), 1);
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&final_path)
+            .unwrap()
+            .set_len(sm_isolation::MAX_CANONICAL_BYTES + 1)
+            .unwrap();
+        assert!(matches!(
+            worker
+                .publish_recovery_candidate(recovery_candidate(&worker, &i).await)
+                .await,
+            Err(PublishCandidateError::Canonical(
+                sm_isolation::CanonicalError::TooLarge
+            ))
+        ));
+        assert_eq!(
+            fs::metadata(&final_path).unwrap().len(),
+            sm_isolation::MAX_CANONICAL_BYTES + 1
+        );
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        pending_and_no_saved(&f);
+    });
+}
+
+#[test]
+fn s02_t09n3a_03_junction_and_hardlink_refused_without_cleanup() {
+    let f = Fixture::new();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let worker = StorageWorker::start(f.lease()).unwrap();
+        let library = LibraryId::new(worker.schema_snapshot().await.unwrap().library_id);
+        let pixels = vec![31u8; 24];
+        let mut i = input(library, &pixels);
+        i.encoder_fingerprint = sm_codec::encoder_fingerprint();
+        let CreateIntentOutcome::Created(pending) =
+            worker.create_capture_intent(i.clone()).await.unwrap()
+        else {
+            panic!("created")
+        };
+        worker
+            .stage_capture_owned_v2(stage(&i, pixels))
+            .await
+            .unwrap();
+        let outside = f.0.join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("sentinel"), b"KEEP").unwrap();
+        let month =
+            f.0.join("assets")
+                .join(&pending.planned_created_at_utc[..7]);
+        fs::create_dir(f.0.join("assets")).unwrap();
+        let exit = std::process::Command::new("cmd.exe")
+            .args(["/d", "/c", "mklink", "/J"])
+            .arg(&month)
+            .arg(&outside)
+            .status()
+            .unwrap();
+        assert_eq!(exit.code(), Some(0));
+        assert!(matches!(
+            worker
+                .publish_recovery_candidate(recovery_candidate(&worker, &i).await)
+                .await,
+            Err(PublishCandidateError::Canonical(
+                sm_isolation::CanonicalError::UnsafeEntry
+            ))
+        ));
+        let exit = std::process::Command::new("cmd.exe")
+            .args(["/d", "/c", "rmdir"])
+            .arg(&month)
+            .status()
+            .unwrap();
+        assert_eq!(exit.code(), Some(0));
+        assert_eq!(fs::read(outside.join("sentinel")).unwrap(), b"KEEP");
+        let record = month.join(i.record_id.as_uuid().to_string());
+        fs::create_dir_all(&record).unwrap();
+        let sentinel = outside.join("hardlink-sentinel");
+        fs::write(&sentinel, b"HARDLINK-KEEP").unwrap();
+        fs::hard_link(&sentinel, record.join("original.webp")).unwrap();
+        assert!(matches!(
+            worker
+                .publish_recovery_candidate(recovery_candidate(&worker, &i).await)
+                .await,
+            Err(PublishCandidateError::Canonical(
+                sm_isolation::CanonicalError::UnsafeEntry
+            ))
+        ));
+        assert_eq!(fs::read(&sentinel).unwrap(), b"HARDLINK-KEEP");
+        assert_eq!(fs::read_dir(&record).unwrap().count(), 1);
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        pending_and_no_saved(&f);
     });
 }

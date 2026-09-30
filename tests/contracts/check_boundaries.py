@@ -186,6 +186,20 @@ assert 'root.enumerate_candidates()' in storage_sources['lib.rs'].split('fn file
 assert 'root.enumerate_candidates()' not in storage_sources['lib.rs'].split('fn run(', 1)[1].split('fn file_loop(', 1)[0]
 assert 'root.enumerate_candidates()' not in storage_sources['lib.rs'].split('fn start_inner(', 1)[1].split('pub async fn stage_capture_owned(', 1)[0]
 assert 'pub envelope:' not in reopened_v2 and 'pub pixels:' not in reopened_v2
+# T09n3a: sealed codec candidate is the only canonical publication input; the
+# existing images writer and its PublishedFile are deliberately unchanged.
+assert 'pub async fn publish_recovery_candidate(' in storage_sources['lib.rs']
+assert 'FileRequest::PublishCandidate(tx, candidate)' in storage_sources['lib.rs']
+assert 'recovery_candidate::publish(lease, candidate)' in storage_sources['lib.rs'].split('fn file_loop(', 1)[1]
+publisher = storage_sources['recovery_candidate.rs']
+assert 'pub struct VerifiedPublished {' in publisher and 'candidate: VerifiedCandidate' in publisher
+assert 'final_handle: CanonicalRead' in publisher and 'pub(crate) fn revalidate(' in publisher
+assert 'trusted.planned_created_at_utc' in publisher and 'trusted.input.record_id' in publisher
+assert 'root.begin(&plan)' in publisher and 'temp.sync_all()' in publisher and 'temp.publish()' in publisher
+assert '.open_final(&plan)' in publisher and 'published.revalidate()?' in publisher
+assert 'read_all_borrowed(&mut self)' in (root / 'crates/isolation/src/canonical.rs').read_text(encoding='utf-8')
+for forbidden in ('rusqlite', 'std::path', 'std::process', 'std::net', 'PublishedFile', 'remove_file'):
+    assert forbidden not in publisher, ('storage', 'recovery_candidate.rs', forbidden)
 for forbidden in ('std::fs', 'std::path', 'rusqlite', 'std::process', 'std::net'):
     assert forbidden not in storage_sources['staging_recovery_tests.rs']
 assert 'pub mod staging;' in storage_sources['lib.rs']

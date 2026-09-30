@@ -2,7 +2,7 @@
 use crate::{windows, HostLease, StagingError};
 use sm_application::storage::is_canonical_utc_timestamp;
 use sm_domain::RecordId;
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use uuid::{Uuid, Variant};
 
 pub const MAX_CANONICAL_BYTES: u64 = 128 * 1024 * 1024;
@@ -118,7 +118,11 @@ impl<'lease> CanonicalRoot<'lease> {
         if len > MAX_CANONICAL_BYTES {
             return Err(CanonicalError::TooLarge);
         }
-        Ok(CanonicalRead { file, len })
+        Ok(CanonicalRead {
+            file,
+            len,
+            _record: record,
+        })
     }
 }
 
@@ -182,6 +186,9 @@ impl Write for CanonicalTemp<'_, '_> {
 pub struct CanonicalRead {
     file: std::fs::File,
     len: u64,
+    // Directory::open owns no-delete pins for the entire ancestor chain,
+    // including assets/month/record, even after CanonicalRoot is dropped.
+    _record: windows::Directory,
 }
 impl CanonicalRead {
     pub fn len(&self) -> u64 {
@@ -190,15 +197,30 @@ impl CanonicalRead {
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
-    pub fn read_all(mut self) -> std::io::Result<Vec<u8>> {
-        let mut bytes = Vec::with_capacity(self.len as usize);
-        (&mut self.file).take(self.len).read_to_end(&mut bytes)?;
-        if bytes.len() as u64 != self.len {
+    /// Read from the pinned, no-follow handle without consuming it. A writer may
+    /// change content through SHARE_WRITE, so callers must recheck immediately
+    /// before relying on this proof; the handle alone is not an immutable snapshot.
+    pub fn read_all_borrowed(&mut self) -> std::io::Result<Vec<u8>> {
+        if self.file.metadata()?.len() != self.len || self.len > MAX_CANONICAL_BYTES {
             return Err(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
+                std::io::ErrorKind::InvalidData,
+                "canonical length changed",
+            ));
+        }
+        self.file.seek(SeekFrom::Start(0))?;
+        let mut bytes = Vec::with_capacity(self.len as usize);
+        (&mut self.file)
+            .take(self.len + 1)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() as u64 != self.len || self.file.metadata()?.len() != self.len {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
                 "canonical changed",
             ));
         }
         Ok(bytes)
+    }
+    pub fn read_all(mut self) -> std::io::Result<Vec<u8>> {
+        self.read_all_borrowed()
     }
 }

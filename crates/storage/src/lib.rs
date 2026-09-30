@@ -18,7 +18,9 @@ pub mod staging_files;
 mod tests;
 
 use async_trait::async_trait;
-pub use recovery_candidate::{PrepareCandidateError, VerifiedCandidate};
+pub use recovery_candidate::{
+    PrepareCandidateError, PublishCandidateError, VerifiedCandidate, VerifiedPublished,
+};
 use rusqlite::{Connection, OpenFlags};
 use sm_application::storage::{
     warnings_to_json, AssetChunk, CommitImageCapture, CommittedImage, CreateCaptureIntent,
@@ -220,6 +222,10 @@ enum FileRequest {
         oneshot::Sender<Result<VerifiedCandidate, PrepareCandidateError>>,
         Box<match_recovery::DbValidatedIntent>,
         Box<staging_files::ReopenedV2>,
+    ),
+    PublishCandidate(
+        oneshot::Sender<Result<VerifiedPublished, PublishCandidateError>>,
+        VerifiedCandidate,
     ),
     Stop,
 }
@@ -495,6 +501,27 @@ impl StorageWorker {
             Err(_) => Err(PrepareCandidateError::Unavailable),
         }
     }
+    /// File-only canonical publication of a sealed, codec-verified candidate.
+    /// Same admission gate and single-slot FIFO as stage/reopen/encode. Cancellation
+    /// after admission cannot revoke the write; the returned proof is not Saved.
+    pub async fn publish_recovery_candidate(
+        &self,
+        candidate: VerifiedCandidate,
+    ) -> Result<VerifiedPublished, PublishCandidateError> {
+        let (tx, rx) = oneshot::channel();
+        let queued = {
+            let gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+            if gate.closing {
+                return Err(PublishCandidateError::Unavailable);
+            }
+            self.file_sender
+                .try_send(FileRequest::PublishCandidate(tx, candidate))
+        };
+        match queued {
+            Ok(()) => rx.await.unwrap_or(Err(PublishCandidateError::Unavailable)),
+            Err(_) => Err(PublishCandidateError::Unavailable),
+        }
+    }
     /// Read-only discovery on the scoped file lane, not the SQLite worker. Returned IDs
     /// remain untrusted; neither a manifest nor a DB receipt is validated or adopted.
     pub async fn enumerate_stage_candidates(
@@ -733,6 +760,9 @@ fn file_loop(
             }
             FileRequest::PrepareCandidate(tx, witness, reopened) => {
                 let _ = tx.send(recovery_candidate::prepare(witness, *reopened));
+            }
+            FileRequest::PublishCandidate(tx, candidate) => {
+                let _ = tx.send(recovery_candidate::publish(lease, candidate));
             }
             FileRequest::Probe(tx, operation_id) => {
                 let result = lease

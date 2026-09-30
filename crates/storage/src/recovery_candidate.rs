@@ -3,6 +3,8 @@ use crate::{match_recovery, staging_files::ReopenedV2};
 use sha2::{Digest, Sha256};
 use sm_codec::{encode_exact_lossless_verified, encoder_fingerprint, CodecError, RgbaImage};
 use sm_domain::{AssetId, LibraryId, OperationId, PrincipalId, RecordId};
+use sm_isolation::{CanonicalError, CanonicalPlan, CanonicalRead, HostLease};
+use std::io::Write;
 
 /// Temporary conservative pre-encode guard; this is NOT the normal 96 MP capture limit.
 pub const MAX_RECOVERY_CODEC_PIXELS: u64 = 1_048_576;
@@ -65,6 +67,96 @@ impl VerifiedCandidate {
             input.asset_id,
         )
     }
+}
+
+/// A file-lane result, not Saved or a DB reservation. Retains the sealed pending
+/// witness, candidate bytes, and a pinned no-follow handle. SHARE_WRITE means the
+/// handle does not freeze contents: a later SQL transaction MUST revalidate its
+/// still-pending row and call `revalidate` just before any Saved insertion.
+pub struct VerifiedPublished {
+    candidate: VerifiedCandidate,
+    final_handle: CanonicalRead,
+    newly_published: bool,
+}
+
+impl std::fmt::Debug for VerifiedPublished {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VerifiedPublished")
+            .field("newly_published", &self.newly_published)
+            .finish_non_exhaustive()
+    }
+}
+
+impl VerifiedPublished {
+    pub fn newly_published(&self) -> bool {
+        self.newly_published
+    }
+
+    /// Recheck the pinned file, not a name re-opened by an untrusted caller. This
+    /// must run on the file lane, never on the SQLite worker. It is not a lock on
+    /// the pending row and cannot alone issue a Saved receipt.
+    pub(crate) fn revalidate(&mut self) -> Result<(), PublishCandidateError> {
+        let bytes = self
+            .final_handle
+            .read_all_borrowed()
+            .map_err(|_| PublishCandidateError::IntegrityFailed)?;
+        if self.final_handle.len() != self.candidate.length
+            || bytes.len() as u64 != self.candidate.length
+            || Sha256::digest(&bytes).as_slice() != self.candidate.encoded_sha256.as_slice()
+            || bytes != self.candidate.encoded
+        {
+            return Err(PublishCandidateError::IntegrityFailed);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PublishCandidateError {
+    Unavailable,
+    Canonical(CanonicalError),
+    WriteFailed,
+    IntegrityFailed,
+}
+
+/// Derive the only canonical path from the sealed SQLite witness, never from
+/// stage input or retry wall clock. No cleanup, overwrite, adoption by name or
+/// database write is permitted. A failed attempt temp remains on disk.
+pub(crate) fn publish(
+    lease: &HostLease,
+    candidate: VerifiedCandidate,
+) -> Result<VerifiedPublished, PublishCandidateError> {
+    let trusted = candidate.witness.trusted();
+    let plan = CanonicalPlan::new(trusted.input.record_id, &trusted.planned_created_at_utc)
+        .map_err(PublishCandidateError::Canonical)?;
+    let root = lease
+        .canonical_root()
+        .map_err(PublishCandidateError::Canonical)?;
+    let newly_published = match root.begin(&plan) {
+        Ok(mut temp) => {
+            temp.write_all(&candidate.encoded)
+                .map_err(|_| PublishCandidateError::WriteFailed)?;
+            temp.sync_all()
+                .map_err(|_| PublishCandidateError::WriteFailed)?;
+            match temp.publish() {
+                Ok(()) => true,
+                Err(CanonicalError::Existing) => false,
+                Err(e) => return Err(PublishCandidateError::Canonical(e)),
+            }
+        }
+        Err(CanonicalError::Existing) => false,
+        Err(e) => return Err(PublishCandidateError::Canonical(e)),
+    };
+    let final_handle = root
+        .open_final(&plan)
+        .map_err(PublishCandidateError::Canonical)?;
+    let mut published = VerifiedPublished {
+        candidate,
+        final_handle,
+        newly_published,
+    };
+    published.revalidate()?;
+    Ok(published)
 }
 
 /// Execute only in the existing single-slot file lane after admission. The match ties
