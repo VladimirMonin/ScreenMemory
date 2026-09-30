@@ -24,8 +24,13 @@ const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
 const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 const LOCK_EXCLUSIVE_NOWAIT: u32 = 0x1 | 0x2; // LOCKFILE_FAIL_IMMEDIATELY | LOCKFILE_EXCLUSIVE_LOCK
 const DIRECTORY_OPEN: u32 = 0x0200_0000 | 0x0020_0000; // BACKUP_SEMANTICS | OPEN_REPARSE_POINT
-const REPARSE_POINT: u32 = 0x400;
-const DIRECTORY: u32 = 0x10;
+pub(super) const REPARSE_POINT: u32 = 0x400;
+pub(super) const DIRECTORY: u32 = 0x10;
+// Windows SDK minwinbase.h FILE_INFO_BY_HANDLE_CLASS, not a path-based FindFirstFile.
+const FILE_FULL_DIRECTORY_INFO: u32 = 14;
+const FILE_FULL_DIRECTORY_RESTART_INFO: u32 = 15;
+const NO_MORE_FILES: i32 = 18;
+const MAX_STAGING_ENTRIES: usize = 4096;
 const DRIVE_FIXED: u32 = 3;
 type Handle = *mut c_void;
 const INVALID: Handle = -1isize as Handle;
@@ -64,6 +69,12 @@ extern "system" {
         offset: *mut Overlapped,
     ) -> i32;
     fn GetFileInformationByHandle(handle: Handle, info: *mut FileInfo) -> i32;
+    fn GetFileInformationByHandleEx(
+        handle: Handle,
+        info_class: u32,
+        buffer: *mut c_void,
+        buffer_size: u32,
+    ) -> i32;
     fn GetFinalPathNameByHandleW(handle: Handle, buffer: *mut u16, len: u32, flags: u32) -> u32;
     fn GetVolumeInformationW(
         root: *const u16,
@@ -318,6 +329,90 @@ pub(super) fn staging_directory(data: &Directory) -> Result<Directory, StagingEr
         return Err(StagingError::UnsafeEntry);
     }
     Ok(root)
+}
+
+/// WinBase.h FILE_FULL_DIR_INFO: fixed header ends at offset 68 (FileName).
+/// GetFileInformationByHandleEx queries the retained directory HANDLE itself; it
+/// neither resolves a pathname nor opens child contents. NTFS names are <= 255 UTF-16
+/// units, so 4096 bytes can hold at least one complete record per native call.
+/// The first 4097th non-dot record fails closed. NTFS may also return . and ..;
+/// reserve two additional native queries for those records and one for EOF.
+pub(super) fn enumerate_staging(
+    root: &Directory,
+    mut visit: impl FnMut(&[u16], u32) -> Result<(), StagingError>,
+) -> Result<(), StagingError> {
+    let handle = root._handles.last().ok_or(StagingError::UnsafeEntry)?.0;
+    let mut count = 0usize;
+    for query in 0..=MAX_STAGING_ENTRIES + 2 {
+        // Aligned storage, zeroed on every call; no uninitialized bytes or raw paths escape.
+        let mut storage = [0u64; 512];
+        let ok = unsafe {
+            GetFileInformationByHandleEx(
+                handle,
+                if query == 0 {
+                    FILE_FULL_DIRECTORY_RESTART_INFO
+                } else {
+                    FILE_FULL_DIRECTORY_INFO
+                },
+                storage.as_mut_ptr().cast(),
+                std::mem::size_of_val(&storage) as u32,
+            )
+        };
+        if ok == 0 {
+            return if std::io::Error::last_os_error().raw_os_error() == Some(NO_MORE_FILES) {
+                Ok(())
+            } else {
+                Err(StagingError::EnumerationIncomplete)
+            };
+        }
+        let bytes = unsafe {
+            std::slice::from_raw_parts(
+                storage.as_ptr().cast::<u8>(),
+                std::mem::size_of_val(&storage),
+            )
+        };
+        let mut at = 0usize;
+        loop {
+            if at + 68 > bytes.len() {
+                return Err(StagingError::EnumerationIncomplete);
+            }
+            let field = |offset: usize| -> u32 {
+                u32::from_ne_bytes(bytes[at + offset..at + offset + 4].try_into().unwrap())
+            };
+            let next = field(0) as usize;
+            let attributes = field(56);
+            let name_len = field(60) as usize;
+            let end = at.checked_add(68).and_then(|n| n.checked_add(name_len));
+            if name_len == 0
+                || name_len > 510
+                || !name_len.is_multiple_of(2)
+                || end.is_none_or(|n| n > bytes.len())
+                || (next != 0
+                    && (next < 68 + name_len || !next.is_multiple_of(8) || at + next > bytes.len()))
+            {
+                return Err(StagingError::EnumerationIncomplete);
+            }
+            let end = end.unwrap();
+            let name: Vec<u16> = bytes[at + 68..end]
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|pair| u16::from_ne_bytes(*pair))
+                .collect();
+            if name != [b'.' as u16] && name != [b'.' as u16, b'.' as u16] {
+                if count == MAX_STAGING_ENTRIES {
+                    return Err(StagingError::EnumerationIncomplete);
+                }
+                count += 1;
+                visit(&name, attributes)?;
+            }
+            if next == 0 {
+                break;
+            }
+            at += next;
+        }
+    }
+    Err(StagingError::EnumerationIncomplete)
 }
 
 pub(super) fn create_operation_directory(

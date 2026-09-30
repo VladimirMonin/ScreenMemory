@@ -9,6 +9,7 @@ use sm_application::observability::{
 use std::io::Read;
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Component as PathComponent, Path};
+use std::sync::Mutex;
 mod windows;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -140,6 +141,7 @@ impl HostLease {
         Ok(StagingRoot {
             _lease: self,
             native,
+            scan: Mutex::new(()),
         })
     }
 }
@@ -154,12 +156,25 @@ pub enum StagingError {
     TooLarge,
     Full,
     AccessDenied,
+    /// The bounded scan cannot establish a complete candidate set; never treat as empty.
+    EnumerationIncomplete,
+}
+
+/// Read-only discovery only: IDs are untrusted candidates, not accepted manifests.
+/// Counts do not expose filenames or contents. No cleanup or durable status is implied.
+pub struct StagingCandidates {
+    pub ids: Vec<sm_domain::OperationId>,
+    pub malformed_entries: u32,
+    pub unsafe_entries: u32,
+    pub reparse_entries: u32,
 }
 
 /// No path or arbitrary filename is exported from this write authority.
 pub struct StagingRoot<'lease> {
     _lease: &'lease HostLease,
     native: windows::Directory,
+    // GetFileInformationByHandleEx restart/continuation share the HANDLE cursor.
+    scan: Mutex<()>,
 }
 impl<'lease> StagingRoot<'lease> {
     pub fn create_operation<'root>(
@@ -175,6 +190,58 @@ impl<'lease> StagingRoot<'lease> {
             _root: self,
             native,
         })
+    }
+
+    /// Enumerate only the pinned staging directory (at most 4096 non-dot entries;
+    /// 4099 native queries including optional . and .. plus EOF).
+    /// Each candidate is reopened no-follow before return.
+    /// The entire restart-to-EOF scan is exclusive to this root's shared HANDLE;
+    /// a poisoned lock fails closed, never claiming an empty or complete scan.
+    pub fn enumerate_candidates(&self) -> Result<StagingCandidates, StagingError> {
+        let _scan = self
+            .scan
+            .lock()
+            .map_err(|_| StagingError::EnumerationIncomplete)?;
+        let mut result = StagingCandidates {
+            ids: Vec::new(),
+            malformed_entries: 0,
+            unsafe_entries: 0,
+            reparse_entries: 0,
+        };
+        windows::enumerate_staging(&self.native, |name, attributes| {
+            // NTFS directory enumeration reports UTF-16 names, not manifest identities.
+            // Restrict to canonical lowercase hyphenated UUIDv4, including variant.
+            let parsed = String::from_utf16(name).ok().and_then(|text| {
+                if text.len() != 36 || !text.is_ascii() {
+                    return None;
+                }
+                let uuid = uuid::Uuid::parse_str(&text).ok()?;
+                (uuid.get_version_num() == 4
+                    && uuid.get_variant() == uuid::Variant::RFC4122
+                    && uuid.to_string() == text)
+                    .then_some(uuid)
+            });
+            if name == [b'.' as u16] || name == [b'.' as u16, b'.' as u16] {
+                return Ok(());
+            }
+            if attributes & windows::REPARSE_POINT != 0 {
+                result.reparse_entries += 1;
+            } else if attributes & windows::DIRECTORY == 0 {
+                result.unsafe_entries += 1;
+            } else if let Some(uuid) = parsed {
+                let id = sm_domain::OperationId::new(uuid);
+                match self.open_operation(id) {
+                    Ok(_pin) => result.ids.push(id),
+                    // Enumeration proved a canonical directory entry, but reopening it
+                    // failed: no complete, verified candidate set can be returned.
+                    Err(_) => return Err(StagingError::EnumerationIncomplete),
+                }
+            } else {
+                result.malformed_entries += 1;
+            }
+            Ok(())
+        })?;
+        Ok(result)
     }
 
     /// Reopen a known operation without adopting, creating or cleaning its contents.
