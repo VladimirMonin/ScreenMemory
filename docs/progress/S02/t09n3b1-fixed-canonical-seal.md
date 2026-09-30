@@ -1,0 +1,25 @@
+# S02-T09n3b1 — fixed canonical write-denying HANDLE (candidate)
+
+Baseline: clean HEAD `8d1d56a`; code and tests only in `sm-isolation`/`sm-storage`; instructions updated. Nine source plans, images/SQL/host, staging inspect, n3a API preserved. No stage/commit, no live root, GUI, donor, model or network.
+
+`CanonicalRead::seal(self)` retains its old no-follow read and assets/month/record pins until `CreateFileW` opens **only** `original.webp` with `FILE_READ_DATA|FILE_READ_ATTRIBUTES`, `FILE_SHARE_READ`, `OPEN_EXISTING|FILE_FLAG_OPEN_REPARSE_POINT`. Native check compares old/new NTFS volume/file identity, single link, no directory/reparse, exact old length and 128 MiB ceiling; all refusals consume the old proof. `CanonicalSeal` is non-Clone; repeated bounded reads use that HANDLE. `StorageWorker::seal_recovery_published(VerifiedPublished)` consumes the n3a result in the existing bounded FIFO file lane; non-Clone `SealedPublished` holds sealed candidate/private pending witness+file/ancestors and rechecks exact length, SHA-256 and bytes. No public constructor, arbitrary pathname, DB write, Saved, or durable receipt. Disconnected/cancelled waiter drops sealed handle. Generic staging `inspect_fixed` remains unchanged with SHARE_WRITE.
+
+Synthetic UUIDv4 fixture probes: prior WRITE HANDLE (READ|WRITE share) makes seal fail; after close seal succeeds. While held, ordinary write/truncate/rename/delete of final and rename/remove of record/month/assets fail and bytes remain; after drop, write, rename/delete final succeed, and after root pins release ancestor rename succeeds. Existing and new junction/hardlink/symlink checks reject unsafe entries with outside sentinel preserved. Symlink privileges: if Windows returns raw 5/1314, probe reports `NOT_RUN` with that raw code rather than treating junction as substitute. Exact current native run succeeded for this machine; no privilege substitution required.
+
+**Mapping challenge:** explicit `CreateFileMappingW(PAGE_READWRITE)` and `MapViewOfFile(FILE_MAP_WRITE)` on a WRITE file HANDLE, then close that HANDLE while keeping the writable view. On this NTFS run: `seal=REFUSED reason=UnsafeEntry`, `mapped_mutation=true`, `SQL_INVARIANT=BLOCKED_UNCONDITIONAL` (raw test output); mutation happened **after refused seal**, not under an acquired seal. Fail-closed refusal prevents issuing a seal in this case; it does not establish that *all* existing mappings across Windows/runtime variations are detected. If any writable view can mutate during a successful seal, the future Saved/SQL invariant is **BLOCKED**; unconditional `pending→Saved` SQL is **BLOCKED** even here pending independent transaction/threat-model decision; production F06/F07 are explicitly **NOT_RUN**. This is not a same-user/admin/raw-volume/kernel sandbox, universal immutable snapshot, or atomic filesystem+SQLite transaction. Preexisting capabilities, mapping, RSS <=1 GiB/native libwebp scratch, process-kill/power-loss/directory durability are NOT_PROVEN. No F06/F07 process-kill, SQL commit, retry/startup or host integration was run.
+
+Checks, Windows x64 offline pinned project toolchain with process-local MSVC environment; all command exit codes raw:
+
+| Command | Exit | Evidence |
+|---|---:|---|
+| `.pi/t09a-run.cmd test --offline --locked -p sm-isolation --test canonical t09n3b -- --test-threads=1 --nocapture` | 0 | 3/3, mapping refusal+mutable view printed |
+| `.pi/t09a-run.cmd test --offline --locked -p sm-storage --lib s02_t09n3b -- --test-threads=1 --nocapture` | 0 | 1/1 file-lane sealed witness/no Saved |
+| `.pi/t09a-run.cmd test --offline --locked -p sm-isolation -p sm-storage -p sm-codec -- --test-threads=1 --nocapture` | 0 | storage 111, isolation native and codec/doc tests; earlier run before final test-only post-drop assertions |
+| `.pi/t09a-run.cmd test --workspace --offline --locked --quiet -- --test-threads=1` | 0 | serialized workspace before final mapping diagnostic-label-only edit; one preexisting ignored test |
+| `.pi/t09a-run.cmd clippy --workspace --all-targets --offline --locked -- -D warnings` | 101 then 0 | initial `len_without_is_empty`; fixed and reran PASS |
+| `rustfmt --edition 2021 --config skip_children=true --check` seven scoped Rust paths | 0 | scoped format, then final test-only formatting and focused re-run |
+| `python tests/contracts/check_boundaries.py` | 0 | 15 crate boundaries |
+| `powershell.exe -NoProfile -NonInteractive -File scripts/verify-contracts.ps1` | 0 | implemented contract subset PASS, S01 IN_PROGRESS |
+| `git diff --check`; `git diff --cached --name-only` | 0; 0 | whitespace clean, no staged files |
+
+Focused tests after final diagnostic-label-only edit: 3/3 exit 0; serialized workspace rerun before this last label-only edit: exit 0. Independent review and commit belong to integrator. Full `cargo fmt --all -- --check` has known preexisting formatting drift in unrelated untouched files per n3a evidence; this slice uses scoped rustfmt only. Nine plan hashes validated by contract runner (`PLAN-HASH-PRE/POST`).

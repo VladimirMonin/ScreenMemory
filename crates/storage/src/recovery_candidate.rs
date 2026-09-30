@@ -3,7 +3,7 @@ use crate::{match_recovery, staging_files::ReopenedV2};
 use sha2::{Digest, Sha256};
 use sm_codec::{encode_exact_lossless_verified, encoder_fingerprint, CodecError, RgbaImage};
 use sm_domain::{AssetId, LibraryId, OperationId, PrincipalId, RecordId};
-use sm_isolation::{CanonicalError, CanonicalPlan, CanonicalRead, HostLease};
+use sm_isolation::{CanonicalError, CanonicalPlan, CanonicalRead, CanonicalSeal, HostLease};
 use std::io::Write;
 
 /// Temporary conservative pre-encode guard; this is NOT the normal 96 MP capture limit.
@@ -96,19 +96,70 @@ impl VerifiedPublished {
     /// must run on the file lane, never on the SQLite worker. It is not a lock on
     /// the pending row and cannot alone issue a Saved receipt.
     pub(crate) fn revalidate(&mut self) -> Result<(), PublishCandidateError> {
-        let bytes = self
-            .final_handle
-            .read_all_borrowed()
-            .map_err(|_| PublishCandidateError::IntegrityFailed)?;
-        if self.final_handle.len() != self.candidate.length
-            || bytes.len() as u64 != self.candidate.length
-            || Sha256::digest(&bytes).as_slice() != self.candidate.encoded_sha256.as_slice()
-            || bytes != self.candidate.encoded
-        {
-            return Err(PublishCandidateError::IntegrityFailed);
-        }
-        Ok(())
+        compare_bytes(
+            &self.candidate,
+            self.final_handle.len(),
+            self.final_handle.read_all_borrowed(),
+        )
     }
+
+    /// One-shot file-lane transition; even failure consumes the old proof.
+    pub(crate) fn seal(self) -> Result<SealedPublished, PublishCandidateError> {
+        let final_handle = self
+            .final_handle
+            .seal()
+            .map_err(PublishCandidateError::Canonical)?;
+        let mut sealed = SealedPublished {
+            candidate: self.candidate,
+            final_handle,
+            newly_published: self.newly_published,
+        };
+        sealed.revalidate()?;
+        Ok(sealed)
+    }
+}
+
+/// Non-Clone pending witness and fixed write-denying HANDLE. No DB write or
+/// Saved authority; an existing mapped view may still mutate these bytes.
+pub struct SealedPublished {
+    candidate: VerifiedCandidate,
+    final_handle: CanonicalSeal,
+    newly_published: bool,
+}
+impl std::fmt::Debug for SealedPublished {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SealedPublished")
+            .field("newly_published", &self.newly_published)
+            .finish_non_exhaustive()
+    }
+}
+impl SealedPublished {
+    pub fn newly_published(&self) -> bool {
+        self.newly_published
+    }
+    pub(crate) fn revalidate(&mut self) -> Result<(), PublishCandidateError> {
+        compare_bytes(
+            &self.candidate,
+            self.final_handle.len(),
+            self.final_handle.read_all_borrowed(),
+        )
+    }
+}
+
+fn compare_bytes(
+    candidate: &VerifiedCandidate,
+    len: u64,
+    read: std::io::Result<Vec<u8>>,
+) -> Result<(), PublishCandidateError> {
+    let bytes = read.map_err(|_| PublishCandidateError::IntegrityFailed)?;
+    if len != candidate.length
+        || bytes.len() as u64 != candidate.length
+        || Sha256::digest(&bytes).as_slice() != candidate.encoded_sha256.as_slice()
+        || bytes != candidate.encoded
+    {
+        return Err(PublishCandidateError::IntegrityFailed);
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

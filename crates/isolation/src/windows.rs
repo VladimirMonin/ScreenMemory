@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 // with no FILE_SHARE_DELETE reject ordinary leaf/ancestor renames.
 const FILE_LIST_DIRECTORY: u32 = 0x1;
 const FILE_READ_ATTRIBUTES: u32 = 0x80;
+const FILE_READ_DATA: u32 = 0x1;
+const SHARE_READ_ONLY: u32 = 0x1;
 const DIRECTORY_READ: u32 = FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES;
 // No FILE_SHARE_DELETE: every retained ancestor and root is rename/delete pinned.
 // A conflicting pre-existing DELETE handle makes resolution fail closed.
@@ -552,6 +554,42 @@ pub(super) fn open_fixed(
     leaf: &str,
 ) -> Result<(std::fs::File, u64), StagingError> {
     inspect_fixed(root, leaf)
+}
+
+/// Canonical original only: acquire the write-denying share while the old read
+/// and its ancestor pins remain live. Do not change staging's shared inspect.
+pub(super) fn seal_original(
+    root: &Directory,
+    previous: &std::fs::File,
+    expected_len: u64,
+) -> Result<(std::fs::File, u64), StagingError> {
+    let old = file_info(previous.as_raw_handle(), root)?;
+    let old_len = (u64::from(old.nFileSizeHigh) << 32) | u64::from(old.nFileSizeLow);
+    if old_len != expected_len {
+        return Err(StagingError::UnsafeEntry);
+    }
+    let name = wide(root.path.join("original.webp").as_os_str());
+    let raw = unsafe {
+        CreateFileW(
+            name.as_ptr(),
+            FILE_READ_DATA | FILE_READ_ATTRIBUTES,
+            SHARE_READ_ONLY,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            OPEN_REPARSE_POINT,
+            std::ptr::null_mut(),
+        )
+    };
+    if raw == INVALID {
+        return Err(staging_io(std::io::Error::last_os_error()));
+    }
+    let sealed = OwnedHandle(raw);
+    let info = file_info(sealed.0, root)?;
+    let len = (u64::from(info.nFileSizeHigh) << 32) | u64::from(info.nFileSizeLow);
+    if identity(&info) != identity(&old) || len != expected_len {
+        return Err(StagingError::UnsafeEntry);
+    }
+    Ok((sealed.into_file(), len))
 }
 
 pub(super) fn publish_temp(

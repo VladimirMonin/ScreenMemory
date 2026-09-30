@@ -13,7 +13,8 @@ use std::sync::Mutex;
 mod canonical;
 mod windows;
 pub use canonical::{
-    CanonicalError, CanonicalPlan, CanonicalRead, CanonicalRoot, CanonicalTemp, MAX_CANONICAL_BYTES,
+    CanonicalError, CanonicalPlan, CanonicalRead, CanonicalRoot, CanonicalSeal, CanonicalTemp,
+    MAX_CANONICAL_BYTES,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

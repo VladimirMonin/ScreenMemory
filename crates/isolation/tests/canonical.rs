@@ -6,6 +6,7 @@ use sm_isolation::{
 use std::{
     fs,
     io::Write,
+    os::windows::{fs::OpenOptionsExt, io::AsRawHandle},
     path::{Path, PathBuf},
 };
 use uuid::Uuid;
@@ -64,6 +65,18 @@ fn junction(link: &Path, target: &Path) {
         output.status.code()
     );
 }
+fn published_fixture(
+    f: &Fixture,
+    root: &sm_isolation::CanonicalRoot<'_>,
+) -> (CanonicalPlan, PathBuf) {
+    let p = plan();
+    let mut temp = root.begin(&p).unwrap();
+    temp.write_all(b"SEALED-SYNTHETIC").unwrap();
+    temp.sync_all().unwrap();
+    temp.publish().unwrap();
+    (p, only_record(&f.assets()).join("original.webp"))
+}
+
 fn remove_junction(link: &Path) {
     let status = std::process::Command::new("cmd.exe")
         .args(["/d", "/c", "rmdir"])
@@ -71,6 +84,187 @@ fn remove_junction(link: &Path) {
         .status()
         .unwrap();
     assert_eq!(status.code(), Some(0));
+}
+
+#[test]
+fn t09n3b_write_denial_pins_and_release() {
+    let f = Fixture::new();
+    let lease = f.lease();
+    let root = lease.canonical_root().unwrap();
+    let (p, path) = published_fixture(&f, &root);
+    let prior = fs::OpenOptions::new()
+        .write(true)
+        .share_mode(3)
+        .open(&path)
+        .unwrap();
+    assert!(root.open_final(&p).unwrap().seal().is_err());
+    drop(prior);
+    let mut seal = root.open_final(&p).unwrap().seal().unwrap();
+    assert_eq!(seal.read_all_borrowed().unwrap(), b"SEALED-SYNTHETIC");
+    assert!(fs::write(&path, b"MUTATED").is_err());
+    assert!(fs::OpenOptions::new().write(true).open(&path).is_err());
+    assert!(fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&path)
+        .is_err());
+    assert!(fs::rename(&path, path.with_extension("moved")).is_err());
+    assert!(fs::remove_file(&path).is_err());
+    let assets = f.assets();
+    for dir in [
+        path.parent().unwrap(),
+        path.parent().unwrap().parent().unwrap(),
+        assets.as_path(),
+    ] {
+        assert!(fs::rename(dir, dir.with_extension("moved")).is_err());
+        assert!(fs::remove_dir(dir).is_err());
+    }
+    assert_eq!(seal.read_all_borrowed().unwrap(), b"SEALED-SYNTHETIC");
+    drop(seal);
+    fs::write(&path, b"AFTER-DROP").unwrap();
+    assert_eq!(fs::read(&path).unwrap(), b"AFTER-DROP");
+    let moved_file = path.with_extension("moved");
+    fs::rename(&path, &moved_file).unwrap();
+    fs::rename(&moved_file, &path).unwrap();
+    fs::remove_file(&path).unwrap();
+    fs::write(&path, b"RESTORED").unwrap();
+    drop(root);
+    for dir in [
+        path.parent().unwrap(),
+        path.parent().unwrap().parent().unwrap(),
+        assets.as_path(),
+    ] {
+        let moved = dir.with_extension("moved");
+        fs::rename(dir, &moved).unwrap();
+        fs::rename(&moved, dir).unwrap();
+    }
+}
+
+#[test]
+fn t09n3b_unsafe_fixed_entries_refused() {
+    let f = Fixture::new();
+    let outside = f.0.join("outside");
+    fs::create_dir(&outside).unwrap();
+    let sentinel = outside.join("sentinel");
+    fs::write(&sentinel, b"KEEP").unwrap();
+    let lease = f.lease();
+    let root = lease.canonical_root().unwrap();
+    let p = plan();
+    let record_id = Uuid::new_v4();
+    let junction_plan =
+        CanonicalPlan::new(RecordId::new(record_id), "2026-09-28T09:00:00.000Z").unwrap();
+    let month = f.assets().join("2026-09");
+    fs::create_dir(&month).unwrap();
+    let record = month.join(record_id.to_string());
+    junction(&record, &outside);
+    assert!(root.open_final(&junction_plan).is_err());
+    remove_junction(&record);
+    let mut temp = root.begin(&p).unwrap();
+    temp.write_all(b"ORIGINAL").unwrap();
+    temp.sync_all().unwrap();
+    temp.publish().unwrap();
+    let final_path = fs::read_dir(&month)
+        .unwrap()
+        .map(|entry| entry.unwrap().path().join("original.webp"))
+        .find(|path| path.exists())
+        .unwrap();
+    let linked = outside.join("linked");
+    fs::hard_link(&final_path, &linked).unwrap();
+    assert!(root.open_final(&p).is_err());
+    fs::remove_file(&linked).unwrap();
+    fs::remove_file(&final_path).unwrap();
+    match std::os::windows::fs::symlink_file(&sentinel, &final_path) {
+        Ok(()) => {
+            assert!(root.open_final(&p).is_err());
+            fs::remove_file(&final_path).unwrap();
+        }
+        Err(e) if matches!(e.raw_os_error(), Some(5 | 1314)) => {
+            eprintln!("T09N3B-SYMLINK NOT_RUN raw OS code {:?}", e.raw_os_error())
+        }
+        Err(e) => panic!(
+            "T09N3B-SYMLINK unexpected raw OS code {:?}",
+            e.raw_os_error()
+        ),
+    }
+    assert_eq!(fs::read(&sentinel).unwrap(), b"KEEP");
+}
+
+#[test]
+fn t09n3b_closed_handle_live_writable_mapping_probe() {
+    use std::ffi::c_void;
+    type Handle = *mut c_void;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn CreateFileMappingW(
+            file: Handle,
+            attrs: *const c_void,
+            protect: u32,
+            high: u32,
+            low: u32,
+            name: *const u16,
+        ) -> Handle;
+        fn MapViewOfFile(
+            mapping: Handle,
+            access: u32,
+            high: u32,
+            low: u32,
+            length: usize,
+        ) -> *mut u8;
+        fn UnmapViewOfFile(view: *const c_void) -> i32;
+        fn CloseHandle(handle: Handle) -> i32;
+    }
+    let f = Fixture::new();
+    let lease = f.lease();
+    let root = lease.canonical_root().unwrap();
+    let (p, path) = published_fixture(&f, &root);
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .share_mode(3)
+        .open(&path)
+        .unwrap();
+    let mapping = unsafe {
+        CreateFileMappingW(
+            file.as_raw_handle(),
+            std::ptr::null(),
+            4,
+            0,
+            0,
+            std::ptr::null(),
+        )
+    };
+    assert!(
+        !mapping.is_null(),
+        "CreateFileMappingW raw OS code {:?}",
+        std::io::Error::last_os_error().raw_os_error()
+    );
+    let view = unsafe { MapViewOfFile(mapping, 0x2, 0, 0, 0) };
+    assert!(
+        !view.is_null(),
+        "MapViewOfFile raw OS code {:?}",
+        std::io::Error::last_os_error().raw_os_error()
+    );
+    drop(file); // Explicitly close original writable HANDLE, retain writable view.
+    let sealed = root.open_final(&p).unwrap().seal();
+    let before = fs::read(&path).unwrap();
+    unsafe { *view = b'X' }; // Same length, through the live writable view.
+    let after = fs::read(&path).unwrap();
+    let changed = after != before;
+    match sealed {
+        Ok(mut seal) => {
+            let held = seal.read_all_borrowed().unwrap();
+            eprintln!("T09N3B-MAPPING seal=OK mapped_mutation={changed} SQL_INVARIANT={}", if changed { "BLOCKED" } else { "NOT_PROVEN" });
+            assert_eq!(held, after);
+            drop(seal);
+        }
+        Err(error) => eprintln!("T09N3B-MAPPING seal=REFUSED reason={error:?} mapped_mutation={changed} SQL_INVARIANT=BLOCKED_UNCONDITIONAL"),
+    }
+    assert!(
+        changed,
+        "mapped write not visible; inspect Win32 runtime behavior"
+    );
+    assert_ne!(unsafe { UnmapViewOfFile(view.cast()) }, 0);
+    assert_ne!(unsafe { CloseHandle(mapping) }, 0);
 }
 
 #[test]

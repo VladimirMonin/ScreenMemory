@@ -223,4 +223,54 @@ impl CanonicalRead {
     pub fn read_all(mut self) -> std::io::Result<Vec<u8>> {
         self.read_all_borrowed()
     }
+
+    /// Consume the pinned old read while opening fixed original.webp with a
+    /// write-denying share. Failure releases both; no stale proof can be reused.
+    pub fn seal(self) -> Result<CanonicalSeal, CanonicalError> {
+        let (file, len) = windows::seal_original(&self._record, &self.file, self.len)?;
+        if len > MAX_CANONICAL_BYTES {
+            return Err(CanonicalError::TooLarge);
+        }
+        Ok(CanonicalSeal {
+            file,
+            len,
+            _record: self._record,
+        })
+    }
+}
+
+/// Non-Clone fixed canonical HANDLE and complete no-delete ancestor pin chain.
+/// Share denial is not a sandbox and does not revoke preexisting writable views.
+pub struct CanonicalSeal {
+    file: std::fs::File,
+    len: u64,
+    _record: windows::Directory,
+}
+impl CanonicalSeal {
+    pub fn len(&self) -> u64 {
+        self.len
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+    pub fn read_all_borrowed(&mut self) -> std::io::Result<Vec<u8>> {
+        if self.len > MAX_CANONICAL_BYTES || self.file.metadata()?.len() != self.len {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "canonical length changed",
+            ));
+        }
+        self.file.seek(SeekFrom::Start(0))?;
+        let mut bytes = Vec::with_capacity(self.len as usize);
+        (&mut self.file)
+            .take(self.len + 1)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() as u64 != self.len || self.file.metadata()?.len() != self.len {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "canonical changed",
+            ));
+        }
+        Ok(bytes)
+    }
 }

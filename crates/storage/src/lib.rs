@@ -19,7 +19,8 @@ mod tests;
 
 use async_trait::async_trait;
 pub use recovery_candidate::{
-    PrepareCandidateError, PublishCandidateError, VerifiedCandidate, VerifiedPublished,
+    PrepareCandidateError, PublishCandidateError, SealedPublished, VerifiedCandidate,
+    VerifiedPublished,
 };
 use rusqlite::{Connection, OpenFlags};
 use sm_application::storage::{
@@ -226,6 +227,10 @@ enum FileRequest {
     PublishCandidate(
         oneshot::Sender<Result<VerifiedPublished, PublishCandidateError>>,
         VerifiedCandidate,
+    ),
+    SealPublished(
+        oneshot::Sender<Result<SealedPublished, PublishCandidateError>>,
+        VerifiedPublished,
     ),
     Stop,
 }
@@ -522,6 +527,30 @@ impl StorageWorker {
             Err(_) => Err(PublishCandidateError::Unavailable),
         }
     }
+    /// One-shot write-denying fixed canonical HANDLE acquisition and byte recheck.
+    /// No SQL or Saved; cancellation after admission releases the returned handle.
+    /// ```compile_fail
+    /// use sm_storage::SealedPublished;
+    /// fn forge() -> SealedPublished { SealedPublished { newly_published: true } }
+    /// ```
+    pub async fn seal_recovery_published(
+        &self,
+        published: VerifiedPublished,
+    ) -> Result<SealedPublished, PublishCandidateError> {
+        let (tx, rx) = oneshot::channel();
+        let queued = {
+            let gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+            if gate.closing {
+                return Err(PublishCandidateError::Unavailable);
+            }
+            self.file_sender
+                .try_send(FileRequest::SealPublished(tx, published))
+        };
+        match queued {
+            Ok(()) => rx.await.unwrap_or(Err(PublishCandidateError::Unavailable)),
+            Err(_) => Err(PublishCandidateError::Unavailable),
+        }
+    }
     /// Read-only discovery on the scoped file lane, not the SQLite worker. Returned IDs
     /// remain untrusted; neither a manifest nor a DB receipt is validated or adopted.
     pub async fn enumerate_stage_candidates(
@@ -763,6 +792,9 @@ fn file_loop(
             }
             FileRequest::PublishCandidate(tx, candidate) => {
                 let _ = tx.send(recovery_candidate::publish(lease, candidate));
+            }
+            FileRequest::SealPublished(tx, published) => {
+                let _ = tx.send(published.seal());
             }
             FileRequest::Probe(tx, operation_id) => {
                 let result = lease

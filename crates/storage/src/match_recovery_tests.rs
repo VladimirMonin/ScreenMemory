@@ -802,6 +802,76 @@ fn s02_t09n3a_01_new_restart_existing_and_post_publish_fault() {
 }
 
 #[test]
+fn s02_t09n3b_01_file_lane_one_shot_seal_refuses_prior_writer() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let f = Fixture::new();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let worker = StorageWorker::start(f.lease()).unwrap();
+        let library = LibraryId::new(worker.schema_snapshot().await.unwrap().library_id);
+        let pixels = vec![19u8; 24];
+        let mut i = input(library, &pixels);
+        i.encoder_fingerprint = sm_codec::encoder_fingerprint();
+        let CreateIntentOutcome::Created(pending) =
+            worker.create_capture_intent(i.clone()).await.unwrap()
+        else {
+            panic!("created")
+        };
+        worker
+            .stage_capture_owned_v2(stage(&i, pixels))
+            .await
+            .unwrap();
+        let published = worker
+            .publish_recovery_candidate(recovery_candidate(&worker, &i).await)
+            .await
+            .unwrap();
+        let path =
+            f.0.join("assets")
+                .join(&pending.planned_created_at_utc[..7])
+                .join(i.record_id.as_uuid().to_string())
+                .join("original.webp");
+        let original = fs::read(&path).unwrap();
+        let prior = fs::OpenOptions::new()
+            .write(true)
+            .share_mode(3)
+            .open(&path)
+            .unwrap();
+        assert!(matches!(
+            worker.seal_recovery_published(published).await,
+            Err(PublishCandidateError::Canonical(_))
+        ));
+        drop(prior);
+        let published = worker
+            .publish_recovery_candidate(recovery_candidate(&worker, &i).await)
+            .await
+            .unwrap();
+        assert!(!published.newly_published());
+        let sealed = worker.seal_recovery_published(published).await.unwrap();
+        assert!(!sealed.newly_published());
+        assert!(fs::write(&path, b"MUTATE").is_err());
+        assert_eq!(fs::read(&path).unwrap(), original);
+        drop(sealed);
+        fs::write(&path, &original).unwrap();
+        assert_eq!(
+            worker
+                .lookup_operation(
+                    OperationId::new(i.request.operation_id()),
+                    i.principal_id,
+                    i.request.target()
+                )
+                .await
+                .unwrap(),
+            LookupOutcome::Unknown
+        );
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        pending_and_no_saved(&f);
+    });
+}
+
+#[test]
 fn s02_t09n3a_02_same_length_different_bytes_and_oversize_refused() {
     let f = Fixture::new();
     let rt = tokio::runtime::Builder::new_current_thread()
