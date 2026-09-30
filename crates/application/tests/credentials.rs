@@ -171,6 +171,11 @@ fn s01_cred_03_profiles_and_modes_never_escalate_by_client_kind() {
         assert!(!handler_called);
     }
     assert!(authorize(&ctx, Scope::ReadStatus, || 7).is_ok());
+    assert!(authorize(&owner_ctx, Scope::ListRecords, || ()).is_ok());
+    assert_eq!(
+        authorize(&ctx, Scope::ListRecords, || ()),
+        Err(CredentialError::PermissionDenied)
+    );
     assert_eq!(
         authenticate(&policy, id(4), &Secret::from_bytes(vec![0; 33])).err(),
         Some(CredentialError::PermissionDenied)
