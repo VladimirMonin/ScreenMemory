@@ -1,7 +1,9 @@
 //! Application-facing storage snapshots only; no connection, SQL or path authority.
+use crate::capture::CaptureRequest;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sm_domain::{AssetId, RecordId};
+use sm_domain::{LibraryId, PrincipalId};
 use uuid::Uuid;
 
 /// Canonical format vocabulary of the images schema (S02: WebP lossless only).
@@ -457,6 +459,49 @@ pub enum LookupOutcome {
     Conflict,
 }
 
+/// Trusted, path-free input for a pending capture intent. The pixel digest refers to
+/// the same retained packed RGBA buffer that a future host will stage; this API does
+/// not stage it or claim durable input.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CreateCaptureIntent {
+    pub library_id: LibraryId,
+    pub principal_id: PrincipalId,
+    pub request: CaptureRequest,
+    pub record_id: RecordId,
+    pub asset_id: AssetId,
+    pub frame_id: Uuid,
+    pub width: u32,
+    pub height: u32,
+    pub pixel_sha256: String,
+    pub context: CaptureContext,
+    pub warnings: Vec<String>,
+    pub encoder_fingerprint: String,
+    pub captured_at_utc: String,
+}
+
+/// An authenticated pending identity and its validated input, never a saved receipt.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingCaptureIntent {
+    pub input: CreateCaptureIntent,
+    /// SQLite UTC clock within the create transaction; not taken from staging.
+    pub planned_created_at_utc: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CreateIntentOutcome {
+    Created(Box<PendingCaptureIntent>),
+    Existing(Box<PendingCaptureIntent>),
+    /// Saved, foreign or mismatched request: no stored metadata disclosed.
+    Conflict,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ReadIntentOutcome {
+    Pending(Box<PendingCaptureIntent>),
+    Unknown,
+    Conflict,
+}
+
 /// One bounded chunk of a committed canonical asset; the digest covers the whole file.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AssetChunk {
@@ -487,6 +532,18 @@ pub trait FoundationRepository: Send + Sync {
         principal_id: sm_domain::PrincipalId,
         mode: CaptureTarget,
     ) -> Result<LookupOutcome, StorageError>;
+    /// Create exactly one pending identity, or return the identical owned row.
+    async fn create_capture_intent(
+        &self,
+        input: CreateCaptureIntent,
+    ) -> Result<CreateIntentOutcome, StorageError>;
+    /// Read only a pending row matching this trusted principal and capture request.
+    async fn read_capture_intent(
+        &self,
+        library_id: LibraryId,
+        principal_id: PrincipalId,
+        request: CaptureRequest,
+    ) -> Result<ReadIntentOutcome, StorageError>;
     /// Bounded, snapshot-stable page of committed records with their assets.
     async fn page_records(&self, query: RecordPageQuery) -> Result<Page<Record>, StorageError>;
     /// Read one bounded chunk of a committed canonical asset. The path is never supplied

@@ -6,6 +6,9 @@ mod file_lane_tests;
 #[cfg(test)]
 mod image_tests;
 mod images;
+#[cfg(test)]
+mod intent_tests;
+mod intents;
 mod migration;
 pub mod staging;
 pub mod staging_files;
@@ -15,11 +18,12 @@ mod tests;
 use async_trait::async_trait;
 use rusqlite::{Connection, OpenFlags};
 use sm_application::storage::{
-    warnings_to_json, AssetChunk, CommitImageCapture, CommittedImage, FoundationRepository,
-    LookupOutcome, Page, Record, RecordPageQuery, SchemaSnapshot, StorageError,
+    warnings_to_json, AssetChunk, CommitImageCapture, CommittedImage, CreateCaptureIntent,
+    CreateIntentOutcome, FoundationRepository, LookupOutcome, Page, ReadIntentOutcome, Record,
+    RecordPageQuery, SchemaSnapshot, StorageError,
 };
 use sm_application::{
-    capture::{MAX_CAPTURE_PIXELS, MAX_CAPTURE_SIDE},
+    capture::{CaptureRequest, MAX_CAPTURE_PIXELS, MAX_CAPTURE_SIDE},
     storage::{CaptureContext, CaptureTarget},
 };
 use sm_domain::{AssetId, LibraryId, OperationId, PrincipalId, RecordId};
@@ -233,6 +237,13 @@ enum Request {
     SqliteVersion(Response<String>),
     CommitImage(Response<CommittedImage>, Box<CommitImageCapture>),
     LookupOperation(Response<LookupOutcome>, String, String, String),
+    CreateIntent(Response<CreateIntentOutcome>, Box<CreateCaptureIntent>),
+    ReadIntent(
+        Response<ReadIntentOutcome>,
+        LibraryId,
+        PrincipalId,
+        CaptureRequest,
+    ),
     PageRecords(Response<Page<Record>>, RecordPageQuery),
     ReadAssetChunk(Response<AssetChunk>, String, u64, u32),
     #[cfg(test)]
@@ -594,6 +605,12 @@ fn run(db: Connection, receiver: Receiver<Request>, assets: PathBuf, fault: Faul
                     });
                 let _ = tx.send(result);
             }
+            Request::CreateIntent(tx, input) => {
+                let _ = tx.send(intents::create(&mut db, *input));
+            }
+            Request::ReadIntent(tx, library, principal, request) => {
+                let _ = tx.send(intents::read(&db, library, principal, request));
+            }
             Request::PageRecords(tx, query) => {
                 let _ = tx.send(images::page_records(&db, query));
             }
@@ -783,6 +800,22 @@ impl FoundationRepository for StorageWorker {
             )
         })
         .await
+    }
+    async fn create_capture_intent(
+        &self,
+        input: CreateCaptureIntent,
+    ) -> Result<CreateIntentOutcome, StorageError> {
+        self.ask(|tx| Request::CreateIntent(tx, Box::new(input)))
+            .await
+    }
+    async fn read_capture_intent(
+        &self,
+        library_id: LibraryId,
+        principal_id: PrincipalId,
+        request: CaptureRequest,
+    ) -> Result<ReadIntentOutcome, StorageError> {
+        self.ask(|tx| Request::ReadIntent(tx, library_id, principal_id, request))
+            .await
     }
     async fn page_records(&self, query: RecordPageQuery) -> Result<Page<Record>, StorageError> {
         self.ask(|tx| Request::PageRecords(tx, query)).await

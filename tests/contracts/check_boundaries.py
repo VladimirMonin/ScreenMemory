@@ -112,7 +112,16 @@ assert 'rusqlite::' not in (root / 'crates/application/src/storage.rs').read_tex
 # S02 images storage: the owner keeps its single writer, the canonical file layout and
 # the closed canonical-format vocabulary; the codec never reaches the filesystem.
 storage_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/storage/src').rglob('*.rs')}
-assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_files.rs', 'staging_tests.rs', 'staging_recovery_tests.rs', 'staging_files_tests.rs', 'file_lane_tests.rs', 'tests.rs', 'image_tests.rs'}
+assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_files.rs', 'staging_tests.rs', 'staging_recovery_tests.rs', 'staging_files_tests.rs', 'file_lane_tests.rs', 'tests.rs', 'image_tests.rs', 'intents.rs', 'intent_tests.rs'}
+# T09m2: only the SQLite worker receives the path-free intent request; read scopes
+# principal/mode/request before projecting row contents and never writes stage/canonical.
+assert 'CreateIntent(' in storage_sources['lib.rs'] and 'intents::create(&mut db' in storage_sources['lib.rs']
+assert 'ReadIntent(' in storage_sources['lib.rs'] and 'intents::read(&db' in storage_sources['lib.rs']
+assert 'transaction_with_behavior(TransactionBehavior::Immediate)' in storage_sources['intents.rs']
+assert storage_sources['intents.rs'].index('if saved(&tx') < storage_sources['intents.rs'].index('library(&tx')
+assert 'request_fingerprint(&input.request)' in storage_sources['intents.rs']
+for forbidden in ('std::fs', 'std::path', 'stage_capture', 'PublishedFile', 'durable_input'):
+    assert forbidden not in storage_sources['intents.rs']
 # S02-T09b staging validator: pure schema decoding only. It must not reach a filesystem,
 # a SQLite connection, a process or the network, and it never publishes a path or a
 # durable-input claim from manifest content.
