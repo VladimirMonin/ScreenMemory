@@ -12,6 +12,9 @@ mod intents;
 pub mod match_recovery;
 mod migration;
 pub mod recovery_candidate;
+mod recovery_commit;
+#[cfg(test)]
+mod recovery_commit_tests;
 pub mod staging;
 pub mod staging_files;
 #[cfg(test)]
@@ -232,6 +235,10 @@ enum FileRequest {
         oneshot::Sender<Result<SealedPublished, PublishCandidateError>>,
         VerifiedPublished,
     ),
+    RevalidateSeal(
+        oneshot::Sender<Result<SealedPublished, PublishCandidateError>>,
+        SealedPublished,
+    ),
     Stop,
 }
 struct Admission {
@@ -248,6 +255,8 @@ enum Fault {
     None,
     MigrationCommit,
     ImageCommit,
+    RecoveryBeforeBegin,
+    RecoveryBeforeCommit,
 }
 
 enum Request {
@@ -269,6 +278,7 @@ enum Request {
         PrincipalId,
         CaptureRequest,
     ),
+    CommitSealedRecovery(Response<CommittedImage>, SealedPublished),
     PageRecords(Response<Page<Record>>, RecordPageQuery),
     ReadAssetChunk(Response<AssetChunk>, String, u64, u32),
     #[cfg(test)]
@@ -551,6 +561,37 @@ impl StorageWorker {
             Err(_) => Err(PublishCandidateError::Unavailable),
         }
     }
+    /// Conditional storage-only transition; pre-BEGIN exact file recheck is performed
+    /// exclusively on the bounded file lane. The SQL worker then owns the write-denying
+    /// handle throughout COMMIT/rollback. This excludes prior hostile writable mappings.
+    /// No host/startup wiring or unconditional filesystem/DB atomicity is claimed.
+    /// ```compile_fail
+    /// use sm_storage::SealedPublished;
+    /// fn forge() -> SealedPublished { SealedPublished { newly_published: true } }
+    /// ```
+    pub async fn commit_sealed_recovery(
+        &self,
+        sealed: SealedPublished,
+    ) -> Result<CommittedImage, StorageError> {
+        let (tx, rx) = oneshot::channel();
+        let queued = {
+            let gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+            if gate.closing {
+                return Err(StorageError::Unavailable);
+            }
+            self.file_sender
+                .try_send(FileRequest::RevalidateSeal(tx, sealed))
+        };
+        if queued.is_err() {
+            return Err(StorageError::Unavailable);
+        }
+        let sealed = rx
+            .await
+            .map_err(|_| StorageError::Unavailable)?
+            .map_err(|_| StorageError::IntegrityFailed)?;
+        self.ask(|tx| Request::CommitSealedRecovery(tx, sealed))
+            .await
+    }
     /// Read-only discovery on the scoped file lane, not the SQLite worker. Returned IDs
     /// remain untrusted; neither a manifest nor a DB receipt is validated or adopted.
     pub async fn enumerate_stage_candidates(
@@ -733,6 +774,14 @@ fn run(db: Connection, receiver: Receiver<Request>, assets: PathBuf, fault: Faul
                     &db, library, principal, request,
                 ));
             }
+            Request::CommitSealedRecovery(tx, sealed) => {
+                let result = if fault == Fault::RecoveryBeforeBegin {
+                    Err(StorageError::Unavailable)
+                } else {
+                    recovery_commit::commit(&mut db, sealed, fault == Fault::RecoveryBeforeCommit)
+                };
+                let _ = tx.send(result);
+            }
             Request::PageRecords(tx, query) => {
                 let _ = tx.send(images::page_records(&db, query));
             }
@@ -795,6 +844,10 @@ fn file_loop(
             }
             FileRequest::SealPublished(tx, published) => {
                 let _ = tx.send(published.seal());
+            }
+            FileRequest::RevalidateSeal(tx, mut sealed) => {
+                let result = sealed.revalidate().map(|()| sealed);
+                let _ = tx.send(result);
             }
             FileRequest::Probe(tx, operation_id) => {
                 let result = lease
@@ -970,6 +1023,20 @@ impl StorageWorker {
     }
     pub(crate) fn start_with_image_fault(lease: HostLease) -> Result<Self, StorageError> {
         Self::start_inner(lease, Fault::ImageCommit, None)
+    }
+    pub(crate) fn start_with_recovery_fault(
+        lease: HostLease,
+        after_inserts: bool,
+    ) -> Result<Self, StorageError> {
+        Self::start_inner(
+            lease,
+            if after_inserts {
+                Fault::RecoveryBeforeCommit
+            } else {
+                Fault::RecoveryBeforeBegin
+            },
+            None,
+        )
     }
     pub(crate) fn start_with_file_pause(
         lease: HostLease,

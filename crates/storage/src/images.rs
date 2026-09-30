@@ -236,7 +236,7 @@ const INGEST_FINGERPRINT_DOMAIN: &[u8] = b"ScreenMemory.ingest.v1";
 /// same accepted capture matches while a changed image, mode, context, provenance or role
 /// does not. The stored `warnings` are diagnostic and are *not* fingerprinted: a replay
 /// must return the recorded warnings of the committed capture, never the retry's own.
-fn semantic_fingerprint(
+pub(super) fn semantic_fingerprint(
     asset_type: &str,
     mode: &str,
     canonical_sha256: &str,
@@ -262,7 +262,7 @@ fn semantic_fingerprint(
 /// committed receipt. Only `QueryReturnedNoRows` means "no such operation": every
 /// other SQLite failure is surfaced, and a saved row whose committed asset cannot be
 /// joined is refused as corruption rather than masked as a missing operation.
-fn saved_operation(
+pub(super) fn saved_operation(
     db: &Connection,
     operation_id: &str,
     principal_id: &str,

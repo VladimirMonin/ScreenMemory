@@ -112,7 +112,7 @@ assert 'rusqlite::' not in (root / 'crates/application/src/storage.rs').read_tex
 # S02 images storage: the owner keeps its single writer, the canonical file layout and
 # the closed canonical-format vocabulary; the codec never reaches the filesystem.
 storage_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/storage/src').rglob('*.rs')}
-assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_files.rs', 'staging_tests.rs', 'staging_recovery_tests.rs', 'staging_files_tests.rs', 'file_lane_tests.rs', 'tests.rs', 'image_tests.rs', 'intents.rs', 'intent_tests.rs', 'match_recovery.rs', 'match_recovery_tests.rs', 'recovery_candidate.rs'}
+assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_files.rs', 'staging_tests.rs', 'staging_recovery_tests.rs', 'staging_files_tests.rs', 'file_lane_tests.rs', 'tests.rs', 'image_tests.rs', 'intents.rs', 'intent_tests.rs', 'match_recovery.rs', 'match_recovery_tests.rs', 'recovery_candidate.rs', 'recovery_commit.rs', 'recovery_commit_tests.rs'}
 # T09m2: only the SQLite worker receives the path-free intent request; read scopes
 # principal/mode/request before projecting row contents and never writes stage/canonical.
 assert 'CreateIntent(' in storage_sources['lib.rs'] and 'intents::create(&mut db' in storage_sources['lib.rs']
@@ -202,6 +202,21 @@ for forbidden in ('rusqlite', 'std::path', 'std::process', 'std::net', 'Publishe
     assert forbidden not in publisher, ('storage', 'recovery_candidate.rs', forbidden)
 for forbidden in ('std::fs', 'std::path', 'rusqlite', 'std::process', 'std::net'):
     assert forbidden not in storage_sources['staging_recovery_tests.rs']
+# T09n3b2: only the file lane reads the seal, and SQL receives the proof
+# by value; v4 pending deletion precedes saved insertion in one transaction.
+commit = storage_sources['recovery_commit.rs']
+assert 'pub async fn commit_sealed_recovery(' in storage_sources['lib.rs']
+assert 'FileRequest::RevalidateSeal(tx, sealed)' in storage_sources['lib.rs']
+assert 'sealed.revalidate().map(|()| sealed)' in storage_sources['lib.rs'].split('fn file_loop(', 1)[1]
+assert 'recovery_commit::commit(&mut db, sealed,' in storage_sources['lib.rs'].split('fn run(', 1)[1].split('fn file_loop(', 1)[0]
+assert commit.index('saved_replay(', commit.index('pub(super) fn commit(')) < commit.index('crate::intents::read(') < commit.index('DELETE FROM capture_intents') < commit.index('INSERT INTO records') < commit.index('INSERT INTO assets') < commit.index('INSERT INTO ingest_operations') < commit.index('tx.commit()')
+assert all(field in commit for field in ('a.asset_type', 'r.created_at', 'r.library_id', 'io.created_at_utc', 'stored.6 != AssetType::Original.as_str()', 'stored.7 != expected.created_at', 'stored.8 != library', 'stored.9 != expected.created_at'))
+replay = commit.split('fn saved_replay(', 1)[1].split('pub(super) fn commit(', 1)[0]
+assert replay.index('principal != expected.principal_id') < replay.index('SELECT library_id FROM library_meta WHERE singleton=1') < replay.index('images::saved_operation(')
+assert 'current.as_deref() != Some(library)' in replay
+assert 'if *actual != *witness' in commit and '!= 1' in commit
+for forbidden in ('std::fs', 'std::path', 'read_all_borrowed', 'revalidate(', 'decode_rgba', 'encode_exact_lossless'):
+    assert forbidden not in commit, ('recovery SQL lane', forbidden)
 assert 'pub mod staging;' in storage_sources['lib.rs']
 assert 'pub mod staging_files;' in storage_sources['lib.rs']
 # S02-T09b manifest-last coordinator: it wraps the borrowed lease capability only. It may

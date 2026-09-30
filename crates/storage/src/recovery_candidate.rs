@@ -119,8 +119,9 @@ impl VerifiedPublished {
     }
 }
 
-/// Non-Clone pending witness and fixed write-denying HANDLE. No DB write or
-/// Saved authority; an existing mapped view may still mutate these bytes.
+/// Non-Clone pending witness and fixed write-denying HANDLE. Conditional DB commit
+/// authority only after a file-lane byte preflight; preexisting writable mappings
+/// are explicitly outside this threat model.
 pub struct SealedPublished {
     candidate: VerifiedCandidate,
     final_handle: CanonicalSeal,
@@ -143,6 +144,15 @@ impl SealedPublished {
             self.final_handle.len(),
             self.final_handle.read_all_borrowed(),
         )
+    }
+    pub(crate) fn candidate(&self) -> &VerifiedCandidate {
+        &self.candidate
+    }
+}
+
+impl VerifiedCandidate {
+    pub(crate) fn intent(&self) -> &sm_application::storage::PendingCaptureIntent {
+        self.witness.trusted()
     }
 }
 

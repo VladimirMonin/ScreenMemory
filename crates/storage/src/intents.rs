@@ -190,6 +190,16 @@ fn owned_row(
     principal_id: PrincipalId,
     request: CaptureRequest,
 ) -> Result<PendingCaptureIntent, StorageError> {
+    let kind: String = db
+        .query_row(
+            "SELECT kind FROM capture_intents WHERE operation_id=?1",
+            [request.operation_id().to_string()],
+            |r| r.get(0),
+        )
+        .map_err(sql_error)?;
+    if kind != "capture" {
+        return Err(StorageError::IntegrityFailed);
+    }
     let raw: Raw = db.query_row(
         "SELECT library_id, principal_id, planned_record_id, planned_asset_id, frame_id, mode, pixel_sha256, width, height, context_sha256, request_fingerprint, context_json, warnings, encoder_fingerprint, captured_at_utc, planned_created_at_utc FROM capture_intents WHERE operation_id=?1",
         [request.operation_id().to_string()],
