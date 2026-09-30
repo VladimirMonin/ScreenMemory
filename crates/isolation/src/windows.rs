@@ -309,8 +309,16 @@ fn pinned_child(parent: &Directory, child: &Directory) -> Result<(), StagingErro
 }
 
 pub(super) fn staging_directory(data: &Directory) -> Result<Directory, StagingError> {
+    sibling_directory(data, "staging")
+}
+
+pub(super) fn assets_directory(data: &Directory) -> Result<Directory, StagingError> {
+    sibling_directory(data, "assets")
+}
+
+fn sibling_directory(data: &Directory, leaf: &str) -> Result<Directory, StagingError> {
     let parent = data.path.parent().ok_or(StagingError::UnsafeEntry)?;
-    let path = parent.join("staging");
+    let path = parent.join(leaf);
     // First initialization is create_new, never adopt a different existing entry.
     match std::fs::create_dir(&path) {
         Ok(()) => {}
@@ -422,6 +430,20 @@ pub(super) fn create_operation_directory(
     let path = root.path.join(canonical_id);
     std::fs::create_dir(&path).map_err(staging_io)?;
     open_operation_directory(root, canonical_id)
+}
+
+// Only fixed or type-validated single components reach this helper. Existing
+// directories are reopened/pinned, never trusted merely because create_dir collided.
+pub(super) fn ensure_child_directory(
+    root: &Directory,
+    leaf: &str,
+) -> Result<Directory, StagingError> {
+    match std::fs::create_dir(root.path.join(leaf)) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(staging_io(error)),
+    }
+    open_operation_directory(root, leaf)
 }
 
 fn staging_io(error: std::io::Error) -> StagingError {

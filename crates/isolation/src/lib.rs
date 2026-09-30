@@ -10,7 +10,11 @@ use std::io::Read;
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Component as PathComponent, Path};
 use std::sync::Mutex;
+mod canonical;
 mod windows;
+pub use canonical::{
+    CanonicalError, CanonicalPlan, CanonicalRead, CanonicalRoot, CanonicalTemp, MAX_CANONICAL_BYTES,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Environment {
@@ -142,6 +146,15 @@ impl HostLease {
             _lease: self,
             native,
             scan: Mutex::new(()),
+        })
+    }
+
+    /// Borrowed fixed assets authority, valid only under this pinned host lease.
+    pub fn canonical_root(&self) -> Result<CanonicalRoot<'_>, CanonicalError> {
+        let native = windows::assets_directory(&self._layout.data.native)?;
+        Ok(CanonicalRoot {
+            _lease: self,
+            native,
         })
     }
 }

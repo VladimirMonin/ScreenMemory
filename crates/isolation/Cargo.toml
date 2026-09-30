@@ -8,7 +8,7 @@ license.workspace = true
 [dependencies]
 sm-application = { path = "../application" }
 sm-domain = { path = "../domain" }
-uuid = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]
 sm-observability = { path = "../observability" }
