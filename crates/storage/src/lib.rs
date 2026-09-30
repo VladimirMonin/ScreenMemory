@@ -11,12 +11,14 @@ mod intent_tests;
 mod intents;
 pub mod match_recovery;
 mod migration;
+pub mod recovery_candidate;
 pub mod staging;
 pub mod staging_files;
 #[cfg(test)]
 mod tests;
 
 use async_trait::async_trait;
+pub use recovery_candidate::{PrepareCandidateError, VerifiedCandidate};
 use rusqlite::{Connection, OpenFlags};
 use sm_application::storage::{
     warnings_to_json, AssetChunk, CommitImageCapture, CommittedImage, CreateCaptureIntent,
@@ -214,6 +216,11 @@ enum FileRequest {
         OwnedReopenInputV2,
     ),
     EnumerateCandidates(oneshot::Sender<Result<StagingCandidates, EnumerateCandidatesError>>),
+    PrepareCandidate(
+        oneshot::Sender<Result<VerifiedCandidate, PrepareCandidateError>>,
+        Box<match_recovery::DbValidatedIntent>,
+        Box<staging_files::ReopenedV2>,
+    ),
     Stop,
 }
 struct Admission {
@@ -452,6 +459,42 @@ impl StorageWorker {
             Err(_) => Err(ReopenOwnedError::Unavailable),
         }
     }
+    /// Encode only a sealed SQLite witness paired with already reopened v2 pixels.
+    /// Accepted work drains FIFO even when the waiter cancels; no SQL/file writes here.
+    /// The 1 GiB RSS bound is NOT_PROVEN (native encoder scratch is not bounded).
+    /// ```compile_fail
+    /// use sm_application::storage::PendingCaptureIntent;
+    /// use sm_storage::{StorageWorker, staging_files::ReopenedV2};
+    /// async fn forge(worker: &StorageWorker, dto: PendingCaptureIntent, stage: ReopenedV2) {
+    ///     let _ = worker.prepare_recovery_candidate(Box::new(dto), stage).await;
+    /// }
+    /// ```
+    /// ```compile_fail
+    /// use sm_storage::VerifiedCandidate;
+    /// fn forge() -> VerifiedCandidate { VerifiedCandidate { encoded: Vec::new() } }
+    /// ```
+    pub async fn prepare_recovery_candidate(
+        &self,
+        witness: Box<match_recovery::DbValidatedIntent>,
+        reopened: staging_files::ReopenedV2,
+    ) -> Result<VerifiedCandidate, PrepareCandidateError> {
+        let (tx, rx) = oneshot::channel();
+        let queued = {
+            let gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+            if gate.closing {
+                return Err(PrepareCandidateError::Unavailable);
+            }
+            self.file_sender.try_send(FileRequest::PrepareCandidate(
+                tx,
+                witness,
+                Box::new(reopened),
+            ))
+        };
+        match queued {
+            Ok(()) => rx.await.unwrap_or(Err(PrepareCandidateError::Unavailable)),
+            Err(_) => Err(PrepareCandidateError::Unavailable),
+        }
+    }
     /// Read-only discovery on the scoped file lane, not the SQLite worker. Returned IDs
     /// remain untrusted; neither a manifest nor a DB receipt is validated or adopted.
     pub async fn enumerate_stage_candidates(
@@ -687,6 +730,9 @@ fn file_loop(
                     .and_then(|root| root.enumerate_candidates())
                     .map_err(EnumerateCandidatesError::Enumeration);
                 let _ = tx.send(result);
+            }
+            FileRequest::PrepareCandidate(tx, witness, reopened) => {
+                let _ = tx.send(recovery_candidate::prepare(witness, *reopened));
             }
             FileRequest::Probe(tx, operation_id) => {
                 let result = lease

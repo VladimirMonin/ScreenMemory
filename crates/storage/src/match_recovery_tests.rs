@@ -1,4 +1,5 @@
 use super::*;
+use crate::PrepareCandidateError;
 use crate::{OwnedReopenInputV2, OwnedStageInput, OwnedStageInputV2, StorageWorker};
 use sm_application::{
     capture::{CaptureMode, CaptureRequest, CaptureTrigger},
@@ -378,6 +379,247 @@ fn s02_t09m3_01_pending_before_stage_restart_exact_and_field_refusals() {
                 .unwrap();
             assert_eq!(count, 0, "{table}");
         }
+    });
+}
+
+#[test]
+fn s02_t09n2_01_sealed_candidate_real_exact_alpha_and_refusals() {
+    let f = Fixture::new();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let first = StorageWorker::start(f.lease()).unwrap();
+        let library = LibraryId::new(first.schema_snapshot().await.unwrap().library_id);
+        // Transparent pixels retain nonzero RGB in the real libwebp exact roundtrip.
+        let pixels = vec![
+            11, 22, 33, 0, 70, 80, 90, 255, 8, 9, 10, 0, 1, 2, 3, 255, 40, 50, 60, 0, 7, 8, 9, 255,
+        ];
+        let mut good = input(library, &pixels);
+        good.encoder_fingerprint = sm_codec::encoder_fingerprint();
+        first.create_capture_intent(good.clone()).await.unwrap();
+        first
+            .stage_capture_owned_v2(stage(&good, pixels.clone()))
+            .await
+            .unwrap();
+        let old_profile = input(library, &pixels);
+        first
+            .create_capture_intent(old_profile.clone())
+            .await
+            .unwrap();
+        first
+            .stage_capture_owned_v2(stage(&old_profile, pixels.clone()))
+            .await
+            .unwrap();
+        let mut bad_warnings = input(library, &pixels);
+        bad_warnings.encoder_fingerprint = sm_codec::encoder_fingerprint();
+        first
+            .create_capture_intent(bad_warnings.clone())
+            .await
+            .unwrap();
+        let mut wrong_stage = stage(&bad_warnings, pixels.clone());
+        wrong_stage.warnings.reverse();
+        first.stage_capture_owned_v2(wrong_stage).await.unwrap();
+        first.shutdown(Duration::from_secs(5)).await.unwrap();
+
+        let second = StorageWorker::start(f.lease()).unwrap();
+        let reopen = |i: &CreateCaptureIntent| OwnedReopenInputV2 {
+            library_id: i.library_id,
+            principal_id: i.principal_id,
+            operation_id: OperationId::new(i.request.operation_id()),
+            mode: i.request.target(),
+            encoder_fingerprint: i.encoder_fingerprint.clone(),
+        };
+        assert!(matches!(
+            second
+                .read_validated_capture_intent(
+                    library,
+                    PrincipalId::new(Uuid::new_v4()),
+                    good.request.clone()
+                )
+                .await
+                .unwrap(),
+            ValidatedIntentRead::Conflict
+        ));
+        assert!(second
+            .reopen_stage_owned_v2(OwnedReopenInputV2 {
+                principal_id: PrincipalId::new(Uuid::new_v4()),
+                ..reopen(&good)
+            })
+            .await
+            .is_err());
+        let ValidatedIntentRead::Pending(witness) = second
+            .read_validated_capture_intent(library, good.principal_id, good.request.clone())
+            .await
+            .unwrap()
+        else {
+            panic!("pending")
+        };
+        let mismatched = second
+            .reopen_stage_owned_v2(reopen(&bad_warnings))
+            .await
+            .unwrap();
+        assert!(matches!(
+            second.prepare_recovery_candidate(witness, mismatched).await,
+            Err(PrepareCandidateError::Mismatch(_))
+        ));
+        let ValidatedIntentRead::Pending(witness) = second
+            .read_validated_capture_intent(
+                library,
+                old_profile.principal_id,
+                old_profile.request.clone(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("pending")
+        };
+        let reopened = second
+            .reopen_stage_owned_v2(reopen(&old_profile))
+            .await
+            .unwrap();
+        assert!(matches!(
+            second.prepare_recovery_candidate(witness, reopened).await,
+            Err(PrepareCandidateError::EncoderProfileMismatch)
+        ));
+        let ValidatedIntentRead::Pending(witness) = second
+            .read_validated_capture_intent(library, good.principal_id, good.request.clone())
+            .await
+            .unwrap()
+        else {
+            panic!("pending")
+        };
+        let reopened = second.reopen_stage_owned_v2(reopen(&good)).await.unwrap();
+        let candidate = second
+            .prepare_recovery_candidate(witness, reopened)
+            .await
+            .unwrap();
+        assert_eq!(
+            candidate.trusted_ids(),
+            (
+                good.library_id,
+                good.principal_id,
+                OperationId::new(good.request.operation_id()),
+                good.record_id,
+                good.asset_id,
+            )
+        );
+        assert_eq!(candidate.geometry(), (3, 2));
+        assert_eq!(candidate.length() as usize, candidate.encoded_bytes().len());
+        assert_eq!(candidate.encoder_fingerprint(), good.encoder_fingerprint);
+        assert_eq!(
+            candidate.encoded_sha256().as_slice(),
+            Sha256::digest(candidate.encoded_bytes()).as_slice()
+        );
+        assert_ne!(
+            candidate.encoded_sha256().as_slice(),
+            Sha256::digest(&pixels).as_slice()
+        );
+        let debug = format!("{candidate:?}");
+        assert!(!debug.contains(&good.encoder_fingerprint));
+        assert!(!debug.contains(&good.request.operation_id().to_string()));
+        assert!(!debug.contains("encoded:"));
+        let decoded = sm_codec::decode_rgba(candidate.encoded_bytes()).unwrap();
+        assert_eq!(decoded.pixels(), pixels);
+        assert_eq!(
+            second
+                .lookup_operation(
+                    OperationId::new(good.request.operation_id()),
+                    good.principal_id,
+                    good.request.target()
+                )
+                .await
+                .unwrap(),
+            LookupOutcome::Unknown
+        );
+        second.shutdown(Duration::from_secs(5)).await.unwrap();
+        let db = rusqlite::Connection::open(f.0.join("data/library.sqlite3")).unwrap();
+        for table in ["records", "assets", "ingest_operations"] {
+            let count: i64 = db
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(count, 0, "{table}");
+        }
+        assert!(
+            !f.0.join("assets").exists()
+                || fs::read_dir(f.0.join("assets")).unwrap().next().is_none()
+        );
+        let pixel_path =
+            f.0.join("staging")
+                .join(good.request.operation_id().to_string())
+                .join("pixels.rgba");
+        fs::write(&pixel_path, [9u8; 24]).unwrap();
+        let third = StorageWorker::start(f.lease()).unwrap();
+        assert!(third.reopen_stage_owned_v2(reopen(&good)).await.is_err());
+        third.shutdown(Duration::from_secs(5)).await.unwrap();
+        assert_eq!(fs::read(pixel_path).unwrap(), [9u8; 24]);
+    });
+}
+
+#[test]
+fn s02_t09n2_02_pixel_cap_refuses_valid_stage_before_encoding() {
+    let f = Fixture::new();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let worker = StorageWorker::start(f.lease()).unwrap();
+        let library = LibraryId::new(worker.schema_snapshot().await.unwrap().library_id);
+        let pixels = vec![7; 1025 * 1025 * 4];
+        let mut intent = input(library, &pixels);
+        intent.width = 1025;
+        intent.height = 1025;
+        intent.context.bounds.width = 1025;
+        intent.context.bounds.height = 1025;
+        intent.encoder_fingerprint = sm_codec::encoder_fingerprint();
+        worker.create_capture_intent(intent.clone()).await.unwrap();
+        worker
+            .stage_capture_owned_v2(stage(&intent, pixels))
+            .await
+            .unwrap();
+        let ValidatedIntentRead::Pending(witness) = worker
+            .read_validated_capture_intent(library, intent.principal_id, intent.request.clone())
+            .await
+            .unwrap()
+        else {
+            panic!("pending")
+        };
+        let stage = worker
+            .reopen_stage_owned_v2(OwnedReopenInputV2 {
+                library_id: library,
+                principal_id: intent.principal_id,
+                operation_id: OperationId::new(intent.request.operation_id()),
+                mode: intent.request.target(),
+                encoder_fingerprint: intent.encoder_fingerprint.clone(),
+            })
+            .await
+            .unwrap();
+        assert!(matches!(
+            worker.prepare_recovery_candidate(witness, stage).await,
+            Err(PrepareCandidateError::PixelCapExceeded)
+        ));
+        assert_eq!(
+            worker
+                .lookup_operation(
+                    OperationId::new(intent.request.operation_id()),
+                    intent.principal_id,
+                    intent.request.target()
+                )
+                .await
+                .unwrap(),
+            LookupOutcome::Unknown
+        );
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        let db = rusqlite::Connection::open(f.0.join("data/library.sqlite3")).unwrap();
+        for table in ["records", "assets", "ingest_operations"] {
+            let count: i64 = db
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(count, 0, "{table}");
+        }
+        assert!(!f.0.join("assets").exists());
     });
 }
 

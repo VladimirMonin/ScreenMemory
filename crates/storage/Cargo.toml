@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 sm-application = { path = "../application" }
+sm-codec = { path = "../codec" }
 sm-domain = { path = "../domain" }
 sm-isolation = { path = "../isolation" }
 async-trait.workspace = true
@@ -16,7 +17,3 @@ serde.workspace = true
 serde_json.workspace = true
 uuid = { workspace = true, features = ["v4"] }
 tokio = { version = "=1.53.1", features = ["sync", "time", "rt"] }
-
-[dev-dependencies]
-# Synthetic canonical containers for the images tests come from the real codec.
-sm-codec = { path = "../codec" }

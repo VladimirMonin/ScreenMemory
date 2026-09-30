@@ -28,6 +28,12 @@ pub struct DbValidatedIntent {
     intent: PendingCaptureIntent,
 }
 
+impl DbValidatedIntent {
+    pub(crate) fn trusted(&self) -> &PendingCaptureIntent {
+        &self.intent
+    }
+}
+
 /// No metadata for a missing, Saved, foreign or conflicting operation.
 #[derive(Debug)]
 pub enum ValidatedIntentRead {

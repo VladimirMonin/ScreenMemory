@@ -12,7 +12,7 @@ allowed = {
     'application': {'sm-domain', 'sm-protocol', 'async-trait', 'tokio-util', 'serde', 'serde_json', 'uuid', 'getrandom', 'sha2', 'subtle', 'zeroize'},
     'observability': {'sm-application', 'serde', 'serde_json'},
     'isolation': {'sm-application', 'sm-domain', 'uuid'},
-    'storage': {'sm-application', 'sm-domain', 'sm-isolation', 'async-trait', 'rusqlite', 'sha2', 'serde', 'serde_json', 'uuid', 'tokio'},
+    'storage': {'sm-application', 'sm-codec', 'sm-domain', 'sm-isolation', 'async-trait', 'rusqlite', 'sha2', 'serde', 'serde_json', 'uuid', 'tokio'},
     'codec': {'libwebp-sys'},
     'credentials': {'sm-application', 'sm-isolation', 'windows-sys', 'zeroize'},
     'framing': {'serde', 'serde_json', 'tokio', 'zeroize'},
@@ -28,7 +28,7 @@ for crate, expected in allowed.items():
     assert set(manifest['dependencies']) == expected, crate
     assert manifest['package']['name'] == 'sm-' + crate
     if crate == 'storage':
-        assert set(manifest['dev-dependencies']) == {'sm-codec'}
+        assert 'dev-dependencies' not in manifest
     if crate == 'codec':
         assert 'dev-dependencies' not in manifest
         assert manifest['dependencies']['libwebp-sys']['version'] == '=0.14.4'
@@ -112,7 +112,7 @@ assert 'rusqlite::' not in (root / 'crates/application/src/storage.rs').read_tex
 # S02 images storage: the owner keeps its single writer, the canonical file layout and
 # the closed canonical-format vocabulary; the codec never reaches the filesystem.
 storage_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/storage/src').rglob('*.rs')}
-assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_files.rs', 'staging_tests.rs', 'staging_recovery_tests.rs', 'staging_files_tests.rs', 'file_lane_tests.rs', 'tests.rs', 'image_tests.rs', 'intents.rs', 'intent_tests.rs', 'match_recovery.rs', 'match_recovery_tests.rs'}
+assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_files.rs', 'staging_tests.rs', 'staging_recovery_tests.rs', 'staging_files_tests.rs', 'file_lane_tests.rs', 'tests.rs', 'image_tests.rs', 'intents.rs', 'intent_tests.rs', 'match_recovery.rs', 'match_recovery_tests.rs', 'recovery_candidate.rs'}
 # T09m2: only the SQLite worker receives the path-free intent request; read scopes
 # principal/mode/request before projecting row contents and never writes stage/canonical.
 assert 'CreateIntent(' in storage_sources['lib.rs'] and 'intents::create(&mut db' in storage_sources['lib.rs']

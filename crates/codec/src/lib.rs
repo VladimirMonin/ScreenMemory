@@ -143,6 +143,10 @@ impl CanonicalWebp {
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
+    /// Transfer verified container ownership without copying the encoded allocation.
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
     pub fn dimensions(&self) -> Dimensions {
         self.dimensions
     }

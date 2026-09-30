@@ -117,6 +117,11 @@ impl ReopenedV2 {
     pub fn pixels(&self) -> &[u8] {
         &self.pixels
     }
+
+    /// Only the storage worker may consume the validated allocation for recovery encoding.
+    pub(crate) fn into_pixels(self) -> Vec<u8> {
+        self.pixels
+    }
 }
 
 /// One completed staging operation. Holding this value means the pixels, the context and
