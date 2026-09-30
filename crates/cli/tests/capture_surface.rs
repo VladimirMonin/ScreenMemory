@@ -275,6 +275,15 @@ fn s02_cli_06_capture_prints_one_receipt_and_writes_an_explicit_copy() {
             .chars()
             .all(|c| c.is_ascii_hexdigit()));
         assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+        let stage = roots
+            .path()
+            .join("staging")
+            .join(receipt["operation_id"].as_str().unwrap());
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(stage.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(manifest["schema_version"], 2);
+        assert_eq!(manifest["warnings"], serde_json::json!([]));
+        assert_eq!(manifest["mode"], "region");
         // `all` is the documented alias of the desktop mode.
         let (exit, out, _) = shot(&deps, &config, &["capture", "--mode", "all", "--json"]).await;
         assert_eq!(exit, EXIT_OK);

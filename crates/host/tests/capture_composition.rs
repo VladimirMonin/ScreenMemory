@@ -29,7 +29,7 @@ use sm_protocol::{
 };
 use sm_session::{ApplicationClient, ClientError, CredentialSource};
 use sm_storage::{
-    staging::{validate_staging, StagingExpectations},
+    staging::{validate_recovery_envelope, StagingExpectations, RECOVERY_PATH_POLICY},
     StorageWorker,
 };
 use std::{
@@ -164,6 +164,7 @@ struct SyntheticAdapter {
     width: u32,
     height: u32,
     mode_answer: Answer,
+    warnings: Vec<String>,
     calls: AtomicUsize,
     cancel_calls: AtomicUsize,
     cancelled: Mutex<Option<Uuid>>,
@@ -218,10 +219,20 @@ enum Answer {
 
 impl SyntheticAdapter {
     fn new(width: u32, height: u32, mode_answer: Answer) -> Arc<Self> {
+        Self::with_warnings(width, height, mode_answer, vec!["synthetic_adapter".into()])
+    }
+
+    fn with_warnings(
+        width: u32,
+        height: u32,
+        mode_answer: Answer,
+        warnings: Vec<String>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             width,
             height,
             mode_answer,
+            warnings,
             calls: AtomicUsize::new(0),
             cancel_calls: AtomicUsize::new(0),
             cancelled: Mutex::new(None),
@@ -235,6 +246,7 @@ impl SyntheticAdapter {
             width,
             height,
             mode_answer,
+            warnings: vec!["synthetic_adapter".into()],
             calls: AtomicUsize::new(0),
             cancel_calls: AtomicUsize::new(0),
             cancelled: Mutex::new(None),
@@ -284,7 +296,7 @@ impl NativeCaptureAdapter for SyntheticAdapter {
                 frozen_at_ms: 1_790_586_900_000,
                 observed_at_ms: 1_790_586_900_010,
                 dib: self.frame(&request),
-                warnings: vec!["synthetic_adapter".to_string()],
+                warnings: self.warnings.clone(),
                 request,
             }))),
             Answer::Cancel => Ok(CaptureOutcome::Cancelled {
@@ -361,9 +373,9 @@ fn check_stage(
     library: LibraryId,
     principal: PrincipalId,
     operation: sm_domain::OperationId,
-    record: RecordId,
-    asset: AssetId,
+    identity: (RecordId, AssetId),
     dimensions: (u32, u32),
+    expected_warnings: &[String],
 ) {
     let (width, height) = dimensions;
     let dir = roots
@@ -383,7 +395,7 @@ fn check_stage(
         "verified canonical is this staged frame"
     );
     let profile = sm_codec::encoder_fingerprint();
-    let validated = validate_staging(
+    let envelope = validate_recovery_envelope(
         &manifest,
         &context,
         &pixels,
@@ -396,8 +408,19 @@ fn check_stage(
         },
     )
     .unwrap();
-    assert_eq!(validated.record_id(), record);
-    assert_eq!(validated.asset_id(), asset);
+    assert_eq!(envelope.schema_version(), 2);
+    assert_eq!(envelope.warnings(), Some(expected_warnings));
+    assert_eq!(envelope.path_policy(), Some(RECOVERY_PATH_POLICY));
+    let validated = envelope.staging();
+    assert_eq!(
+        envelope.automatic_provenance(),
+        Some(Provenance::Automatic {
+            when: validated.captured_at().to_owned(),
+            source: validated.context().target,
+        })
+    );
+    assert_eq!(validated.record_id(), identity.0);
+    assert_eq!(validated.asset_id(), identity.1);
     assert_eq!(validated.frame_id().get_version_num(), 4);
     assert_eq!((validated.width(), validated.height()), (width, height));
     assert_eq!(validated.stride(), width * 4);
@@ -482,9 +505,9 @@ fn s02_capture_host_01_command_commits_a_canonical_record_and_serves_its_bytes()
             library,
             principal,
             receipt.operation_id,
-            receipt.record_id,
-            receipt.asset_id,
+            (receipt.record_id, receipt.asset_id),
             (64, 48),
+            &receipt.warnings,
         );
         // The receipt is the committed truth: library-relative path, no absolute path.
         assert_eq!(receipt.canonical_mime, "image/webp");
@@ -1372,7 +1395,7 @@ fn s02_t09f_hotkey_permits_survive_shutdown_and_commit_under_owner() {
         let sentinel = roots.path().join("sentinel.txt");
         fs::write(&sentinel, b"keep-hotkey-sentinel").unwrap();
         let store = Arc::new(MemoryStore::default());
-        let adapter = SyntheticAdapter::new(8, 8, Answer::Accept);
+        let adapter = SyntheticAdapter::with_warnings(8, 8, Answer::Accept, vec![]);
         let outlet = Arc::new(OnceLock::<Arc<dyn HotkeySink>>::new());
         let host = bootstrap(options(
             &roots.path(),
@@ -1445,14 +1468,15 @@ fn s02_t09f_hotkey_permits_survive_shutdown_and_commit_under_owner() {
         };
         assert_eq!(saved.principal_id, principal);
         assert_eq!(saved.operation_id.as_uuid(), operation_id);
+        assert!(saved.warnings.is_empty());
         check_stage(
             &roots,
             library,
             principal,
             saved.operation_id,
-            saved.record_id,
-            saved.asset_id,
+            (saved.record_id, saved.asset_id),
             (8, 8),
+            &saved.warnings,
         );
         let asset = worker
             .read_asset_chunk(saved.asset_id, 0, 1024 * 1024)

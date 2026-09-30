@@ -222,6 +222,32 @@ fn s02_t09i_02_empty_v2_distinct_from_published_v1_and_prewrite_rejection() {
 }
 
 #[test]
+fn s02_t09j_v2_f04_published_without_db_is_reopenable_not_saved() {
+    let f = Fixture::new();
+    let lease = f.lease();
+    let root = lease.staging_root().unwrap();
+    let context = f.context(8, 4);
+    let pixels = Fixture::pixels(8, 4);
+    let warnings = vec!["topology_changed".into(), "display_unknown".into()];
+    assert_eq!(
+        stage_capture_v2_f04(
+            &root,
+            StageInputV2 {
+                capture: f.input(&context, &pixels),
+                warnings: &warnings,
+            }
+        ),
+        Err(StageFailure::Injected)
+    );
+    let reopened = reopen_staged_v2(&root, f.expectations()).unwrap();
+    assert_eq!(reopened.envelope().warnings(), Some(warnings.as_slice()));
+    assert_eq!(reopened.pixels(), pixels);
+    assert!(f.directory().join("manifest.json").exists());
+    // No SQLite worker, asset or Saved receipt is produced by the file primitive.
+    assert!(!f.root.join("assets").exists());
+}
+
+#[test]
 fn s02_t09i_03_foreign_tamper_missing_oversize_and_sentinel() {
     let f = Fixture::new();
     let lease = f.lease();

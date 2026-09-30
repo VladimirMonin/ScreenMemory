@@ -36,7 +36,9 @@ use sm_protocol::{
     errors::{AppError, ErrorCode},
     values::SafeMessage,
 };
-use sm_storage::{OwnedStageInput, StagePresence, StorageWorker};
+use sm_storage::{
+    staging::RECOVERY_PATH_POLICY, OwnedStageInput, OwnedStageInputV2, StagePresence, StorageWorker,
+};
 use std::{
     collections::HashSet,
     sync::{
@@ -443,38 +445,46 @@ impl CaptureIngest {
             .ok_or_else(stage_failure)?;
         let staged = self
             .storage
-            .stage_capture_owned(OwnedStageInput {
-                library_id: self.library_id,
-                principal_id,
-                operation_id: ids.operation_id,
-                record_id: ids.record_id,
-                asset_id: ids.asset_id,
-                frame_id: ids.frame_id(),
-                mode,
-                context: result.context.clone(),
-                captured_at: captured_at.clone(),
-                encoder_fingerprint: fingerprint.clone(),
-                pixels: dib.rgba8(),
+            .stage_capture_owned_v2(OwnedStageInputV2 {
+                capture: OwnedStageInput {
+                    library_id: self.library_id,
+                    principal_id,
+                    operation_id: ids.operation_id,
+                    record_id: ids.record_id,
+                    asset_id: ids.asset_id,
+                    frame_id: ids.frame_id(),
+                    mode,
+                    context: result.context.clone(),
+                    captured_at: captured_at.clone(),
+                    encoder_fingerprint: fingerprint.clone(),
+                    pixels: dib.rgba8(),
+                },
+                warnings: result.warnings.clone(),
             })
             .await
             .map_err(|_| stage_failure())?;
         // A Staged value is a validated file publication, NOT Saved. Compare every
         // identity and capture property with the still-owned accepted outcome before
         // spending CPU on the canonical format or admitting a DB transaction.
-        if staged.library_id() != self.library_id
-            || staged.principal_id() != principal_id
-            || staged.operation_id() != ids.operation_id
-            || staged.record_id() != ids.record_id
-            || staged.asset_id() != ids.asset_id
-            || staged.frame_id() != ids.frame_id()
-            || staged.mode() != mode
-            || staged.width() != width
-            || staged.height() != height
-            || staged.stride() != width.checked_mul(4).ok_or_else(stage_failure)?
-            || staged.byte_length() != expected_bytes
-            || staged.context() != &result.context
-            || staged.captured_at() != captured_at
-            || staged.encoder_fingerprint() != fingerprint
+        let manifest = staged.staging();
+        if staged.schema_version() != 2
+            || staged.warnings() != Some(result.warnings.as_slice())
+            || staged.automatic_provenance() != Some(capture_provenance(result))
+            || staged.path_policy() != Some(RECOVERY_PATH_POLICY)
+            || manifest.library_id() != self.library_id
+            || manifest.principal_id() != principal_id
+            || manifest.operation_id() != ids.operation_id
+            || manifest.record_id() != ids.record_id
+            || manifest.asset_id() != ids.asset_id
+            || manifest.frame_id() != ids.frame_id()
+            || manifest.mode() != mode
+            || manifest.width() != width
+            || manifest.height() != height
+            || manifest.stride() != width.checked_mul(4).ok_or_else(stage_failure)?
+            || manifest.byte_length() != expected_bytes
+            || manifest.context() != &result.context
+            || manifest.captured_at() != captured_at
+            || manifest.encoder_fingerprint() != fingerprint
         {
             return Err(stage_failure());
         }

@@ -131,7 +131,8 @@ assert 'is_canonical_utc_timestamp' in storage_sources['staging.rs']
 assert 'CaptureContext::from_json' in storage_sources['staging.rs']
 # S02-T09h stays pure. V1 retains its exact 18-field decoder; v2 is versioned and
 # receipt-ready only with validated warnings, automatic provenance and fixed policy.
-# T09i connects only the isolated file primitive; no host/file-lane/SQL integration.
+# T09j connects the owned v2 request to the existing file lane and host, without
+# making reopening or SQL recovery part of this transition.
 assert 'const MANIFEST_FIELDS: [&str; 18]' in storage_sources['staging.rs']
 for member in ('"warnings"', '"provenance_kind"', '"path_policy"'):
     assert member in storage_sources['staging.rs']
@@ -143,7 +144,9 @@ assert 'pub fn reopen_staged_v2(' in storage_sources['staging_files.rs']
 reopened_v2 = storage_sources['staging_files.rs'].split('pub struct ReopenedV2 {', 1)[1].split('}', 1)[0]
 assert 'pub envelope:' not in reopened_v2 and 'pub pixels:' not in reopened_v2
 assert 'pub fn pixels(&self) -> &[u8]' in storage_sources['staging_files.rs']
-assert 'stage_capture_v2(' not in storage_sources['lib.rs']
+assert 'pub async fn stage_capture_owned_v2(' in storage_sources['lib.rs']
+assert 'StageV2(' in storage_sources['lib.rs'] and 'stage_capture_v2(&root, v2)' in storage_sources['lib.rs']
+assert 'warnings_to_json(&self.warnings)' in storage_sources['lib.rs']
 assert 'reopen_staged_v2(' not in storage_sources['lib.rs']
 for forbidden in ('std::fs', 'std::path', 'rusqlite', 'std::process', 'std::net'):
     assert forbidden not in storage_sources['staging_recovery_tests.rs']
@@ -244,6 +247,8 @@ assert 'windows_sys::' not in application_capture and 'unsafe' not in applicatio
 host_capture = (root / 'crates/host/src/capture.rs').read_text(encoding='utf-8')
 assert 'commit_image_capture' in host_capture and 'encode_exact_lossless_verified' in host_capture, 'the host publishes only a verified canonical asset'
 assert 'provenances' in host_capture and 'Provenance::Automatic' in host_capture
+assert 'stage_capture_owned_v2(' in host_capture and 'staged.warnings()' in host_capture
+assert 'stage_capture_owned(' not in host_capture and 'reopen_staged_v2(' not in host_capture
 assert 'windows_sys::' not in host_capture and 'sm_capture::' not in host_capture.replace('sm_capture::HotkeySink', '').replace('sm_capture::HotkeyReservation', ''), 'the host never touches GDI directly'
 protocol_capture = (root / 'crates/protocol/src/application.rs').read_text(encoding='utf-8')
 assert '"capture.command"' in protocol_capture and '"library.asset.read"' in protocol_capture

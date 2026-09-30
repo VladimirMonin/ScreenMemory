@@ -119,6 +119,100 @@ fn s02_t09c_01_file_pause_sqlite_responsive_lease_and_stop_ack() {
 }
 
 #[test]
+fn s02_t09j_v2_file_pause_keeps_sqlite_responsive_and_stop_waits_for_lease() {
+    let f = Fixture::new();
+    let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+    let (release_tx, release_rx) = mpsc::sync_channel(1);
+    let worker =
+        StorageWorker::start_with_file_pause(f.try_lease().unwrap(), entered_tx, release_rx)
+            .unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let input = f.input();
+        let operation = input.operation_id;
+        let warnings = vec!["topology_changed".into(), "display_unknown".into()];
+        let stage = tokio::spawn({
+            let worker = worker.clone();
+            let warnings = warnings.clone();
+            async move {
+                worker
+                    .stage_capture_owned_v2(OwnedStageInputV2 {
+                        capture: input,
+                        warnings,
+                    })
+                    .await
+            }
+        });
+        tokio::task::yield_now().await;
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), worker.schema_snapshot())
+                .await
+                .unwrap()
+                .is_ok()
+        );
+        assert!(matches!(f.try_lease(), Err(LeaseError::Busy)));
+        assert_eq!(
+            worker.shutdown(Duration::from_millis(30)).await,
+            Err(StorageError::Unavailable)
+        );
+        let denied = worker
+            .stage_capture_owned_v2(OwnedStageInputV2 {
+                capture: f.input(),
+                warnings: vec![],
+            })
+            .await;
+        assert!(matches!(denied, Err(StageOwnedError::Unavailable)));
+        assert!(matches!(f.try_lease(), Err(LeaseError::Busy)));
+        release_tx.send(()).unwrap();
+        let envelope = stage.await.unwrap().unwrap();
+        assert_eq!(envelope.schema_version(), 2);
+        assert_eq!(envelope.warnings(), Some(warnings.as_slice()));
+        let manifest = fs::read(
+            f.0.join("staging")
+                .join(operation.as_uuid().to_string())
+                .join("manifest.json"),
+        )
+        .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&manifest).unwrap();
+        assert_eq!(json["schema_version"], 2);
+        assert_eq!(json["warnings"], serde_json::json!(warnings));
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        drop(f.try_lease().unwrap());
+    });
+}
+
+#[test]
+fn s02_t09j_v2_invalid_warnings_refused_before_admission_or_write() {
+    let f = Fixture::new();
+    let worker = StorageWorker::start(f.try_lease().unwrap()).unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let input = f.input();
+        let op = input.operation_id;
+        assert!(matches!(
+            worker
+                .stage_capture_owned_v2(OwnedStageInputV2 {
+                    capture: input,
+                    warnings: vec!["invalid/path".into()],
+                })
+                .await,
+            Err(StageOwnedError::Stage(
+                staging_files::StageFailure::Rejected(staging::StagingError::InvalidWarnings)
+            ))
+        ));
+        assert!(!f.0.join("staging").join(op.as_uuid().to_string()).exists());
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+    });
+}
+
+#[test]
 fn s02_t09c_02_cancelled_waiter_drains_fifo_and_queue_is_bounded() {
     let f = Fixture::new();
     let (entered_tx, entered_rx) = mpsc::sync_channel(2);

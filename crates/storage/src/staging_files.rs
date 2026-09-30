@@ -303,6 +303,41 @@ pub fn stage_capture_v2(
     root: &StagingRoot<'_>,
     input: StageInputV2<'_>,
 ) -> Result<ValidatedRecoveryEnvelope, StageFailure> {
+    stage_capture_v2_with(root, input, StageSeams::NONE, None)
+}
+
+/// Test-only pause at the same synced pixels-temp boundary used by the legacy lane.
+#[cfg(test)]
+pub(crate) fn stage_capture_v2_pausing(
+    root: &StagingRoot<'_>,
+    input: StageInputV2<'_>,
+    pause: &dyn Fn(),
+) -> Result<ValidatedRecoveryEnvelope, StageFailure> {
+    stage_capture_v2_with(root, input, StageSeams::NONE, Some(pause))
+}
+
+#[cfg(test)]
+pub(crate) fn stage_capture_v2_f04(
+    root: &StagingRoot<'_>,
+    input: StageInputV2<'_>,
+) -> Result<ValidatedRecoveryEnvelope, StageFailure> {
+    stage_capture_v2_with(
+        root,
+        input,
+        StageSeams {
+            manifest_published: true,
+            ..StageSeams::NONE
+        },
+        None,
+    )
+}
+
+fn stage_capture_v2_with(
+    root: &StagingRoot<'_>,
+    input: StageInputV2<'_>,
+    seams: StageSeams,
+    pause: Option<&dyn Fn()>,
+) -> Result<ValidatedRecoveryEnvelope, StageFailure> {
     // Bound count and code lengths before serializing untrusted-sized caller strings.
     let warning_json = warnings_to_json(input.warnings)
         .map_err(|_| StageFailure::Rejected(StagingError::InvalidWarnings))?;
@@ -353,8 +388,8 @@ pub fn stage_capture_v2(
         input.capture.pixels,
         &context_bytes,
         &manifest_bytes,
-        StageSeams::NONE,
-        None,
+        seams,
+        pause,
     )?;
     Ok(validated)
 }

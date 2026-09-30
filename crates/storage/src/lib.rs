@@ -15,8 +15,8 @@ mod tests;
 use async_trait::async_trait;
 use rusqlite::{Connection, OpenFlags};
 use sm_application::storage::{
-    AssetChunk, CommitImageCapture, CommittedImage, FoundationRepository, LookupOutcome, Page,
-    Record, RecordPageQuery, SchemaSnapshot, StorageError,
+    warnings_to_json, AssetChunk, CommitImageCapture, CommittedImage, FoundationRepository,
+    LookupOutcome, Page, Record, RecordPageQuery, SchemaSnapshot, StorageError,
 };
 use sm_application::{
     capture::{MAX_CAPTURE_PIXELS, MAX_CAPTURE_SIDE},
@@ -51,6 +51,25 @@ pub struct OwnedStageInput {
     pub captured_at: String,
     pub encoder_fingerprint: String,
     pub pixels: Vec<u8>,
+}
+
+/// Separate owned v2 command. The ordered warnings are transferred with the pixels and
+/// validated before file-lane admission, never synthesized from a legacy stage.
+pub struct OwnedStageInputV2 {
+    pub capture: OwnedStageInput,
+    pub warnings: Vec<String>,
+}
+
+impl OwnedStageInputV2 {
+    fn checked(&self) -> Result<(), StageOwnedError> {
+        self.capture.checked()?;
+        warnings_to_json(&self.warnings).map_err(|_| {
+            StageOwnedError::Stage(staging_files::StageFailure::Rejected(
+                staging::StagingError::InvalidWarnings,
+            ))
+        })?;
+        Ok(())
+    }
 }
 
 /// Existence of the fixed operation directory, not validity of its manifest or contents.
@@ -129,6 +148,10 @@ impl OwnedStageInput {
 type StageResponse = oneshot::Sender<Result<staging_files::Staged, StageOwnedError>>;
 enum FileRequest {
     Stage(StageResponse, Box<OwnedStageInput>),
+    StageV2(
+        oneshot::Sender<Result<staging::ValidatedRecoveryEnvelope, StageOwnedError>>,
+        Box<OwnedStageInputV2>,
+    ),
     Probe(
         oneshot::Sender<Result<StagePresence, StageOwnedError>>,
         OperationId,
@@ -308,6 +331,32 @@ impl StorageWorker {
             // A probe can occupy the one queued slot while another stage executes.
             // Retain this caller-owned allocation until admission; never enqueue a
             // second file request or spin while the file thread is blocked.
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        rx.await.unwrap_or(Err(StageOwnedError::Unavailable))
+    }
+    /// The v2 request uses the same one-slot channel, gate and original scoped lease as v1.
+    /// Waiter cancellation cannot revoke an admitted file write.
+    pub async fn stage_capture_owned_v2(
+        &self,
+        input: OwnedStageInputV2,
+    ) -> Result<staging::ValidatedRecoveryEnvelope, StageOwnedError> {
+        input.checked()?;
+        let (tx, rx) = oneshot::channel();
+        let mut request = FileRequest::StageV2(tx, Box::new(input));
+        loop {
+            let queued = {
+                let gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+                if gate.closing {
+                    return Err(StageOwnedError::Unavailable);
+                }
+                self.file_sender.try_send(request)
+            };
+            match queued {
+                Ok(()) => break,
+                Err(TrySendError::Disconnected(_)) => return Err(StageOwnedError::Unavailable),
+                Err(TrySendError::Full(pending)) => request = pending,
+            }
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
         rx.await.unwrap_or(Err(StageOwnedError::Unavailable))
@@ -507,6 +556,32 @@ fn file_loop(
                         Err(error) => Err(error),
                     })
                     .map_err(|e| StageOwnedError::Stage(staging_files::StageFailure::Storage(e)));
+                let _ = tx.send(result);
+            }
+            FileRequest::StageV2(tx, input) => {
+                let result = lease
+                    .staging_root()
+                    .map_err(|e| StageOwnedError::Stage(staging_files::StageFailure::Storage(e)))
+                    .and_then(|root| {
+                        let capture = input.capture.borrowed();
+                        let v2 = staging_files::StageInputV2 {
+                            capture,
+                            warnings: &input.warnings,
+                        };
+                        #[cfg(test)]
+                        if let Some(ref pause) = pause {
+                            return staging_files::stage_capture_v2_pausing(&root, v2, &|| {
+                                let _ = pause.entered.send(());
+                                let _ = pause
+                                    .release
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner())
+                                    .recv();
+                            })
+                            .map_err(StageOwnedError::Stage);
+                        }
+                        staging_files::stage_capture_v2(&root, v2).map_err(StageOwnedError::Stage)
+                    });
                 let _ = tx.send(result);
             }
             FileRequest::Stage(tx, input) => {
