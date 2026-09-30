@@ -8,10 +8,10 @@ use uuid::Uuid;
 
 /// Shipped migrations in application order. `0001` owns the foundation tables;
 /// `0002` adds the S02 images schema (`records`, `assets`); `0003` adds the durable
-/// capture-operation journal (`ingest_operations`), a global table only. All are
-/// applied in a single transaction on a fresh file, and an interrupted upgrade rolls
-/// back the schema change together with its migration row.
-const SHIPPED: [(&str, &str); 3] = [
+/// capture-operation journal (`ingest_operations`); `0004` adds pending capture
+/// intents without changing the images contract. All are applied in a single
+/// transaction on a fresh file; interrupted upgrades roll back their migration rows.
+const SHIPPED: [(&str, &str); 4] = [
     (
         "0001_foundation",
         include_str!("../migrations/0001_foundation.sql"),
@@ -21,11 +21,14 @@ const SHIPPED: [(&str, &str); 3] = [
         "0003_operations",
         include_str!("../migrations/0003_operations.sql"),
     ),
+    (
+        "0004_capture_intents",
+        include_str!("../migrations/0004_capture_intents.sql"),
+    ),
 ];
 /// Applied images schema version, reported by `SchemaSnapshot::images`. The
-/// `0003_operations` journal adds a global migration without changing the images
-/// schema itself, so the images contract stays at `0002` while the global
-/// `schema_version` becomes three.
+/// `0003_operations` and `0004_capture_intents` are global journal migrations;
+/// the images contract stays at `0002` while the global version advances.
 const IMAGES_VERSION: u32 = 2;
 pub(super) const BOOTSTRAP: &str = "CREATE TABLE schema_migrations (\n    version       INTEGER PRIMARY KEY CHECK (version > 0),\n    name          TEXT NOT NULL,\n    checksum      TEXT NOT NULL,\n    applied_at    TEXT NOT NULL\n)";
 // Candidate-only foundation format. Written on a newly created file, before WAL

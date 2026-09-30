@@ -171,7 +171,23 @@ assert 'validate_staging(' in storage_sources['staging_files.rs']
 assert 'StagingTempKind::ManifestJson' in storage_sources['staging_files.rs'], \
     'the manifest must be the last published artifact'
 assert 'std::fs::' not in storage_sources['staging.rs'], ('storage', 'staging.rs')
-assert {path.name for path in (root / 'crates/storage/migrations').glob('*.sql')} == {'0001_foundation.sql', '0002_images.sql', '0003_operations.sql'}
+assert {path.name for path in (root / 'crates/storage/migrations').glob('*.sql')} == {'0001_foundation.sql', '0002_images.sql', '0003_operations.sql', '0004_capture_intents.sql'}
+intents_sql = (root / 'crates/storage/migrations/0004_capture_intents.sql').read_text(encoding='utf-8')
+assert 'CREATE TABLE capture_intents (' in intents_sql
+for column in ('operation_id', 'principal_id'):
+    constraint = next(line for line in intents_sql.splitlines() if line.startswith(f'    {column} TEXT '))
+    assert f"{column} != '00000000-0000-0000-0000-000000000000'" in constraint
+    assert '-4[0-9a-f]' not in constraint and '-[89ab]' not in constraint, column
+for column in ('planned_record_id', 'planned_asset_id', 'frame_id'):
+    constraint = next(line for line in intents_sql.splitlines() if line.startswith(f'    {column} TEXT '))
+    assert '-4[0-9a-f]' in constraint and '-[89ab]' in constraint, column
+assert 'REFERENCES library_meta(library_id)' in intents_sql
+assert 'ingest_operations_no_pending_insert' in intents_sql and 'capture_intents_no_saved_insert' in intents_sql
+assert 'ingest_operations_no_pending_update' in intents_sql and 'capture_intents_no_saved_update' in intents_sql
+assert 'capture_intents_unique_resources_insert' in intents_sql and 'capture_intents_unique_resources_update' in intents_sql
+assert 'path TEXT' not in intents_sql and 'credentials' not in intents_sql and 'saved_at' not in intents_sql
+assert '0004_capture_intents.sql' in storage_sources['migration.rs']
+assert 'const IMAGES_VERSION: u32 = 2' in storage_sources['migration.rs']
 images_sql = (root / 'crates/storage/migrations/0002_images.sql').read_text(encoding='utf-8')
 assert "format IN ('webp_lossless')" in images_sql and "'avif'" not in images_sql
 assert "asset_type IN ('original', 'preview', 'edited')" in images_sql

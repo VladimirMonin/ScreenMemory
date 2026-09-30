@@ -324,8 +324,13 @@ fn t09l1_candidate_scan_reports_incomplete_and_unsafe_without_touching_sentinels
     let root = lease.staging_root().unwrap();
     let valid = OperationId::new(Uuid::new_v4());
     let incomplete = OperationId::new(Uuid::new_v4());
+    let non_v4 = OperationId::new(Uuid::parse_str("00000000-0000-1000-8000-000000000001").unwrap());
+    let non_rfc_variant =
+        OperationId::new(Uuid::parse_str("00000000-0000-4000-0000-000000000001").unwrap());
     let op = root.create_operation(valid).unwrap();
     let staged = root.create_operation(incomplete).unwrap();
+    let staged_non_v4 = root.create_operation(non_v4).unwrap();
+    let staged_non_rfc = root.create_operation(non_rfc_variant).unwrap();
     let staging = f.0.join("staging");
     let incomplete_path = staging.join(incomplete.as_uuid().to_string());
     fs::write(
@@ -338,16 +343,19 @@ fn t09l1_candidate_scan_reports_incomplete_and_unsafe_without_touching_sentinels
     fs::write(outside.join("sentinel"), b"OUTSIDE-SENTINEL").unwrap();
     fs::write(staging.join("unrelated-sentinel"), b"UNRELATED-SENTINEL").unwrap();
     fs::create_dir(staging.join("AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA")).unwrap();
-    fs::create_dir(staging.join("00000000-0000-1000-8000-000000000001")).unwrap();
-    fs::create_dir(staging.join("00000000-0000-4000-0000-000000000001")).unwrap();
+    fs::create_dir(staging.join("00000000-0000-0000-0000-000000000000")).unwrap();
+    fs::create_dir(staging.join("00000000-0000-4000-0000-00000000000g")).unwrap();
+    fs::create_dir(staging.join("00000000-0000-4000-0000-00000000001")).unwrap();
     fs::write(staging.join(Uuid::new_v4().to_string()), b"NOT-A-DIRECTORY").unwrap();
     let link = staging.join(Uuid::new_v4().to_string());
     junction(&link, &outside);
     let found = root.enumerate_candidates().unwrap();
-    assert_eq!(found.ids.len(), 2);
+    assert_eq!(found.ids.len(), 4);
     assert!(found.ids.contains(&valid));
     assert!(found.ids.contains(&incomplete));
-    assert_eq!(found.malformed_entries, 3);
+    assert!(found.ids.contains(&non_v4));
+    assert!(found.ids.contains(&non_rfc_variant));
+    assert_eq!(found.malformed_entries, 4);
     assert_eq!(found.unsafe_entries, 2);
     assert_eq!(found.reparse_entries, 1);
     assert_eq!(
@@ -364,6 +372,8 @@ fn t09l1_candidate_scan_reports_incomplete_and_unsafe_without_touching_sentinels
     );
     drop(found);
     drop(staged);
+    drop(staged_non_v4);
+    drop(staged_non_rfc);
     drop(op);
     remove_junction(&link);
 }

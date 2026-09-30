@@ -210,16 +210,13 @@ impl<'lease> StagingRoot<'lease> {
         };
         windows::enumerate_staging(&self.native, |name, attributes| {
             // NTFS directory enumeration reports UTF-16 names, not manifest identities.
-            // Restrict to canonical lowercase hyphenated UUIDv4, including variant.
+            // Restrict to canonical lowercase hyphenated non-nil UUIDs of any version/variant.
             let parsed = String::from_utf16(name).ok().and_then(|text| {
                 if text.len() != 36 || !text.is_ascii() {
                     return None;
                 }
                 let uuid = uuid::Uuid::parse_str(&text).ok()?;
-                (uuid.get_version_num() == 4
-                    && uuid.get_variant() == uuid::Variant::RFC4122
-                    && uuid.to_string() == text)
-                    .then_some(uuid)
+                (!uuid.is_nil() && uuid.to_string() == text).then_some(uuid)
             });
             if name == [b'.' as u16] || name == [b'.' as u16, b'.' as u16] {
                 return Ok(());

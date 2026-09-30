@@ -31,15 +31,7 @@ impl Fixture {
         fs::create_dir_all(&base).unwrap();
         let base = fs::canonicalize(base).unwrap();
         let base = PathBuf::from(base.to_string_lossy().trim_start_matches(r"\\?\"));
-        let root = base.join(format!(
-            "s02-images-{}-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
+        let root = base.join(Uuid::new_v4().to_string());
         fs::create_dir(&root).unwrap();
         for child in ["data", "config", "cache", "webview"] {
             fs::create_dir(root.join(child)).unwrap();
@@ -186,14 +178,14 @@ fn count(db: &Connection, table: &str) -> i64 {
 }
 
 #[test]
-fn s02_images_01_migration_applies_both_versions_and_stays_reopenable() {
+fn s02_images_01_migration_applies_all_versions_and_stays_reopenable() {
     let f = Fixture::new();
     let worker = StorageWorker::start(f.lease()).unwrap();
     let snapshot = f.rt(worker.schema_snapshot()).unwrap();
-    assert_eq!(snapshot.schema_version, 3);
+    assert_eq!(snapshot.schema_version, 4);
     assert_eq!(
         snapshot.images.migration_version, 2,
-        "0003 adds a global journal without changing the images schema contract"
+        "0003 and 0004 add global journals without changing the images schema contract"
     );
     assert_eq!(
         snapshot.images.canonical_format,
@@ -209,7 +201,7 @@ fn s02_images_01_migration_applies_both_versions_and_stays_reopenable() {
         .unwrap()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
-    assert_eq!(rows.len(), 3);
+    assert_eq!(rows.len(), 4);
     assert_eq!(rows[0].0, 1);
     assert_eq!(rows[0].1, "0001_foundation");
     assert_eq!(rows[1].0, 2);
@@ -231,6 +223,16 @@ fn s02_images_01_migration_applies_both_versions_and_stays_reopenable() {
         ),
         "the checksum covers the exact shipped bytes, including the final newline"
     );
+    assert_eq!(rows[3].0, 4);
+    assert_eq!(rows[3].1, "0004_capture_intents");
+    assert_eq!(
+        rows[3].2,
+        format!(
+            "{:x}",
+            Sha256::digest(include_str!("../migrations/0004_capture_intents.sql").as_bytes())
+        )
+    );
+    assert_eq!(count(&db, "capture_intents"), 0);
     assert_eq!(count(&db, "records"), 0);
     assert_eq!(count(&db, "assets"), 0);
     let tables: Vec<String> = db
@@ -244,6 +246,7 @@ fn s02_images_01_migration_applies_both_versions_and_stays_reopenable() {
         tables,
         [
             "assets",
+            "capture_intents",
             "ingest_operations",
             "library_meta",
             "library_settings",
@@ -708,12 +711,12 @@ fn s02_images_09_upgrade_from_foundation_is_atomic_and_adds_no_rows() {
     let library_id = write_foundation_library(&f);
     let worker = StorageWorker::start(f.lease()).unwrap();
     let snapshot = f.rt(worker.schema_snapshot()).unwrap();
-    assert_eq!(snapshot.schema_version, 3);
+    assert_eq!(snapshot.schema_version, 4);
     assert_eq!(snapshot.library_id, library_id);
     assert!(!f.rt(worker.read_ai_enabled()).unwrap());
     f.close(&worker);
     let db = direct(&f.db());
-    assert_eq!(count(&db, "schema_migrations"), 3);
+    assert_eq!(count(&db, "schema_migrations"), 4);
     assert_eq!(count(&db, "records"), 0);
     assert_eq!(count(&db, "assets"), 0);
     let stored: String = db
@@ -747,7 +750,7 @@ fn s02_images_09_upgrade_from_foundation_is_atomic_and_adds_no_rows() {
     assert!(broken.published_files().is_empty());
     // The retry completes the interrupted upgrade exactly once.
     let worker = StorageWorker::start(broken.lease()).unwrap();
-    assert_eq!(f.rt(worker.schema_snapshot()).unwrap().schema_version, 3);
+    assert_eq!(f.rt(worker.schema_snapshot()).unwrap().schema_version, 4);
     assert_eq!(
         broken
             .rt(worker.page_records(RecordPageQuery::first(None).unwrap()))
@@ -759,7 +762,7 @@ fn s02_images_09_upgrade_from_foundation_is_atomic_and_adds_no_rows() {
     );
     broken.close(&worker);
     let db = direct(&broken.db());
-    assert_eq!(count(&db, "schema_migrations"), 3);
+    assert_eq!(count(&db, "schema_migrations"), 4);
 }
 
 #[test]
@@ -920,7 +923,7 @@ fn s02_images_12_substituted_or_truncated_canonical_file_is_refused() {
 }
 
 /// Real S02 images-version library: owner marker, shipped 0001+0002 objects, rows and
-/// exactly two migration rows, so the next open is a genuine v2 -> v3 upgrade.
+/// exactly two migration rows, so the next open upgrades the genuine v2 prefix.
 fn write_images_v2_library(fixture: &Fixture) -> Uuid {
     let foundation = include_str!("../migrations/0001_foundation.sql");
     let images = include_str!("../migrations/0002_images.sql");
@@ -1042,21 +1045,21 @@ fn s02_t09a_13_first_successful_commit_writes_a_complete_saved_journal_row() {
 }
 
 #[test]
-fn s02_t09a_14_v2_upgrade_to_v3_is_atomic_reopenable_and_keeps_images_contract() {
+fn s02_t09a_14_v2_upgrade_to_latest_is_atomic_reopenable_and_keeps_images_contract() {
     let f = Fixture::new();
     let library_id = write_images_v2_library(&f);
     let worker = StorageWorker::start(f.lease()).unwrap();
     let snapshot = f.rt(worker.schema_snapshot()).unwrap();
-    assert_eq!(snapshot.schema_version, 3);
+    assert_eq!(snapshot.schema_version, 4);
     assert_eq!(snapshot.library_id, library_id);
     assert_eq!(
         snapshot.images.migration_version, 2,
-        "0003 adds a global journal only; the images schema contract is unchanged"
+        "0003 and 0004 add global journals only; the images schema contract is unchanged"
     );
     f.close(&worker);
 
     let db = direct(&f.db());
-    assert_eq!(count(&db, "schema_migrations"), 3);
+    assert_eq!(count(&db, "schema_migrations"), 4);
     assert_eq!(count(&db, "ingest_operations"), 0);
     let checksum: String = db
         .query_row(
@@ -1108,12 +1111,332 @@ fn s02_t09a_14_v2_upgrade_to_v3_is_atomic_reopenable_and_keeps_images_contract()
     let worker = StorageWorker::start(broken.lease()).unwrap();
     assert_eq!(
         broken.rt(worker.schema_snapshot()).unwrap().schema_version,
-        3
+        4
     );
     broken.close(&worker);
     let db = direct(&broken.db());
+    assert_eq!(count(&db, "schema_migrations"), 4);
+    assert_eq!(count(&db, "ingest_operations"), 0);
+}
+
+/// Exact shipped v3 prefix, including its original checksum, with no v4 objects.
+fn write_operations_v3_library(fixture: &Fixture) -> Uuid {
+    let library_id = write_images_v2_library(fixture);
+    let operations = include_str!("../migrations/0003_operations.sql");
+    let db = Connection::open(fixture.db()).unwrap();
+    db.execute_batch(operations).unwrap();
+    db.execute(
+        "INSERT INTO schema_migrations VALUES (3, '0003_operations', ?1, '2026-09-28T09:00:00.000Z')",
+        [format!("{:x}", Sha256::digest(operations.as_bytes()))],
+    )
+    .unwrap();
+    library_id
+}
+
+#[test]
+fn s02_t09m1_01_v3_upgrade_rollback_checksum_and_reopen() {
+    let f = Fixture::new();
+    let library_id = write_operations_v3_library(&f);
+    let worker = StorageWorker::start(f.lease()).unwrap();
+    let snapshot = f.rt(worker.schema_snapshot()).unwrap();
+    assert_eq!(snapshot.schema_version, 4);
+    assert_eq!(snapshot.images.migration_version, 2);
+    assert_eq!(snapshot.library_id, library_id);
+    f.close(&worker);
+    let db = direct(&f.db());
+    assert_eq!(count(&db, "schema_migrations"), 4);
+    assert_eq!(count(&db, "capture_intents"), 0);
+    let checksums: Vec<String> = db
+        .prepare("SELECT checksum FROM schema_migrations ORDER BY version")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    for (actual, sql) in checksums.iter().zip([
+        include_str!("../migrations/0001_foundation.sql"),
+        include_str!("../migrations/0002_images.sql"),
+        include_str!("../migrations/0003_operations.sql"),
+        include_str!("../migrations/0004_capture_intents.sql"),
+    ]) {
+        assert_eq!(*actual, format!("{:x}", Sha256::digest(sql.as_bytes())));
+    }
+    drop(db);
+    let worker = StorageWorker::start(f.lease()).unwrap();
+    assert_eq!(f.rt(worker.schema_snapshot()).unwrap(), snapshot);
+    f.close(&worker);
+
+    // Both the immutable v3 prefix and new v4 checksum are checked before upgrade/open.
+    for version in [3, 4] {
+        let tampered = Fixture::new();
+        if version == 3 {
+            write_operations_v3_library(&tampered);
+        } else {
+            let worker = StorageWorker::start(tampered.lease()).unwrap();
+            tampered.close(&worker);
+        }
+        let db = Connection::open(tampered.db()).unwrap();
+        db.execute(
+            "UPDATE schema_migrations SET checksum='bad' WHERE version=?1",
+            [version],
+        )
+        .unwrap();
+        drop(db);
+        assert!(matches!(
+            StorageWorker::start(tampered.lease()),
+            Err(StorageError::SchemaIncompatible)
+        ));
+    }
+
+    let interrupted = Fixture::new();
+    let id = write_operations_v3_library(&interrupted);
+    assert!(matches!(
+        StorageWorker::start_with_fault(interrupted.lease()),
+        Err(StorageError::MigrationFailed)
+    ));
+    let db = direct(&interrupted.db());
     assert_eq!(count(&db, "schema_migrations"), 3);
     assert_eq!(count(&db, "ingest_operations"), 0);
+    let objects: i64 = db.query_row("SELECT count(*) FROM sqlite_master WHERE name LIKE 'capture_intents%' OR name LIKE 'ingest_operations_no_pending%'", [], |row| row.get(0)).unwrap();
+    assert_eq!(
+        objects, 0,
+        "table and all triggers roll back with migration row"
+    );
+    assert_eq!(
+        db.query_row("SELECT library_id FROM library_meta", [], |row| row
+            .get::<_, String>(0))
+            .unwrap(),
+        id.to_string()
+    );
+    drop(db);
+    let worker = StorageWorker::start(interrupted.lease()).unwrap();
+    assert_eq!(
+        interrupted
+            .rt(worker.schema_snapshot())
+            .unwrap()
+            .schema_version,
+        4
+    );
+    interrupted.close(&worker);
+}
+
+/// Synthetic UUIDv4 values are only for direct schema tests, never live identities.
+fn pending_uuid(index: u128) -> String {
+    Uuid::from_u128(0x12345678_1234_4234_8234_000000000000 + index).to_string()
+}
+
+fn insert_intent(db: &Connection, library: &str, offset: u128) -> rusqlite::Result<usize> {
+    insert_intent_with_identity(
+        db,
+        library,
+        offset,
+        &pending_uuid(offset),
+        &pending_uuid(offset + 1),
+    )
+}
+
+fn insert_intent_with_identity(
+    db: &Connection,
+    library: &str,
+    offset: u128,
+    operation: &str,
+    principal: &str,
+) -> rusqlite::Result<usize> {
+    db.execute(
+        "INSERT INTO capture_intents (operation_id, library_id, principal_id, kind, planned_record_id, planned_asset_id, frame_id, mode, width, height, pixel_sha256, context_sha256, request_fingerprint, context_json, warnings, encoder_fingerprint, captured_at_utc, planned_created_at_utc) VALUES (?1, ?2, ?3, 'capture', ?4, ?5, ?6, 'region', 320, 200, ?7, ?7, ?7, '{}', '[\"safe_warning\"]', 'synthetic-profile', ?8, ?8)",
+        rusqlite::params![operation, library, principal, pending_uuid(offset + 2), pending_uuid(offset + 3), pending_uuid(offset + 4), "a".repeat(64), CAPTURED_AT],
+    )
+}
+
+#[test]
+fn s02_t09m1_03_real_principal_and_non_v4_operation_are_canonical_and_non_nil() {
+    use sm_application::credentials::{CredentialEnvironment, CredentialKey};
+    use sm_domain::LibraryId;
+
+    let f = Fixture::new();
+    let worker = StorageWorker::start(f.lease()).unwrap();
+    let library_id = f.rt(worker.schema_snapshot()).unwrap().library_id;
+    f.close(&worker);
+    let db = Connection::open(f.db()).unwrap();
+    let principal = CredentialKey::owner(CredentialEnvironment::Test, LibraryId::new(library_id))
+        .principal()
+        .as_uuid()
+        .to_string();
+    let operation = "00000000-0000-1000-0000-000000000001";
+    assert_ne!(principal, Uuid::nil().to_string());
+    assert_eq!(
+        insert_intent_with_identity(&db, &library_id.to_string(), 0, operation, &principal)
+            .expect("insert non-v4 operation and actual SHA-derived owner principal"),
+        1
+    );
+    let stored: (String, String) = db
+        .query_row(
+            "SELECT operation_id, principal_id FROM capture_intents",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(stored, (operation.to_owned(), principal.clone()));
+    // Neither column is v4-specific, but both require exact lowercase canonical
+    // hyphenation and reject nil, malformed and uppercase spellings.
+    for column in ["operation_id", "principal_id"] {
+        for bad in [
+            Uuid::nil().to_string(),
+            "00000000-0000-1000-0000-00000000000g".to_owned(),
+            "00000000-0000-1000-0000-00000000001".to_owned(),
+            "00000000-0000-1000-0000-00000000000A".to_owned(),
+        ] {
+            let sql = format!("UPDATE capture_intents SET {column}=?1");
+            assert!(
+                db.execute(&sql, [bad]).is_err(),
+                "{column} must reject invalid spelling"
+            );
+        }
+    }
+    assert_eq!(
+        db.query_row(
+            "SELECT count(*) FROM capture_intents WHERE operation_id=?1 AND principal_id=?2",
+            rusqlite::params![operation, principal],
+            |row| row.get::<_, i64>(0)
+        )
+        .unwrap(),
+        1,
+        "rejected writes leave the valid identity intact"
+    );
+}
+
+#[test]
+fn s02_t09m1_02_sql_bounds_fk_unique_and_mutual_exclusion() {
+    let f = Fixture::new();
+    let worker = StorageWorker::start(f.lease()).unwrap();
+    let library = f
+        .rt(worker.schema_snapshot())
+        .unwrap()
+        .library_id
+        .to_string();
+    f.close(&worker);
+    let mut db = Connection::open(f.db()).unwrap();
+    db.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+    assert!(
+        insert_intent(&db, &pending_uuid(90), 0).is_err(),
+        "FK rejects foreign library"
+    );
+    assert_eq!(insert_intent(&db, &library, 0).unwrap(), 1);
+    assert!(insert_intent(&db, &library, 0).is_err(), "operation PK");
+    // A second operation cannot reuse any resource identity.
+    assert!(db.execute("INSERT INTO capture_intents SELECT ?1,library_id,principal_id,kind,planned_record_id,planned_asset_id,frame_id,mode,width,height,pixel_sha256,context_sha256,request_fingerprint,context_json,warnings,encoder_fingerprint,captured_at_utc,planned_created_at_utc FROM capture_intents", [pending_uuid(10)]).is_err());
+    assert_eq!(insert_intent(&db, &library, 10).unwrap(), 1);
+    assert!(
+        db.execute(
+            "UPDATE capture_intents SET planned_asset_id=?1 WHERE operation_id=?2",
+            rusqlite::params![pending_uuid(2), pending_uuid(10)]
+        )
+        .is_err(),
+        "cross-role resource collision"
+    );
+    assert!(db.execute("INSERT INTO capture_intents SELECT ?1,library_id,principal_id,kind,?2,?3,?4,mode,width,height,pixel_sha256,context_sha256,request_fingerprint,context_json,warnings,encoder_fingerprint,captured_at_utc,planned_created_at_utc FROM capture_intents WHERE operation_id=?5", rusqlite::params![pending_uuid(20),pending_uuid(3),pending_uuid(22),pending_uuid(23),pending_uuid(0)]).is_err(), "insert also checks cross-role collision");
+    for (column, value) in [
+        ("mode", "window".to_owned()),
+        ("kind", "import".to_owned()),
+        ("principal_id", "not-a-uuid".to_owned()),
+        ("operation_id", Uuid::nil().to_string()),
+        ("width", "0".to_owned()),
+        ("height", "16384".to_owned()),
+        ("pixel_sha256", "A".repeat(64)),
+        ("context_sha256", "z".repeat(64)),
+        ("request_fingerprint", "0".repeat(63)),
+        ("context_json", "[1]".to_owned()),
+        ("context_json", "x".repeat(262145)),
+        ("warnings", "{}".to_owned()),
+        ("warnings", "[1]".to_owned()),
+        ("warnings", "[\"Invalid\"]".to_owned()),
+        ("warnings", format!("[\"{}\"]", "w".repeat(65))),
+        ("warnings", format!("[{}]", "\"w\",".repeat(16) + "\"w\"")),
+        ("encoder_fingerprint", "".to_owned()),
+        ("encoder_fingerprint", "x".repeat(513)),
+        ("captured_at_utc", "not-a-timestamp".to_owned()),
+        ("planned_created_at_utc", "2026-09-28T09:00:00Z".to_owned()),
+        ("frame_id", pending_uuid(2)),
+    ] {
+        let sql = format!("UPDATE capture_intents SET {column}=?1 WHERE operation_id=?2");
+        assert!(
+            db.execute(&sql, rusqlite::params![value, pending_uuid(0)])
+                .is_err(),
+            "{column} rejected"
+        );
+    }
+    let context_at_limit = format!("{{\"x\":\"{}\"}}", "q".repeat(262136));
+    assert_eq!(context_at_limit.len(), 262144);
+    db.execute(
+        "UPDATE capture_intents SET context_json=?1 WHERE operation_id=?2",
+        rusqlite::params![context_at_limit, pending_uuid(0)],
+    )
+    .unwrap();
+    assert!(
+        db.execute(
+            "UPDATE capture_intents SET context_json=?1 WHERE operation_id=?2",
+            rusqlite::params![
+                format!("{{\"x\":\"{}\"}}", "q".repeat(262137)),
+                pending_uuid(0)
+            ]
+        )
+        .is_err(),
+        "context byte limit"
+    );
+    // SQLite checks the timestamp shape; calendar semantics belong to the future typed API.
+    db.execute(
+        "UPDATE capture_intents SET width=16383 WHERE operation_id=?1",
+        [pending_uuid(0)],
+    )
+    .unwrap();
+    assert!(
+        db.execute(
+            "UPDATE capture_intents SET height=16383 WHERE operation_id=?1",
+            [pending_uuid(0)]
+        )
+        .is_err(),
+        "pixel cap"
+    );
+    let saved_id = pending_uuid(40);
+    db.execute("INSERT INTO records (id,library_id,created_at,capture_context,provenances) VALUES (?1,?2,?3,'{}','[{}]')", rusqlite::params![pending_uuid(41), library, CAPTURED_AT]).unwrap();
+    let saved = |db: &Connection, op: &str| {
+        db.execute(
+        "INSERT INTO ingest_operations (operation_id,principal_id,kind,planned_record_id,planned_asset_id,content_sha256,semantic_fingerprint,mode,width,height,warnings,record_id,state,created_at_utc,updated_at_utc) VALUES (?1,?2,'capture',?3,?4,?5,?5,'region',320,200,'[]',?3,'saved',?6,?6)",
+        rusqlite::params![op,pending_uuid(42),pending_uuid(41),pending_uuid(43),"a".repeat(64),CAPTURED_AT])
+    };
+    assert!(
+        saved(&db, &pending_uuid(0)).is_err(),
+        "saved insert cannot coexist with pending"
+    );
+    saved(&db, &saved_id).unwrap();
+    assert!(db
+        .execute(
+            "UPDATE ingest_operations SET operation_id=?1 WHERE operation_id=?2",
+            rusqlite::params![pending_uuid(0), saved_id]
+        )
+        .is_err());
+    assert!(
+        insert_intent(&db, &library, 40).is_err(),
+        "pending insert cannot coexist with saved"
+    );
+    assert!(db
+        .execute(
+            "UPDATE capture_intents SET operation_id=?1 WHERE operation_id=?2",
+            rusqlite::params![saved_id, pending_uuid(0)]
+        )
+        .is_err());
+    let tx = db
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .unwrap();
+    tx.execute(
+        "DELETE FROM capture_intents WHERE operation_id=?1",
+        [pending_uuid(0)],
+    )
+    .unwrap();
+    saved(&tx, &pending_uuid(0)).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(count(&db, "capture_intents"), 1);
+    assert_eq!(count(&db, "ingest_operations"), 2);
 }
 
 /// A draft whose operation and principal are fixed by the caller, so a retry after a
