@@ -112,7 +112,7 @@ assert 'rusqlite::' not in (root / 'crates/application/src/storage.rs').read_tex
 # S02 images storage: the owner keeps its single writer, the canonical file layout and
 # the closed canonical-format vocabulary; the codec never reaches the filesystem.
 storage_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/storage/src').rglob('*.rs')}
-assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_files.rs', 'staging_tests.rs', 'staging_recovery_tests.rs', 'staging_files_tests.rs', 'file_lane_tests.rs', 'tests.rs', 'image_tests.rs', 'intents.rs', 'intent_tests.rs', 'match_recovery.rs', 'match_recovery_tests.rs', 'recovery_candidate.rs', 'recovery_commit.rs', 'recovery_commit_tests.rs'}
+assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_files.rs', 'staging_tests.rs', 'staging_recovery_tests.rs', 'staging_files_tests.rs', 'file_lane_tests.rs', 'tests.rs', 'image_tests.rs', 'intents.rs', 'intent_tests.rs', 'match_recovery.rs', 'match_recovery_tests.rs', 'recovery_candidate.rs', 'recovery_commit.rs', 'recovery_commit_tests.rs', 'recovery_process_tests.rs'}
 # T09m2: only the SQLite worker receives the path-free intent request; read scopes
 # principal/mode/request before projecting row contents and never writes stage/canonical.
 assert 'CreateIntent(' in storage_sources['lib.rs'] and 'intents::create(&mut db' in storage_sources['lib.rs']
@@ -208,7 +208,19 @@ commit = storage_sources['recovery_commit.rs']
 assert 'pub async fn commit_sealed_recovery(' in storage_sources['lib.rs']
 assert 'FileRequest::RevalidateSeal(tx, sealed)' in storage_sources['lib.rs']
 assert 'sealed.revalidate().map(|()| sealed)' in storage_sources['lib.rs'].split('fn file_loop(', 1)[1]
-assert 'recovery_commit::commit(&mut db, sealed,' in storage_sources['lib.rs'].split('fn run(', 1)[1].split('fn file_loop(', 1)[0]
+assert 'recovery_commit::commit(' in storage_sources['lib.rs'].split('fn run(', 1)[1].split('fn file_loop(', 1)[0]
+assert 'crash_gate.as_deref()' in storage_sources['lib.rs'].split('fn run(', 1)[1].split('fn file_loop(', 1)[0]
+# Process crash injection is test-compiled only, with child marker/argv guard;
+# production cannot construct the checkpoint and the parent kills only its Child.
+process = storage_sources['recovery_process_tests.rs']
+assert '#[cfg(test)]\nmod recovery_process_tests;' in storage_sources['lib.rs']
+assert '#[cfg(test)] crash_gate:' in storage_sources['lib.rs']
+assert '#[cfg(test)] crash_gate:' in commit
+assert 'gate.checkpoint(crate::recovery_process_tests::CrashPhase::F07)' in commit
+assert 'gate.checkpoint(recovery_process_tests::CrashPhase::F06)' in storage_sources['lib.rs']
+assert 'std::env::current_exe()' in process and '"--exact",' in process and 'CHILD_TEST,' in process and '"--ignored",' in process
+assert 'Child::kill' in process and 'self.0.kill()' in process
+assert 'get_version_num() == 4' in process and 'Instant::now() < deadline' in process
 assert commit.index('saved_replay(', commit.index('pub(super) fn commit(')) < commit.index('crate::intents::read(') < commit.index('DELETE FROM capture_intents') < commit.index('INSERT INTO records') < commit.index('INSERT INTO assets') < commit.index('INSERT INTO ingest_operations') < commit.index('tx.commit()')
 assert all(field in commit for field in ('a.asset_type', 'r.created_at', 'r.library_id', 'io.created_at_utc', 'stored.6 != AssetType::Original.as_str()', 'stored.7 != expected.created_at', 'stored.8 != library', 'stored.9 != expected.created_at'))
 replay = commit.split('fn saved_replay(', 1)[1].split('pub(super) fn commit(', 1)[0]

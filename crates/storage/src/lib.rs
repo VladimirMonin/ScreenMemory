@@ -15,6 +15,8 @@ pub mod recovery_candidate;
 mod recovery_commit;
 #[cfg(test)]
 mod recovery_commit_tests;
+#[cfg(test)]
+mod recovery_process_tests;
 pub mod staging;
 pub mod staging_files;
 #[cfg(test)]
@@ -303,12 +305,15 @@ impl StorageWorker {
             Fault::None,
             #[cfg(test)]
             None,
+            #[cfg(test)]
+            None,
         )
     }
     fn start_inner(
         lease: HostLease,
         fault: Fault,
         #[cfg(test)] pause: Option<FilePause>,
+        #[cfg(test)] crash_gate: Option<std::sync::Arc<recovery_process_tests::CrashGate>>,
     ) -> Result<Self, StorageError> {
         let (sender, receiver) = mpsc::sync_channel(32);
         let (file_sender, file_receiver) = mpsc::sync_channel(1);
@@ -321,6 +326,8 @@ impl StorageWorker {
         let status = Arc::clone(&gate);
         let file_stop_sender = file_sender.clone();
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+        #[cfg(test)]
+        let file_crash_gate = crash_gate.clone();
         std::thread::Builder::new()
             .name("sm-sqlite-worker".into())
             .spawn(move || {
@@ -357,6 +364,8 @@ impl StorageWorker {
                                         file_receiver,
                                         #[cfg(test)]
                                         pause,
+                                        #[cfg(test)]
+                                        file_crash_gate,
                                     );
                                 });
                             let Ok(file_thread) = file_thread else {
@@ -374,7 +383,14 @@ impl StorageWorker {
                             // the scoped borrow and its original lease can be released.
                             let sqlite_result =
                                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                    run(db, receiver, assets, fault)
+                                    run(
+                                        db,
+                                        receiver,
+                                        assets,
+                                        fault,
+                                        #[cfg(test)]
+                                        crash_gate,
+                                    )
                                 }));
                             let file_stop = file_stop_sender.send(FileRequest::Stop).is_ok();
                             let file_joined = file_thread.join().is_ok();
@@ -734,7 +750,13 @@ fn open(entry: &sm_isolation::DatabaseEntry, fail: bool) -> Result<Connection, S
     migration::initialize(&mut db, fresh, fail)?;
     Ok(db)
 }
-fn run(db: Connection, receiver: Receiver<Request>, assets: PathBuf, fault: Fault) -> bool {
+fn run(
+    db: Connection,
+    receiver: Receiver<Request>,
+    assets: PathBuf,
+    fault: Fault,
+    #[cfg(test)] crash_gate: Option<std::sync::Arc<recovery_process_tests::CrashGate>>,
+) -> bool {
     let mut db = db;
     for request in receiver {
         match request {
@@ -778,7 +800,13 @@ fn run(db: Connection, receiver: Receiver<Request>, assets: PathBuf, fault: Faul
                 let result = if fault == Fault::RecoveryBeforeBegin {
                     Err(StorageError::Unavailable)
                 } else {
-                    recovery_commit::commit(&mut db, sealed, fault == Fault::RecoveryBeforeCommit)
+                    recovery_commit::commit(
+                        &mut db,
+                        sealed,
+                        fault == Fault::RecoveryBeforeCommit,
+                        #[cfg(test)]
+                        crash_gate.as_deref(),
+                    )
                 };
                 let _ = tx.send(result);
             }
@@ -825,6 +853,7 @@ fn file_loop(
     lease: &HostLease,
     receiver: Receiver<FileRequest>,
     #[cfg(test)] pause: Option<FilePause>,
+    #[cfg(test)] crash_gate: Option<std::sync::Arc<recovery_process_tests::CrashGate>>,
 ) {
     for request in receiver {
         match request {
@@ -847,6 +876,12 @@ fn file_loop(
             }
             FileRequest::RevalidateSeal(tx, mut sealed) => {
                 let result = sealed.revalidate().map(|()| sealed);
+                #[cfg(test)]
+                if result.is_ok() {
+                    if let Some(gate) = crash_gate.as_deref() {
+                        gate.checkpoint(recovery_process_tests::CrashPhase::F06);
+                    }
+                }
                 let _ = tx.send(result);
             }
             FileRequest::Probe(tx, operation_id) => {
@@ -1019,10 +1054,10 @@ impl FoundationRepository for StorageWorker {
 #[cfg(test)]
 impl StorageWorker {
     pub(crate) fn start_with_fault(lease: HostLease) -> Result<Self, StorageError> {
-        Self::start_inner(lease, Fault::MigrationCommit, None)
+        Self::start_inner(lease, Fault::MigrationCommit, None, None)
     }
     pub(crate) fn start_with_image_fault(lease: HostLease) -> Result<Self, StorageError> {
-        Self::start_inner(lease, Fault::ImageCommit, None)
+        Self::start_inner(lease, Fault::ImageCommit, None, None)
     }
     pub(crate) fn start_with_recovery_fault(
         lease: HostLease,
@@ -1036,7 +1071,14 @@ impl StorageWorker {
                 Fault::RecoveryBeforeBegin
             },
             None,
+            None,
         )
+    }
+    pub(crate) fn start_with_process_crash_gate(
+        lease: HostLease,
+        gate: std::sync::Arc<recovery_process_tests::CrashGate>,
+    ) -> Result<Self, StorageError> {
+        Self::start_inner(lease, Fault::None, None, Some(gate))
     }
     pub(crate) fn start_with_file_pause(
         lease: HostLease,
@@ -1050,6 +1092,7 @@ impl StorageWorker {
                 entered,
                 release: Mutex::new(release),
             }),
+            None,
         )
     }
     pub(crate) async fn read_pragmas(&self) -> Result<(String, i64, i64, i64), StorageError> {

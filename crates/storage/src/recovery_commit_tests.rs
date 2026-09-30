@@ -17,9 +17,9 @@ use std::{
 };
 use uuid::Uuid;
 
-struct Fixture(PathBuf);
+pub(super) struct Fixture(pub(super) PathBuf);
 impl Fixture {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.pi/temporary");
         fs::create_dir_all(&base).unwrap();
         let base = fs::canonicalize(base).unwrap();
@@ -31,7 +31,7 @@ impl Fixture {
         }
         Self(root)
     }
-    fn lease(&self) -> HostLease {
+    pub(super) fn lease(&self) -> HostLease {
         HostLease::acquire(
             LibraryRootResolver::resolve(RootSource::Test {
                 root: &self.0,
@@ -41,10 +41,10 @@ impl Fixture {
         )
         .unwrap()
     }
-    fn db(&self) -> rusqlite::Connection {
+    pub(super) fn db(&self) -> rusqlite::Connection {
         rusqlite::Connection::open(self.0.join("data/library.sqlite3")).unwrap()
     }
-    fn counts(&self, expected: (i64, i64, i64, i64)) {
+    pub(super) fn counts(&self, expected: (i64, i64, i64, i64)) {
         let db = self.db();
         let counts = ["capture_intents", "records", "assets", "ingest_operations"].map(|table| {
             db.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| {
@@ -57,7 +57,11 @@ impl Fixture {
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
-        fs::remove_dir_all(&self.0).unwrap();
+        // A failing process test must not double-panic/abort its parent while a
+        // worker still pins this synthetic root. Preserve it for inspection.
+        if !std::thread::panicking() {
+            fs::remove_dir_all(&self.0).unwrap();
+        }
     }
 }
 
@@ -95,7 +99,7 @@ fn intent(library: LibraryId, pixels: &[u8]) -> CreateCaptureIntent {
         captured_at_utc: "2026-09-28T09:15:00.000Z".into(),
     }
 }
-fn reopened(i: &CreateCaptureIntent) -> OwnedReopenInputV2 {
+pub(super) fn reopened(i: &CreateCaptureIntent) -> OwnedReopenInputV2 {
     OwnedReopenInputV2 {
         library_id: i.library_id,
         principal_id: i.principal_id,
@@ -104,7 +108,10 @@ fn reopened(i: &CreateCaptureIntent) -> OwnedReopenInputV2 {
         encoder_fingerprint: i.encoder_fingerprint.clone(),
     }
 }
-async fn published(worker: &StorageWorker, i: &CreateCaptureIntent) -> VerifiedPublished {
+pub(super) async fn published(
+    worker: &StorageWorker,
+    i: &CreateCaptureIntent,
+) -> VerifiedPublished {
     let ValidatedIntentRead::Pending(witness) = worker
         .read_validated_capture_intent(i.library_id, i.principal_id, i.request.clone())
         .await
@@ -125,7 +132,7 @@ async fn published(worker: &StorageWorker, i: &CreateCaptureIntent) -> VerifiedP
     );
     worker.publish_recovery_candidate(candidate).await.unwrap()
 }
-async fn setup(f: &Fixture) -> (CreateCaptureIntent, String) {
+pub(super) async fn setup(f: &Fixture) -> (CreateCaptureIntent, String) {
     let worker = StorageWorker::start(f.lease()).unwrap();
     let pixels = [11, 22, 33, 0];
     let i = intent(
@@ -159,7 +166,7 @@ async fn setup(f: &Fixture) -> (CreateCaptureIntent, String) {
     worker.shutdown(Duration::from_secs(5)).await.unwrap();
     (i, pending.planned_created_at_utc)
 }
-fn paths(f: &Fixture, i: &CreateCaptureIntent, planned: &str) -> (PathBuf, PathBuf) {
+pub(super) fn paths(f: &Fixture, i: &CreateCaptureIntent, planned: &str) -> (PathBuf, PathBuf) {
     (
         f.0.join("assets")
             .join(&planned[..7])

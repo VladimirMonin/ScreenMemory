@@ -123,6 +123,7 @@ pub(super) fn commit(
     db: &mut Connection,
     sealed: SealedPublished,
     fail_after_inserts: bool,
+    #[cfg(test)] crash_gate: Option<&crate::recovery_process_tests::CrashGate>,
 ) -> Result<CommittedImage, StorageError> {
     // `sealed` owns the write-denying HANDLE and ancestor pins until this method exits.
     // Never read the file or run codec in the SQL transaction.
@@ -231,6 +232,10 @@ pub(super) fn commit(
         .map_err(sql_error)?;
     tx.execute("INSERT INTO ingest_operations (operation_id, principal_id, kind, planned_record_id, planned_asset_id, content_sha256, semantic_fingerprint, mode, width, height, warnings, record_id, state, created_at_utc, updated_at_utc) VALUES (?1,?2,'capture',?3,?4,?5,?6,?7,?8,?9,?10,?3,'saved',?11,?12)",
         params![operation, principal, record, asset, expected.sha256, fingerprint, input.request.target().as_str(), input.width, input.height, warnings, created, updated]).map_err(sql_error)?;
+    #[cfg(test)]
+    if let Some(gate) = crash_gate {
+        gate.checkpoint(crate::recovery_process_tests::CrashPhase::F07);
+    }
     if fail_after_inserts {
         return Err(StorageError::Unavailable);
     }
