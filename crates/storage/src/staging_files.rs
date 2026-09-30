@@ -338,6 +338,10 @@ fn stage_capture_v2_with(
     seams: StageSeams,
     pause: Option<&dyn Fn()>,
 ) -> Result<ValidatedRecoveryEnvelope, StageFailure> {
+    if input.capture.encoder_fingerprint.is_empty() || input.capture.encoder_fingerprint.len() > 512
+    {
+        return Err(StageFailure::Rejected(StagingError::ProfileMismatch));
+    }
     // Bound count and code lengths before serializing untrusted-sized caller strings.
     let warning_json = warnings_to_json(input.warnings)
         .map_err(|_| StageFailure::Rejected(StagingError::InvalidWarnings))?;

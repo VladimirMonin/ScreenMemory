@@ -583,6 +583,11 @@ pub fn validate_recovery_envelope(
         1 => validate_staging(manifest_bytes, context_bytes, pixels, expectations)
             .map(ValidatedRecoveryEnvelope::LegacyV1),
         2 => {
+            if expectations.encoder_fingerprint.is_empty()
+                || expectations.encoder_fingerprint.len() > 512
+            {
+                return Err(StagingError::ProfileMismatch);
+            }
             const V2_FIELDS: [&str; 3] = ["warnings", "provenance_kind", "path_policy"];
             if object.keys().any(|key| {
                 !MANIFEST_FIELDS.contains(&key.as_str()) && !V2_FIELDS.contains(&key.as_str())

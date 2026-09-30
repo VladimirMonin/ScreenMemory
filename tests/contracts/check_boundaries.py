@@ -131,8 +131,8 @@ assert 'is_canonical_utc_timestamp' in storage_sources['staging.rs']
 assert 'CaptureContext::from_json' in storage_sources['staging.rs']
 # S02-T09h stays pure. V1 retains its exact 18-field decoder; v2 is versioned and
 # receipt-ready only with validated warnings, automatic provenance and fixed policy.
-# T09j connects the owned v2 request to the existing file lane and host, without
-# making reopening or SQL recovery part of this transition.
+# T09j connects the owned v2 request to the existing file lane and host. T09k adds
+# only known-operation v2 reopen on that lane; no SQL recovery or enumeration.
 assert 'const MANIFEST_FIELDS: [&str; 18]' in storage_sources['staging.rs']
 for member in ('"warnings"', '"provenance_kind"', '"path_policy"'):
     assert member in storage_sources['staging.rs']
@@ -147,7 +147,10 @@ assert 'pub fn pixels(&self) -> &[u8]' in storage_sources['staging_files.rs']
 assert 'pub async fn stage_capture_owned_v2(' in storage_sources['lib.rs']
 assert 'StageV2(' in storage_sources['lib.rs'] and 'stage_capture_v2(&root, v2)' in storage_sources['lib.rs']
 assert 'warnings_to_json(&self.warnings)' in storage_sources['lib.rs']
-assert 'reopen_staged_v2(' not in storage_sources['lib.rs']
+assert 'pub async fn reopen_stage_owned_v2(' in storage_sources['lib.rs']
+assert 'ReopenV2(' in storage_sources['lib.rs'] and 'staging_files::reopen_staged_v2(' in storage_sources['lib.rs']
+assert 'staging::StagingExpectations {' in storage_sources['lib.rs']
+assert 'pub envelope:' not in reopened_v2 and 'pub pixels:' not in reopened_v2
 for forbidden in ('std::fs', 'std::path', 'rusqlite', 'std::process', 'std::net'):
     assert forbidden not in storage_sources['staging_recovery_tests.rs']
 assert 'pub mod staging;' in storage_sources['lib.rs']

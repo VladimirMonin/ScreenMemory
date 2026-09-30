@@ -66,6 +66,383 @@ impl Drop for Fixture {
     }
 }
 
+fn reopen_input(input: &OwnedStageInput) -> OwnedReopenInputV2 {
+    OwnedReopenInputV2 {
+        library_id: input.library_id,
+        principal_id: input.principal_id,
+        operation_id: input.operation_id,
+        mode: input.mode,
+        encoder_fingerprint: input.encoder_fingerprint.clone(),
+    }
+}
+
+#[test]
+fn s02_t09k_empty_v2_profile_rejected_before_file_lane_write() {
+    let f = Fixture::new();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let worker = StorageWorker::start(f.try_lease().unwrap()).unwrap();
+        let mut input = f.input();
+        input.encoder_fingerprint.clear();
+        let directory =
+            f.0.join("staging")
+                .join(input.operation_id.as_uuid().to_string());
+        assert_eq!(
+            worker
+                .stage_capture_owned_v2(OwnedStageInputV2 {
+                    capture: input,
+                    warnings: vec![],
+                })
+                .await
+                .unwrap_err(),
+            StageOwnedError::Stage(staging_files::StageFailure::Rejected(
+                staging::StagingError::ProfileMismatch
+            ))
+        );
+        assert!(!directory.exists());
+        let mut oversized = f.input();
+        oversized.encoder_fingerprint = "x".repeat(513);
+        assert_eq!(
+            worker
+                .stage_capture_owned_v2(OwnedStageInputV2 {
+                    capture: oversized,
+                    warnings: vec![],
+                })
+                .await
+                .unwrap_err(),
+            StageOwnedError::Stage(staging_files::StageFailure::Rejected(
+                staging::StagingError::ManifestBeyondLimit
+            ))
+        );
+        assert!(!directory.exists());
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        assert!(!directory.exists());
+    });
+}
+
+#[test]
+fn s02_t09k_01_reacquired_worker_reopens_exact_v2_without_db_receipt() {
+    use sha2::{Digest, Sha256};
+    let f = Fixture::new();
+    let sentinel = f.0.join("sentinel");
+    fs::write(&sentinel, b"preserve").unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let input = f.input();
+        let expected = reopen_input(&input);
+        let ids = (input.record_id, input.asset_id, input.frame_id);
+        let context = input.context.clone();
+        let pixel_hash = format!("{:x}", Sha256::digest(&input.pixels));
+        let pixels = input.pixels.clone();
+        let warnings = vec!["topology_changed".into(), "display_unknown".into()];
+        let first = StorageWorker::start(f.try_lease().unwrap()).unwrap();
+        first.stage_capture_owned_v2(OwnedStageInputV2 {
+            capture: input, warnings: warnings.clone(),
+        }).await.unwrap();
+        assert!(matches!(first.lookup_operation(expected.operation_id, expected.principal_id, expected.mode).await, Ok(LookupOutcome::Unknown)));
+        first.shutdown(Duration::from_secs(5)).await.unwrap();
+        let second = StorageWorker::start(f.try_lease().unwrap()).unwrap();
+        let reopened = second.reopen_stage_owned_v2(expected).await.unwrap();
+        let envelope = reopened.envelope();
+        let staged = envelope.staging();
+        assert_eq!(envelope.schema_version(), 2);
+        assert_eq!(envelope.warnings(), Some(warnings.as_slice()));
+        assert_eq!((staged.record_id(), staged.asset_id(), staged.frame_id()), ids);
+        assert_eq!(staged.context(), &context);
+        assert_eq!(staged.pixels_sha256(), pixel_hash);
+        assert_eq!(reopened.pixels(), pixels);
+        assert_eq!(format!("{:x}", Sha256::digest(reopened.pixels())), pixel_hash);
+        assert_eq!(envelope.path_policy(), Some(staging::RECOVERY_PATH_POLICY));
+        assert!(matches!(envelope.automatic_provenance(), Some(sm_application::storage::Provenance::Automatic { when, source }) if when == staged.captured_at() && source == staged.mode()));
+        assert!(matches!(second.lookup_operation(staged.operation_id(), staged.principal_id(), staged.mode()).await, Ok(LookupOutcome::Unknown)));
+        second.shutdown(Duration::from_secs(5)).await.unwrap();
+    });
+    assert_eq!(fs::read(sentinel).unwrap(), b"preserve");
+}
+
+#[test]
+fn s02_t09k_02_v1_foreign_and_tamper_fail_without_deletion() {
+    let f = Fixture::new();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let worker = StorageWorker::start(f.try_lease().unwrap()).unwrap();
+        let v1 = f.input();
+        let legacy = reopen_input(&v1);
+        worker.stage_capture_owned(v1).await.unwrap();
+        assert!(matches!(
+            worker.reopen_stage_owned_v2(legacy).await,
+            Err(ReopenOwnedError::Reopen(
+                staging_files::ReopenFailure::Rejected(
+                    staging::StagingError::UnsupportedSchemaVersion
+                )
+            ))
+        ));
+        let v2 = f.input();
+        let trusted = reopen_input(&v2);
+        let dir =
+            f.0.join("staging")
+                .join(v2.operation_id.as_uuid().to_string());
+        worker
+            .stage_capture_owned_v2(OwnedStageInputV2 {
+                capture: v2,
+                warnings: vec!["topology_changed".into()],
+            })
+            .await
+            .unwrap();
+        let sentinel = dir.join("sentinel");
+        fs::write(&sentinel, b"keep").unwrap();
+        let mut foreign = OwnedReopenInputV2 {
+            library_id: trusted.library_id,
+            principal_id: PrincipalId::new(Uuid::new_v4()),
+            operation_id: trusted.operation_id,
+            mode: trusted.mode,
+            encoder_fingerprint: trusted.encoder_fingerprint.clone(),
+        };
+        assert!(matches!(
+            worker.reopen_stage_owned_v2(foreign).await,
+            Err(ReopenOwnedError::Reopen(
+                staging_files::ReopenFailure::Rejected(staging::StagingError::ForeignIdentity)
+            ))
+        ));
+        foreign = OwnedReopenInputV2 {
+            library_id: trusted.library_id,
+            principal_id: trusted.principal_id,
+            operation_id: trusted.operation_id,
+            mode: trusted.mode,
+            encoder_fingerprint: "wrong-profile".into(),
+        };
+        assert!(matches!(
+            worker.reopen_stage_owned_v2(foreign).await,
+            Err(ReopenOwnedError::Reopen(
+                staging_files::ReopenFailure::Rejected(staging::StagingError::ProfileMismatch)
+            ))
+        ));
+        let pixels_path = dir.join("pixels.rgba");
+        let mut pixels = fs::read(&pixels_path).unwrap();
+        pixels[0] ^= 1;
+        fs::write(&pixels_path, &pixels).unwrap();
+        assert!(matches!(
+            worker.reopen_stage_owned_v2(trusted).await,
+            Err(ReopenOwnedError::Reopen(
+                staging_files::ReopenFailure::Rejected(staging::StagingError::PixelDigestMismatch)
+            ))
+        ));
+        assert_eq!(fs::read(&pixels_path).unwrap(), pixels);
+        assert_eq!(fs::read(&sentinel).unwrap(), b"keep");
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+    });
+}
+
+#[test]
+fn s02_t09k_03_incomplete_oversize_and_stop_keep_sentinel() {
+    let f = Fixture::new();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let worker = StorageWorker::start(f.try_lease().unwrap()).unwrap();
+        let input = f.input();
+        let trusted = reopen_input(&input);
+        assert!(matches!(
+            worker.reopen_stage_owned_v2(reopen_input(&input)).await,
+            Err(ReopenOwnedError::Reopen(
+                staging_files::ReopenFailure::Incomplete
+            ))
+        ));
+        let dir =
+            f.0.join("staging")
+                .join(input.operation_id.as_uuid().to_string());
+        fs::create_dir(&dir).unwrap();
+        fs::write(dir.join("sentinel"), b"keep").unwrap();
+        assert!(matches!(
+            worker.reopen_stage_owned_v2(reopen_input(&input)).await,
+            Err(ReopenOwnedError::Reopen(
+                staging_files::ReopenFailure::Incomplete
+            ))
+        ));
+        let manifest = dir.join("manifest.json");
+        let file = fs::File::create(&manifest).unwrap();
+        file.set_len((staging::MAX_MANIFEST_BYTES + 1) as u64)
+            .unwrap();
+        assert!(matches!(
+            worker.reopen_stage_owned_v2(trusted).await,
+            Err(ReopenOwnedError::Reopen(
+                staging_files::ReopenFailure::Rejected(staging::StagingError::ManifestBeyondLimit)
+            ))
+        ));
+        assert_eq!(
+            worker.probe_stage_presence(input.operation_id).await,
+            Ok(StagePresence::Present)
+        );
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        assert!(matches!(
+            worker.reopen_stage_owned_v2(reopen_input(&input)).await,
+            Err(ReopenOwnedError::Unavailable)
+        ));
+        assert_eq!(fs::read(dir.join("sentinel")).unwrap(), b"keep");
+        assert_eq!(
+            fs::metadata(manifest).unwrap().len(),
+            (staging::MAX_MANIFEST_BYTES + 1) as u64
+        );
+    });
+}
+
+#[test]
+fn s02_t09k_06_unsafe_root_and_invalid_trusted_input_fail_closed() {
+    let f = Fixture::new();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let worker = StorageWorker::start(f.try_lease().unwrap()).unwrap();
+        let input = f.input();
+        let mut invalid = reopen_input(&input);
+        invalid.encoder_fingerprint = "x".repeat(513);
+        assert!(matches!(
+            worker.reopen_stage_owned_v2(invalid).await,
+            Err(ReopenOwnedError::Reopen(
+                staging_files::ReopenFailure::Rejected(staging::StagingError::ProfileMismatch)
+            ))
+        ));
+        let sentinel = f.0.join("staging");
+        fs::write(&sentinel, b"not-a-directory").unwrap();
+        assert!(matches!(
+            worker.reopen_stage_owned_v2(reopen_input(&input)).await,
+            Err(ReopenOwnedError::Reopen(
+                staging_files::ReopenFailure::Storage(_)
+            ))
+        ));
+        assert_eq!(fs::read(&sentinel).unwrap(), b"not-a-directory");
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+    });
+}
+
+#[test]
+fn s02_t09k_04_fifo_stage_probe_reopen_stop_drains_before_lease_release() {
+    let f = Fixture::new();
+    let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+    let (release_tx, release_rx) = mpsc::sync_channel(1);
+    let worker =
+        StorageWorker::start_with_file_pause(f.try_lease().unwrap(), entered_tx, release_rx)
+            .unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let input = f.input();
+        let trusted = reopen_input(&input);
+        let operation = input.operation_id;
+        let stage = tokio::spawn({
+            let worker = worker.clone();
+            async move {
+                worker
+                    .stage_capture_owned_v2(OwnedStageInputV2 {
+                        capture: input,
+                        warnings: vec!["topology_changed".into()],
+                    })
+                    .await
+            }
+        });
+        tokio::task::yield_now().await;
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let probe = tokio::spawn({
+            let worker = worker.clone();
+            async move { worker.probe_stage_presence(operation).await }
+        });
+        tokio::task::yield_now().await;
+        // The one queued slot belongs to Probe; this Reopen is rejected as overload,
+        // not misreported as an incomplete file or as a stopped worker.
+        let rejected = worker
+            .reopen_stage_owned_v2(OwnedReopenInputV2 {
+                library_id: trusted.library_id,
+                principal_id: trusted.principal_id,
+                operation_id: trusted.operation_id,
+                mode: trusted.mode,
+                encoder_fingerprint: trusted.encoder_fingerprint.clone(),
+            })
+            .await;
+        assert!(matches!(rejected, Err(ReopenOwnedError::Unavailable)));
+        assert!(!probe.is_finished());
+        assert_eq!(
+            worker.shutdown(Duration::from_millis(30)).await,
+            Err(StorageError::Unavailable)
+        );
+        assert!(matches!(
+            worker.reopen_stage_owned_v2(trusted).await,
+            Err(ReopenOwnedError::Unavailable)
+        ));
+        assert!(matches!(f.try_lease(), Err(LeaseError::Busy)));
+        release_tx.send(()).unwrap();
+        assert!(stage.await.unwrap().unwrap().is_recovery_ready());
+        assert_eq!(probe.await.unwrap(), Ok(StagePresence::Present));
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        drop(f.try_lease().unwrap());
+    });
+}
+
+#[test]
+fn s02_t09k_05_admitted_reopen_completes_before_stop_ack() {
+    let f = Fixture::new();
+    let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+    let (release_tx, release_rx) = mpsc::sync_channel(1);
+    let worker =
+        StorageWorker::start_with_file_pause(f.try_lease().unwrap(), entered_tx, release_rx)
+            .unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let input = f.input();
+        let trusted = reopen_input(&input);
+        let stage = tokio::spawn({
+            let worker = worker.clone();
+            async move {
+                worker
+                    .stage_capture_owned_v2(OwnedStageInputV2 {
+                        capture: input,
+                        warnings: vec!["topology_changed".into()],
+                    })
+                    .await
+            }
+        });
+        tokio::task::yield_now().await;
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let reopen = tokio::spawn({
+            let worker = worker.clone();
+            async move { worker.reopen_stage_owned_v2(trusted).await }
+        });
+        tokio::task::yield_now().await;
+        assert!(!reopen.is_finished());
+        assert_eq!(
+            worker.shutdown(Duration::from_millis(30)).await,
+            Err(StorageError::Unavailable)
+        );
+        assert!(matches!(f.try_lease(), Err(LeaseError::Busy)));
+        release_tx.send(()).unwrap();
+        stage.await.unwrap().unwrap();
+        let reopened = reopen.await.unwrap().unwrap();
+        assert_eq!(
+            reopened.envelope().warnings(),
+            Some(["topology_changed".to_owned()].as_slice())
+        );
+        worker.shutdown(Duration::from_secs(5)).await.unwrap();
+        drop(f.try_lease().unwrap());
+    });
+}
+
 #[test]
 fn s02_t09c_01_file_pause_sqlite_responsive_lease_and_stop_ack() {
     let f = Fixture::new();

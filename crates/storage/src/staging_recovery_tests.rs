@@ -126,6 +126,74 @@ fn s02_t09h_02_v1_is_accepted_but_unrecoverable_even_when_v2_empty_warnings() {
 }
 
 #[test]
+fn s02_t09k_empty_expected_v2_profile_fails_closed_but_v1_remains_valid() {
+    let (mut manifest, context, pixels) = fixture();
+    manifest["encoder_fingerprint"] = json!("");
+    let bytes = serde_json::to_vec(&manifest).unwrap();
+    let empty_expected = StagingExpectations {
+        encoder_fingerprint: "",
+        ..expected()
+    };
+    assert_eq!(
+        validate_recovery_envelope(&bytes, context.as_bytes(), &pixels, empty_expected),
+        Err(StagingError::ProfileMismatch)
+    );
+    for name in ["warnings", "provenance_kind", "path_policy"] {
+        manifest.as_object_mut().unwrap().remove(name);
+    }
+    manifest["schema_version"] = json!(1);
+    let legacy = serde_json::to_vec(&manifest).unwrap();
+    assert!(validate_staging(&legacy, context.as_bytes(), &pixels, empty_expected).is_ok());
+    assert!(matches!(
+        validate_recovery_envelope(&legacy, context.as_bytes(), &pixels, empty_expected),
+        Ok(ValidatedRecoveryEnvelope::LegacyV1(_))
+    ));
+}
+
+#[test]
+fn s02_t09k_v2_profile_is_bounded_by_utf8_bytes_without_changing_v1() {
+    let (mut manifest, context, pixels) = fixture();
+    let at_limit = "é".repeat(256);
+    let over_limit = format!("{at_limit}a");
+    assert_eq!(at_limit.len(), 512);
+    assert_eq!(over_limit.len(), 513);
+    manifest["encoder_fingerprint"] = json!(at_limit);
+    let expected_at_limit = StagingExpectations {
+        encoder_fingerprint: &at_limit,
+        ..expected()
+    };
+    assert!(validate_recovery_envelope(
+        &serde_json::to_vec(&manifest).unwrap(),
+        context.as_bytes(),
+        &pixels,
+        expected_at_limit,
+    )
+    .unwrap()
+    .is_recovery_ready());
+
+    manifest["encoder_fingerprint"] = json!(over_limit);
+    let expected_over_limit = StagingExpectations {
+        encoder_fingerprint: &over_limit,
+        ..expected()
+    };
+    let bytes = serde_json::to_vec(&manifest).unwrap();
+    assert_eq!(
+        validate_recovery_envelope(&bytes, context.as_bytes(), &pixels, expected_over_limit),
+        Err(StagingError::ProfileMismatch)
+    );
+    for name in ["warnings", "provenance_kind", "path_policy"] {
+        manifest.as_object_mut().unwrap().remove(name);
+    }
+    manifest["schema_version"] = json!(1);
+    let legacy = serde_json::to_vec(&manifest).unwrap();
+    assert!(validate_staging(&legacy, context.as_bytes(), &pixels, expected_over_limit).is_ok());
+    assert!(matches!(
+        validate_recovery_envelope(&legacy, context.as_bytes(), &pixels, expected_over_limit),
+        Ok(ValidatedRecoveryEnvelope::LegacyV1(_))
+    ));
+}
+
+#[test]
 fn s02_t09h_03_closed_members_types_and_duplicates() {
     let (manifest, context, pixels) = fixture();
     for field in ["warnings", "provenance_kind", "path_policy", "frame_id"] {

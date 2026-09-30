@@ -200,6 +200,22 @@ fn s02_t09i_02_empty_v2_distinct_from_published_v1_and_prewrite_rejection() {
     );
     assert!(!f.directory().exists());
     let empty: Vec<String> = vec![];
+    let mut empty_profile = f.input(&context, &pixels);
+    empty_profile.encoder_fingerprint = "";
+    assert_eq!(
+        stage_capture_v2(
+            &root,
+            StageInputV2 {
+                capture: empty_profile,
+                warnings: &empty,
+            }
+        ),
+        Err(StageFailure::Rejected(StagingError::ProfileMismatch))
+    );
+    assert!(
+        !f.directory().exists(),
+        "empty v2 profile must not create operation"
+    );
     let ready = stage_v2(&f, &root, &context, &pixels, &empty).unwrap();
     assert_eq!(ready.warnings(), Some([].as_slice()));
     assert_eq!(
@@ -219,6 +235,52 @@ fn s02_t09i_02_empty_v2_distinct_from_published_v1_and_prewrite_rejection() {
     );
     assert!(reopen_staged(&legacy_root, legacy.expectations()).is_ok());
     assert!(legacy.directory().join("manifest.json").exists());
+}
+
+#[test]
+fn s02_t09k_direct_v2_profile_byte_bound_precedes_operation_creation() {
+    let f = Fixture::new();
+    let lease = f.lease();
+    let root = lease.staging_root().unwrap();
+    let context = f.context(8, 4);
+    let pixels = Fixture::pixels(8, 4);
+    let warnings = Vec::new();
+    let at_limit = "é".repeat(256);
+    let over_limit = format!("{at_limit}a");
+    assert_eq!(at_limit.len(), 512);
+    assert_eq!(over_limit.len(), 513);
+
+    let mut input = f.input(&context, &pixels);
+    input.encoder_fingerprint = &over_limit;
+    assert_eq!(
+        stage_capture_v2(
+            &root,
+            StageInputV2 {
+                capture: input,
+                warnings: &warnings,
+            },
+        ),
+        Err(StageFailure::Rejected(StagingError::ProfileMismatch))
+    );
+    assert!(
+        !f.directory().exists(),
+        "rejected profile must not create operation"
+    );
+
+    let mut input = f.input(&context, &pixels);
+    input.encoder_fingerprint = &at_limit;
+    let staged = stage_capture_v2(
+        &root,
+        StageInputV2 {
+            capture: input,
+            warnings: &warnings,
+        },
+    )
+    .unwrap();
+    assert!(staged.is_recovery_ready());
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(f.directory().join("manifest.json")).unwrap()).unwrap();
+    assert_eq!(manifest["encoder_fingerprint"], at_limit);
 }
 
 #[test]

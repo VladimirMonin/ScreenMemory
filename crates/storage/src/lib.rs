@@ -63,11 +63,45 @@ pub struct OwnedStageInputV2 {
 impl OwnedStageInputV2 {
     fn checked(&self) -> Result<(), StageOwnedError> {
         self.capture.checked()?;
+        if self.capture.encoder_fingerprint.is_empty() {
+            return Err(StageOwnedError::Stage(
+                staging_files::StageFailure::Rejected(staging::StagingError::ProfileMismatch),
+            ));
+        }
         warnings_to_json(&self.warnings).map_err(|_| {
             StageOwnedError::Stage(staging_files::StageFailure::Rejected(
                 staging::StagingError::InvalidWarnings,
             ))
         })?;
+        Ok(())
+    }
+}
+
+/// Trusted, owned identity and profile for reopening one known operation. No caller-supplied
+/// path, filename, manifest or mutable output buffer is accepted.
+pub struct OwnedReopenInputV2 {
+    pub library_id: LibraryId,
+    pub principal_id: PrincipalId,
+    pub operation_id: OperationId,
+    pub mode: CaptureTarget,
+    pub encoder_fingerprint: String,
+}
+
+impl OwnedReopenInputV2 {
+    fn checked(&self) -> Result<(), ReopenOwnedError> {
+        if self.library_id.as_uuid().is_nil()
+            || self.principal_id.as_uuid().is_nil()
+            || self.operation_id.as_uuid().is_nil()
+        {
+            return Err(ReopenOwnedError::Reopen(
+                staging_files::ReopenFailure::Rejected(staging::StagingError::NilIdentity),
+            ));
+        }
+        if self.encoder_fingerprint.is_empty() || self.encoder_fingerprint.len() > 512 {
+            return Err(ReopenOwnedError::Reopen(
+                staging_files::ReopenFailure::Rejected(staging::StagingError::ProfileMismatch),
+            ));
+        }
         Ok(())
     }
 }
@@ -83,6 +117,13 @@ pub enum StagePresence {
 pub enum StageOwnedError {
     Unavailable,
     Stage(staging_files::StageFailure),
+}
+
+/// Path-free refusal; neither a rejected artifact nor this error exposes its metadata.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReopenOwnedError {
+    Unavailable,
+    Reopen(staging_files::ReopenFailure),
 }
 
 impl OwnedStageInput {
@@ -155,6 +196,10 @@ enum FileRequest {
     Probe(
         oneshot::Sender<Result<StagePresence, StageOwnedError>>,
         OperationId,
+    ),
+    ReopenV2(
+        oneshot::Sender<Result<staging_files::ReopenedV2, ReopenOwnedError>>,
+        OwnedReopenInputV2,
     ),
     Stop,
 }
@@ -361,6 +406,26 @@ impl StorageWorker {
         }
         rx.await.unwrap_or(Err(StageOwnedError::Unavailable))
     }
+    /// Reopen only a complete recovery-ready v2 for this trusted operation. Admitted
+    /// reads remain FIFO on the same bounded file lane; cancellation does not skip them.
+    pub async fn reopen_stage_owned_v2(
+        &self,
+        input: OwnedReopenInputV2,
+    ) -> Result<staging_files::ReopenedV2, ReopenOwnedError> {
+        input.checked()?;
+        let (tx, rx) = oneshot::channel();
+        let queued = {
+            let gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+            if gate.closing {
+                return Err(ReopenOwnedError::Unavailable);
+            }
+            self.file_sender.try_send(FileRequest::ReopenV2(tx, input))
+        };
+        match queued {
+            Ok(()) => rx.await.unwrap_or(Err(ReopenOwnedError::Unavailable)),
+            Err(_) => Err(ReopenOwnedError::Unavailable),
+        }
+    }
     /// A path-free, file-lane-ordered preflight. Only a genuinely missing fixed
     /// operation directory is Absent; unsafe entries and root IO fail closed.
     pub async fn probe_stage_presence(
@@ -556,6 +621,25 @@ fn file_loop(
                         Err(error) => Err(error),
                     })
                     .map_err(|e| StageOwnedError::Stage(staging_files::StageFailure::Storage(e)));
+                let _ = tx.send(result);
+            }
+            FileRequest::ReopenV2(tx, input) => {
+                let result = lease
+                    .staging_root()
+                    .map_err(|e| ReopenOwnedError::Reopen(staging_files::ReopenFailure::Storage(e)))
+                    .and_then(|root| {
+                        staging_files::reopen_staged_v2(
+                            &root,
+                            staging::StagingExpectations {
+                                library_id: input.library_id,
+                                principal_id: input.principal_id,
+                                operation_id: input.operation_id,
+                                mode: input.mode,
+                                encoder_fingerprint: &input.encoder_fingerprint,
+                            },
+                        )
+                        .map_err(ReopenOwnedError::Reopen)
+                    });
                 let _ = tx.send(result);
             }
             FileRequest::StageV2(tx, input) => {
