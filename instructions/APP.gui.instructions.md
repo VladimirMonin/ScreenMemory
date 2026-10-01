@@ -39,10 +39,13 @@ asset_id, offset, next_offset, total_size, WebP MIME, SHA256 по всем ча�
 прочие ошибки дают `PREVIEW_UNAVAILABLE` или безопасный host code. Канон при отказе
 не изменяется. React превращает только проверенный bounded hex в Blob URL `image/webp`,
 отзывает URL при смене/закрытии/unmount, не использует `file://` или сеть. Список
-обновляется на ready, после Saved и по кнопке; pagination, thumbnails, pin/editor,
-clipboard и пользовательское окно остаются отдельными задачами, а не обещанием этой
-галереи. Legacy host read реализует полную проверку canonical за один вызов и может
-аллоцировать полный файл до отказа GUI по размеру: это остаточный риск host-owner.
+обновляется на ready, после Saved и по кнопке. При первом успешном списке первый
+asset с canonical UUIDv4 и объявленным размером от 1 байта до 8 MiB открывается
+автоматически один раз; обновление списка не переоткрывает preview. Pagination,
+thumbnails, pin/editor, clipboard и пользовательское окно остаются отдельными задачами,
+а не обещанием этой галереи. Legacy host read реализует полную проверку canonical
+за один вызов и может аллоцировать полный файл до отказа GUI по размеру: это
+остаточный риск host-owner.
 
 Frontend (`apps/gui`, Vite+React+TS) импортирует только React, `@tauri-apps/api/core`,
 локальные модули и **типы** сгенерированного контракта; SDK LM Studio, SQLite, native

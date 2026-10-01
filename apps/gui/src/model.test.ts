@@ -8,6 +8,7 @@ import {
   captureModes,
   captureStateText,
   canonicalAssetId,
+  canAutoPreview,
   previewBytes,
   MAX_PREVIEW_BYTES,
   doctorFailed,
@@ -20,6 +21,7 @@ import {
   type Diagnostics,
   type GuiState,
   type AssetPreview,
+  type LibraryRecord,
 } from './model';
 
 const readyHost: Diagnostics['host'] = {
@@ -183,6 +185,20 @@ describe('S02 bounded gallery preview decoder', () => {
     expect(canonicalAssetId('01900000-0000-7000-8000-000000000001')).toBe(false);
     expect(canonicalAssetId('../file.webp')).toBe(false);
     expect(canonicalAssetId('01900000-0000-4000-8000-00000000000a'.toUpperCase())).toBe(false);
+  });
+  it('auto-opens only a canonical first asset with bounded size metadata', () => {
+    const item: LibraryRecord = {
+      id: '01900000-0000-4000-8000-000000000002', created_at: '2026-09-30T00:00:00.000Z',
+      title: 'Synthetic', target: 'region', width: 360, height: 180,
+      byte_size: '64', preview_asset_id: '01900000-0000-4000-8000-000000000001',
+    };
+    expect(canAutoPreview(item)).toBe(true);
+    expect(canAutoPreview({ ...item, byte_size: String(MAX_PREVIEW_BYTES) })).toBe(true);
+    for (const size of ['0', String(MAX_PREVIEW_BYTES + 1), '00064', '64x', '999999999999999999999']) {
+      expect(canAutoPreview({ ...item, byte_size: size })).toBe(false);
+    }
+    expect(canAutoPreview({ ...item, preview_asset_id: null })).toBe(false);
+    expect(canAutoPreview({ ...item, preview_asset_id: '01900000-0000-7000-8000-000000000001' })).toBe(false);
   });
   it('decodes only bounded WebP hex and rejects oversized/malformed/unavailable', () => {
     expect([...previewBytes(image)]).toEqual([82, 73, 70, 70]);

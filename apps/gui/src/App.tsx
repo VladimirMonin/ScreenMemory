@@ -11,6 +11,7 @@ import {
   guiBuild,
   notImplemented,
   canonicalAssetId,
+  canAutoPreview,
   previewBytes,
   stateText,
   statusFields,
@@ -60,6 +61,7 @@ export default function App() {
   const previewUrlRef = useRef<string | null>(null);
   const previewRequest = useRef(0);
   const recentRequest = useRef(0);
+  const initialPreviewConsidered = useRef(false);
 
   function releasePreview() {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
@@ -94,6 +96,11 @@ export default function App() {
         return;
       }
       setRecent(page);
+      if (!initialPreviewConsidered.current) {
+        initialPreviewConsidered.current = true;
+        const first = page.items[0];
+        if (first && canAutoPreview(first)) void selectRecord(first);
+      }
     } catch {
       if (request === recentRequest.current) {
         clearRecent();
@@ -235,9 +242,31 @@ export default function App() {
   return (
     <main>
       <h1>ScreenMemory</h1>
-      <p>
-        Диагностика основы · S01 · Test preview · сборка {guiBuild.version}
-      </p>
+      <p>Локальная библиотека · сборка {guiBuild.version}</p>
+      <section aria-label="Недавние снимки">
+        <h2>Недавние снимки</h2>
+        <button disabled={recentLoading} onClick={() => void refreshRecent()}>Обновить список</button>
+        {recentLoading && <p role="status">Загрузка снимков…</p>}
+        {recentError && <p role="alert">Список недоступен: {recentError}</p>}
+        {!recentLoading && !recentError && recent?.items.length === 0 && <p>Сохранённых снимков пока нет.</p>}
+        {!recent && !recentLoading && !recentError && <p>Для просмотра подключитесь к host.</p>}
+        {recent && <ul className="gallery">
+          {recent.items.map((item) => <li key={item.id}>
+            <button onClick={() => void selectRecord(item)} aria-pressed={selected?.id === item.id}>
+              <span>{item.title || 'Снимок'}</span>
+              <small>{item.created_at} · {item.target || 'Не определено'} · {item.width} × {item.height}</small>
+            </button>
+          </li>)}
+        </ul>}
+        {recent?.next_cursor && <p>Показаны первые 24; следующие страницы пока недоступны.</p>}
+        {selected && <div className="preview">
+          <h3>Просмотр: {selected.title || 'Снимок'}</h3>
+          {previewLoading && <p role="status">Загрузка изображения…</p>}
+          {previewError && <p role="alert">Изображение недоступно: {previewError}</p>}
+          {previewUrl && <img src={previewUrl} alt={selected.title || 'Сохранённый снимок'} />}
+          <button onClick={() => { previewRequest.current += 1; releasePreview(); setSelected(null); setPreviewLoading(false); }}>Закрыть просмотр</button>
+        </div>}
+      </section>
       <section aria-live="polite" aria-busy={busy}>
         <h2>Соединение</h2>
         <p>{stateText[state]}</p>
@@ -284,30 +313,6 @@ export default function App() {
             </div>
           ))}
         </dl>
-      </section>
-      <section aria-label="Недавние снимки">
-        <h2>Недавние снимки</h2>
-        <button disabled={recentLoading} onClick={() => void refreshRecent()}>Обновить список</button>
-        {recentLoading && <p role="status">Загрузка снимков…</p>}
-        {recentError && <p role="alert">Список недоступен: {recentError}</p>}
-        {!recentLoading && !recentError && recent?.items.length === 0 && <p>Сохранённых снимков пока нет.</p>}
-        {!recent && !recentLoading && !recentError && <p>Для просмотра подключитесь к host.</p>}
-        {recent && <ul className="gallery">
-          {recent.items.map((item) => <li key={item.id}>
-            <button onClick={() => void selectRecord(item)} aria-pressed={selected?.id === item.id}>
-              <span>{item.title || 'Снимок'}</span>
-              <small>{item.created_at} · {item.target || 'Не определено'} · {item.width} × {item.height}</small>
-            </button>
-          </li>)}
-        </ul>}
-        {recent?.next_cursor && <p>Показаны первые 24; следующие страницы пока недоступны.</p>}
-        {selected && <div className="preview">
-          <h3>Просмотр: {selected.title || 'Снимок'}</h3>
-          {previewLoading && <p role="status">Загрузка изображения…</p>}
-          {previewError && <p role="alert">Изображение недоступно: {previewError}</p>}
-          {previewUrl && <img src={previewUrl} alt={selected.title || 'Сохранённый снимок'} />}
-          <button onClick={() => { previewRequest.current += 1; releasePreview(); setSelected(null); setPreviewLoading(false); }}>Закрыть просмотр</button>
-        </div>}
       </section>
       <dl>
         {statusFields(report).map(([key, value]) => (
