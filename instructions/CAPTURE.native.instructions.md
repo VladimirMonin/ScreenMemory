@@ -16,4 +16,12 @@ T09f: `HotkeySink::try_reserve` неблокирующе до `run_session`; `Ho
 
 T09g: command и hotkey после принятия одного DIB передают owned нормализованный RGBA и доверенные library/principal/operation/record/asset/frame IDs, mode/context/freeze time/encoder fingerprint в file lane **до** encode/DB. T09j переключает production на v2 `stage_capture_owned_v2` с точными ordered warnings (включая пустые); legacy v1 не получает выдуманных warnings. `Staged` сверяется с удержанным результатом; canonical проверяется на соответствие тому же DIB и профилю; `Saved` выдаётся только после прежнего verified commit. При временно полном файловом канале owned input остаётся в ожидающей host-задаче (capacity канала не растёт); при ошибке уже созданную incomplete stage не удалять, тот же operation ID fail-closed до recovery. Опубликованный manifest не означает power-loss durability/`durable_input`; startup reconciliation, scoped status/retry, process-kill и byte-budget 1 GiB ещё NOT_RUN.
 
-Тесты: `cargo test --locked --offline -p sm-capture -- --test-threads=1` (9 native). `s02_nat_01..09`. Verify: `CAPTURE-NATIVE` step. Глобальные hotkey и tray — NOT_RUN без разрешённого тестового окружения.
+Offline: `CAPTURE-NATIVE` выполняет только `cargo test --locked -p sm-capture --lib`.
+`tests/live_capture.rs` читает **весь текущий desktop**, не только synthetic HWND:
+Cargo target требует non-default feature `isolated-desktop-tests`. Default workspace
+не dispatch этот target; `scripts/test-offline-safety.ps1` проверяет metadata и
+compile-only отказ raw 101 без включения feature. `CAPTURE-LIVE-DESKTOP` — NOT_RUN.
+Только отдельный S02/S08 harness после подтверждения owned isolated Windows
+session/desktop может явно включить feature; личный desktop запрещён даже если
+все адресуемые HWND synthetic. Не запускать live target/all-features тесты на
+личной сессии. Полная `s02_nat_*`, global hotkey и tray matrix не offline PASS.

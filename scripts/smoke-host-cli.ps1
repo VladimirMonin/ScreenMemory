@@ -10,11 +10,12 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'preview-common.ps1')
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $repo = Get-PreviewRepositoryRoot $PSScriptRoot
+. (Join-Path $PSScriptRoot 'verification-common.ps1')
+if (-not $OutputRoot) { $OutputRoot = Join-Path $repo ('.pi/temporary/' + [guid]::NewGuid().ToString('D')) }
+$outputState = New-VerificationState $repo $OutputRoot 'host-cli-smoke'
+$OutputRoot = $outputState.output
 $toolchain = Get-PreviewToolchain $repo
 $binaries = Build-PreviewBinaries $repo $toolchain
-if (-not $OutputRoot) { $OutputRoot = New-PreviewOutputRoot $repo 'smoke-host-cli' }
-if (Test-Path -LiteralPath $OutputRoot) { throw 'Output root must not exist (immutable evidence)' }
-[void](New-Item -ItemType Directory -Path $OutputRoot)
 
 $steps = New-Object System.Collections.ArrayList
 $notes = New-Object System.Collections.ArrayList
@@ -35,7 +36,7 @@ function Invoke-SmokeStep([string]$Id, [string]$Executable, [string[]]$Arguments
     $errLog = Join-Path $OutputRoot ('native-{0:d2}-stderr.log' -f $index)
     [System.IO.File]::WriteAllText($outLog, [string]$result.stdout, $utf8)
     [System.IO.File]::WriteAllText($errLog, [string]$result.stderr, $utf8)
-    $ok = ($result.exit -eq $ExpectedExit)
+    $ok = ($result.reason -eq 'OK' -and $result.exit -eq $ExpectedExit)
     [void]$steps.Add([ordered]@{
             check_id = $Id
             command = (Split-Path $Executable -Leaf)
@@ -78,9 +79,12 @@ try {
     $init = Invoke-SmokeStep 'PREVIEW-INIT' $binaries.shotd @('--init', '--root', $preview.root) 120 0
     $report = ConvertFrom-Json $init.stdout
     $libraryId = [string]$report.library_id
-    Assert-SmokeTrue ([bool]($libraryId -match '^[0-9a-f-]{36}$')) 'first-run library identity is not a canonical UUID' 'LIBRARY-IDENTITY'
-    Assert-SmokeTrue ([int]$report.schema_version -eq 1) 'first-run schema version is not 1' 'SCHEMA-VERSION'
+    Assert-SmokeTrue (Test-PreviewCanonicalUuid $libraryId) 'first-run library identity is not a canonical UUID' 'LIBRARY-IDENTITY'
+    $preview.initialized_library_id = $libraryId # this own root's successful --init above
     [void](Write-TrustedPreviewConfig $preview $libraryId $binaries.shotd)
+    # Current foundation plus S02 image/recovery/list migrations; config schema stays 1.
+    Assert-SmokeTrue ([int]$report.schema_version -eq 4) 'first-run storage schema version is not 4' 'SCHEMA-VERSION'
+    Assert-SmokeTrue ([int]$report.format_major -eq 1) 'first-run format major is not 1' 'FORMAT-MAJOR'
     Assert-SmokeTrue (Test-Path -LiteralPath (Join-Path $preview.root 'data\library.sqlite3') -PathType Leaf) 'library database was not created in the owned root' 'DATABASE-CREATED'
 
     # 1) CLI status with the fixed trusted host image: real autostart, real handshake.
@@ -92,7 +96,7 @@ try {
     Assert-SmokeTrue ([string]$first.bridge_state -eq 'stopped') 'bridge must be stopped in the foundation preview' 'STATUS-BRIDGE-STOPPED'
     $hostInstance = [string]$first.host_instance_id
     Assert-SmokeTrue ($hostInstance.Length -gt 0) 'CLI status reported no host instance id' 'STATUS-HOST-ID'
-    Assert-SmokeTrue ((Get-OwnedShotdProcess $preview.root).Count -ge 1) 'no owned host process is running after autostart' 'HOST-PROCESS-RUNNING'
+    Assert-SmokeTrue ((Get-OwnedShotdProcess $preview.root).Count -eq 1) 'no owned host process is running after autostart' 'HOST-PROCESS-RUNNING'
 
     # 2) A second status command must reach the same single owner and library identity.
     $status2 = Invoke-SmokeStep 'CLI-STATUS-SECOND' $binaries.shot @('--config', $preview.config, 'status', '--json') 120 0
@@ -126,13 +130,22 @@ try {
 
     # 5) --no-start on a root without a host: one error object, exit 4, no side effect.
     $absent = New-OwnedPreviewRoot $repo
-    $absentLibrary = [guid]::NewGuid().ToString()
+    $absentInit = Initialize-OwnedPreviewLibrary $repo $binaries.shotd $absent.root $absent
+    $absentLibrary = [string]$absentInit.library_id
+    # Persist only known own identity (never Blob/UserName), before any destructive
+    # path, so a failed future harness can reconcile its exact target without a sweep.
+    [System.IO.File]::WriteAllText((Join-Path $OutputRoot 'own-init-identities.json'),
+        (([ordered]@{ primary_library_id=$libraryId; absent_library_id=$absentLibrary } | ConvertTo-Json) + "`n"),$utf8)
     [void](Write-TrustedPreviewConfig $absent $absentLibrary $binaries.shotd)
+    $absentDatabase = Join-Path $absent.root 'data\library.sqlite3'
+    $absentDatabaseHash = (Get-FileHash -LiteralPath $absentDatabase -Algorithm SHA256).Hash
+    $absentLock = Join-Path $absent.root 'data\host.lock'
+    $absentLockHash = (Get-FileHash -LiteralPath $absentLock -Algorithm SHA256).Hash
     $noStart = Invoke-SmokeStep 'CLI-NO-START-ABSENT' $binaries.shot @('--config', $absent.config, 'status', '--no-start', '--json') 60 4
     $noStartJson = ConvertFrom-Json $noStart.stdout
     Assert-SmokeTrue ([string]$noStartJson.code -eq 'RUNTIME_UNAVAILABLE') '--no-start did not return the safe error object' 'NO-START-ERROR-OBJECT'
-    Assert-SmokeTrue (-not (Test-Path -LiteralPath (Join-Path $absent.root 'data\host.lock'))) '--no-start created a host lock side effect' 'NO-START-NO-LOCK'
-    Assert-SmokeTrue (-not (Test-Path -LiteralPath (Join-Path $absent.root 'data\library.sqlite3'))) '--no-start created a library database' 'NO-START-NO-DATABASE'
+    Assert-SmokeTrue ((Get-FileHash -LiteralPath $absentLock -Algorithm SHA256).Hash -ceq $absentLockHash) '--no-start changed the init-created lock file' 'NO-START-NO-LOCK-MUTATION'
+    Assert-SmokeTrue ((Get-FileHash -LiteralPath $absentDatabase -Algorithm SHA256).Hash -ceq $absentDatabaseHash) '--no-start changed the prepared library database' 'NO-START-NO-DATABASE-MUTATION'
     Assert-SmokeTrue ((Get-OwnedShotdProcess $absent.root).Count -eq 0) '--no-start started a host process' 'NO-START-NO-PROCESS'
 
     # 6) Owner stop: receipt is Stopping, not a false handle-closure claim.
@@ -152,7 +165,7 @@ try {
 
     # 8) No AI or runtime work: no child process of the owned host, AI off, bridge stopped.
     $owned = Get-OwnedShotdProcess $preview.root
-    Assert-SmokeTrue ($owned.Count -ge 1) 'no owned host process is running after restart' 'RESTART-PROCESS-RUNNING'
+    Assert-SmokeTrue ($owned.Count -eq 1) 'no owned host process is running after restart' 'RESTART-PROCESS-RUNNING'
     $children = @()
     foreach ($process in $owned) {
         $children += @(Get-CimInstance Win32_Process -Filter ("ParentProcessId = " + [int]$process.ProcessId))
@@ -169,27 +182,23 @@ try {
     $credentialTarget = $credential.target
     Assert-SmokeTrue ([bool]$credential.ok) ("exact synthetic credential cleanup failed at stage " + $credential.stage + " with raw exit " + $credential.exit) 'CREDENTIAL-CLEANUP'
     Assert-SmokeTrue (Remove-OwnedPreviewRoot $preview) 'owned preview root removal failed' 'PREVIEW-ROOT-REMOVED'
-    Assert-SmokeTrue (Remove-OwnedPreviewRoot $absent) 'owned no-start root removal failed' 'ABSENT-ROOT-REMOVED'
+    $absentCleanup = Invoke-OwnedPreviewCleanup $repo $absent.preview $binaries.shot 60
+    Assert-SmokeTrue ([bool]$absentCleanup.ok -and $absentCleanup.credential_readback_code -eq 1168) 'owned no-start ordered cleanup failed' 'ABSENT-CREDENTIAL-CLEANUP'
+    $absentPresence = Get-OwnedCredentialPresence ('ScreenMemory.Test.V1/library/' + $absentLibrary + '/owner')
+    Assert-SmokeTrue ($absentPresence.status -eq 'absent' -and $absentPresence.code -eq 1168) 'owned no-start credential survived cleanup' 'ABSENT-CREDENTIAL-ABSENT'
+    Assert-SmokeTrue (-not (Test-Path -LiteralPath $absent.preview)) 'owned no-start root survived cleanup' 'ABSENT-ROOT-REMOVED'
     [void]$notes.Add('Cleaned exact synthetic Test credential target only: ' + $credentialTarget)
 } catch {
     $failed = $_.Exception.Message
     [void]$notes.Add('SMOKE FAILED: ' + $failed)
-    if ($preview -and $libraryId) {
-        try {
-            [void](Invoke-PreviewProcess $binaries.shot @('--config', $preview.config, 'host', 'stop', '--json') $repo 60)
-            [void](Wait-OwnedShotdGone $preview.root 5)
-        } catch { [void]$notes.Add('Stop after failure was not confirmed; reconcile the owned root manually.') }
-        try {
-            $cleanup = Remove-OwnedTestCredential $libraryId
-            $credentialTarget = $cleanup.target
-            if (-not $cleanup.ok) { [void]$notes.Add('Cleanup after failure did not confirm absence; STOP and reconcile the exact target.') }
-        } catch { [void]$notes.Add('Cleanup after failure raised; STOP and reconcile the exact target.') }
-    }
     foreach ($ownedRoot in @($preview, $absent)) {
-        if (-not $ownedRoot) { continue }
+        if (-not $ownedRoot -or -not (Test-Path -LiteralPath $ownedRoot.config)) { continue }
         try {
-            if (-not (Remove-OwnedPreviewRoot $ownedRoot)) { [void]$notes.Add('Owned root removal after failure was incomplete; reconcile it manually.') }
-        } catch { [void]$notes.Add('Owned root removal after failure raised; reconcile it manually.') }
+            # Never delete a credential or root after an unverified stop. Reuse the
+            # same ordered guard as the real preview, preserving evidence on refusal.
+            $cleanup = Invoke-OwnedPreviewCleanup $repo $ownedRoot.preview $binaries.shot 60
+            if (-not $cleanup.ok) { [void]$notes.Add('Guarded cleanup refused at ' + $cleanup.stage + '; owned root retained.') }
+        } catch { [void]$notes.Add('Guarded cleanup failed; owned root retained.') }
     }
 }
 
@@ -203,6 +212,7 @@ $result = [ordered]@{
     failure = $failed
     images = @{ host = (Split-Path $binaries.shotd -Leaf); cli = (Split-Path $binaries.shot -Leaf) }
     library_id = $libraryId
+    absent_library_id = $absentLibrary
     credential_target = $credentialTarget
     steps = @($steps.ToArray())
     notes = @($notes.ToArray())

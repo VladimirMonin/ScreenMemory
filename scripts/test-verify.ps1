@@ -6,9 +6,11 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $temp = Join-Path $root ('.pi\test-verify-' + [guid]::NewGuid().ToString('N'))
 [void](New-Item -ItemType Directory -Path $temp)
+Write-Output ('runner regression evidence: ' + $temp)
 $ps = Join-Path $PSHOME 'powershell.exe'
 $beforeEnv = @{ PATH = $env:PATH; CARGO_HOME = $env:CARGO_HOME; NODE_OPTIONS = $env:NODE_OPTIONS }
-$null = Get-VerificationEnvironment $root $temp
+$tools = Get-VerificationEnvironment $root $temp
+if ($tools.env.CARGO_NET_OFFLINE -cne 'true' -or $tools.env.CARGO_TARGET_DIR -cne (Join-Path $root '.pi\staging-target-t09b')) { throw 'Pinned offline/isolated target policy missing' }
 foreach ($key in $beforeEnv.Keys) {
     if ([string][Environment]::GetEnvironmentVariable($key, 'Process') -cne [string]$beforeEnv[$key]) { throw 'Caller process environment changed' }
 }
@@ -47,6 +49,8 @@ try {
     # Run both real positive suites in the regression and assert their exact public argv.
     $expected = @{
         'GUI-FRONTEND-BUILD' = @('node',@('@PNPM_CLI','--filter','@screenmemory/gui','build'))
+        'OFFLINE-SAFETY' = @('powershell.exe',@('-NoProfile','-NonInteractive','-File','scripts/test-offline-safety.ps1','-OutputRoot','@PRIVATE'))
+        'CAPTURE-NATIVE' = @('cargo',@('test','--locked','-p','sm-capture','--lib'))
         'RUST-FMT' = @('cargo',@('fmt','--all','--','--check'))
         'RUST-CLIPPY' = @('cargo',@('clippy','--workspace','--all-targets','--locked','--','-D','warnings'))
         'RUST-TEST' = @('cargo',@('test','--workspace','--locked'))
@@ -80,6 +84,11 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Real $suite regression failed" }
         $positive = ConvertFrom-Json ([System.IO.File]::ReadAllText((Join-Path $out 'result.json')))
         if ($positive.outcome -ne 'PASS') { throw "Real $suite report failed" }
+        if ($suite -eq 'verify') {
+            if (@($positive.catalog | Where-Object { $_.check_id -eq 'CAPTURE-LIVE-DESKTOP' -and $_.outcome -eq 'NOT_RUN' }).Count -ne 1) { throw 'Desktop live suite was falsely claimed offline' }
+            $safe = ConvertFrom-Json ([System.IO.File]::ReadAllText((Join-Path $out 'offline-safety/result.json')))
+            if ($safe.outcome -ne 'PASS' -or @($safe.steps | Where-Object { $_.check_id -eq 'LIVE-CAPTURE-DEFAULT-DENIAL' -and $_.native_exit -eq 101 }).Count -ne 1) { throw 'Live target default-denial proof missing' }
+        }
         foreach ($id in @('PLAN-HASH-PRE','SOURCE-INTEGRITY-PRE','PLAN-HASH-POST','SOURCE-INTEGRITY-POST')) {
             if (@($positive.steps | Where-Object { $_.check_id -eq $id -and $_.outcome -eq 'PASS' }).Count -ne 1) { throw "Missing positive integrity gate $id" }
         }
@@ -91,7 +100,7 @@ try {
         }
         $ids = @($positive.steps | ForEach-Object { $_.check_id })
         foreach ($id in $expected.Keys) {
-            if ($id -in @('PREREQ-pnpm') -or ($suite -eq 'verify' -and $id -in @('GUI-FRONTEND-BUILD','RUST-FMT','RUST-CLIPPY','RUST-TEST','HOST-LEASE','TESTS-CODEC','TESTS-STORAGE-IMAGES','FRAMING','PIPE-NATIVE','SESSION-NATIVE','HOST-COMPOSITION','CLI-SURFACE','GUI-RUST-TEST','GUI-FRONTEND-TYPECHECK','GUI-FRONTEND-LINT','GUI-FRONTEND-TEST','PNPM-TYPECHECK','PNPM-LINT','PNPM-TEST','CONTRACTS')) -or
+            if ($id -in @('PREREQ-pnpm') -or ($suite -eq 'verify' -and $id -in @('OFFLINE-SAFETY','CAPTURE-NATIVE','GUI-FRONTEND-BUILD','RUST-FMT','RUST-CLIPPY','RUST-TEST','HOST-LEASE','TESTS-CODEC','TESTS-STORAGE-IMAGES','FRAMING','PIPE-NATIVE','SESSION-NATIVE','HOST-COMPOSITION','CLI-SURFACE','GUI-RUST-TEST','GUI-FRONTEND-TYPECHECK','GUI-FRONTEND-LINT','GUI-FRONTEND-TEST','PNPM-TYPECHECK','PNPM-LINT','PNPM-TEST','CONTRACTS')) -or
                 ($suite -eq 'verify-contracts' -and $id -in @('SCHEMA-GENERATE','SCHEMA-CHECK','TS-GENERATE','PNPM-CONTRACTS','BOUNDARIES','SCHEMA-FIXTURES'))) {
                 if ($id -notin $ids) { throw "Missing fixed check evidence: $id" }
             }
@@ -224,6 +233,9 @@ try {
     foreach ($file in $baseline.Keys) {
         if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $baseline[$file]) { throw 'Tracked source hash changed' }
     }
+    Write-VerificationJson (Join-Path $temp 'result.json') ([ordered]@{ schema_version = 1; suite = 'verification-regression'; outcome = 'PASS';
+        checks = @('fixed-argv','offline-default-live-denial','safe-capture-lib-only','caller-env-unchanged','preview-cleanup-safety','raw-exit7','fail-fast','timeout','spawn','missing-prerequisite','stderr-redaction','plan-mismatch','plan-missing','source-modify','source-create','source-delete','source-fail-post-guard','exit-guard-mutant','untracked-format','exact-plan-path-exclusion');
+        verify_evidence = 'positive-verify/result.json'; contracts_evidence = 'positive-verify-contracts/result.json'; safety_evidence = 'preview-safety/result.json' })
     [Console]::Out.WriteLine('S01-VER-01/02/03 PASS: real fixed argv/integrity, exit7 raw, plan hash RED, source modify/create/delete/exit7 RED, fail-fast, mutation caught, timeout/spawn/untracked format, exact-plan same-prefix RED/PASS')
 } finally {
     if (Test-Path $untracked) { Remove-Item -LiteralPath $untracked -Force }

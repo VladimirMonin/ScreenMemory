@@ -76,14 +76,16 @@ $config = $null
 if ($PreviewRoot) {
     $config = ConvertFrom-Json ([System.IO.File]::ReadAllText($prepared.config))
 } else {
-    $report = Initialize-OwnedPreviewLibrary $root $binaries.shotd $prepared.root
+    $report = Initialize-OwnedPreviewLibrary $root $binaries.shotd $prepared.root $prepared
     [void](Write-TrustedPreviewConfig $prepared ([string]$report.library_id) $binaries.shotd)
     $config = ConvertFrom-Json ([System.IO.File]::ReadAllText($prepared.config))
     Write-Output ('owned preview root: ' + $prepared.preview)
     Write-Output ('library_id: ' + [string]$config.library_id)
 }
-if (-not (Test-PreviewCanonicalUuid ([string]$config.library_id))) { throw 'Preview configuration library id is not a canonical UUID' }
-$libraryId = [string]$config.library_id
+$validated = Resolve-ValidatedPreview $root $prepared.preview $binaries.shotd
+if (-not $validated.ok) { throw ('Preview configuration refused at ' + $validated.stage) }
+$config = $validated.config_value
+$libraryId = $validated.library_id
 
 $oneCommand = Get-PreviewCommandLine $binaries.shot $prepared.config
 Write-Output ''

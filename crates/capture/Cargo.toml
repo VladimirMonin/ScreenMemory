@@ -5,6 +5,17 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+# Live tests read the whole desktop, not just their synthetic windows. Never run them
+# on a personal session. Opt-in belongs to the isolated S02/S08 Windows test harness.
+[features]
+default = []
+isolated-desktop-tests = []
+
+[[test]]
+name = "live_capture"
+path = "tests/live_capture.rs"
+required-features = ["isolated-desktop-tests"]
+
 [dependencies]
 sm-application = { path = "../application" }
 uuid = { workspace = true, features = ["v4"] }

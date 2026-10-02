@@ -19,7 +19,7 @@ function Quote-PreviewArgument([string]$Argument) {
 
 # `-RawArguments` passes a verbatim command line for cmd.exe, whose own parser does not
 # follow the C-runtime argv quoting used for ordinary executables.
-function Invoke-PreviewProcess([string]$Executable, [string[]]$Arguments, [string]$WorkingDirectory, [int]$TimeoutSeconds, [string]$RawArguments = '') {
+function Invoke-PreviewProcess([string]$Executable, [string[]]$Arguments, [string]$WorkingDirectory, [int]$TimeoutSeconds, [string]$RawArguments = '', [hashtable]$EnvironmentMap = @{}) {
     if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) {
         return @{ exit = $null; reason = 'MISSING_EXECUTABLE'; stdout = ''; stderr = ''; duration_ms = 0 }
     }
@@ -28,6 +28,7 @@ function Invoke-PreviewProcess([string]$Executable, [string[]]$Arguments, [strin
     if ($RawArguments) { $psi.Arguments = $RawArguments }
     else { $psi.Arguments = (($Arguments | ForEach-Object { Quote-PreviewArgument $_ }) -join ' ') }
     $psi.WorkingDirectory = $WorkingDirectory
+    foreach ($key in $EnvironmentMap.Keys) { $psi.EnvironmentVariables[$key] = [string]$EnvironmentMap[$key] }
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
     $psi.RedirectStandardOutput = $true
@@ -63,7 +64,7 @@ function Get-PreviewToolchain([string]$Root) {
     foreach ($path in @((Join-Path $rustBin 'cargo.exe'), (Join-Path $rustBin 'rustc.exe'), $vc)) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw 'Missing pinned Rust/MSVC prerequisite; prepare prerequisites first (scripts/verify.ps1 documents them)' }
     }
-    return @{ cargo = (Join-Path $rustBin 'cargo.exe'); rust_bin = $rustBin; vcvars = $vc; target = (Join-Path $Root '.pi\preview-target') }
+    return @{ cargo = (Join-Path $rustBin 'cargo.exe'); rust_bin = $rustBin; vcvars = $vc; target = (Join-Path $Root '.pi\staging-target-t09b') }
 }
 
 function Invoke-PinnedCargo([string]$Root, [hashtable]$Toolchain, [string[]]$CargoArguments, [int]$TimeoutSeconds = 1200) {
@@ -71,10 +72,13 @@ function Invoke-PinnedCargo([string]$Root, [hashtable]$Toolchain, [string[]]$Car
     $lines = New-Object System.Collections.ArrayList
     [void]$lines.Add('@echo off')
     [void]$lines.Add('call "' + $Toolchain.vcvars + '" >nul')
+    [void]$lines.Add('if errorlevel 1 exit /b %errorlevel%')
+    [void]$lines.Add('set "CARGO_NET_OFFLINE=true"')
     [void]$lines.Add('set "PATH=' + $Toolchain.rust_bin + ';%PATH%"')
     [void]$lines.Add('set "CARGO_HOME=' + (Join-Path $Root '.pi\donor-build\.cargo-home') + '"')
     [void]$lines.Add('set "CARGO_TARGET_DIR=' + $Toolchain.target + '"')
     [void]$lines.Add('"' + $Toolchain.cargo + '" ' + ($CargoArguments -join ' '))
+    [void]$lines.Add('exit /b %errorlevel%')
     [System.IO.File]::WriteAllLines($helper, @($lines.ToArray()), (New-Object System.Text.UTF8Encoding($false)))
     try {
         # `cmd /d /s /c ""<path>""` is the /s-safe form: cmd strips only the outermost
@@ -184,7 +188,8 @@ function New-OwnedPreviewRoot([string]$Root) {
     [void](New-Item -ItemType Directory -Path $data)
     foreach ($child in @('data', 'config', 'cache', 'webview')) { [void](New-Item -ItemType Directory -Path (Join-Path $data $child)) }
     [System.IO.File]::WriteAllText((Join-Path $preview (Get-PreviewOwnedMarkerName)), $uuid + "`n", (New-Object System.Text.UTF8Encoding($false)))
-    return @{ repo = $Root; preview = $preview; root = $data; config = (Join-Path $preview 'preview.json'); uuid = $uuid }
+    return @{ repo = $Root; preview = $preview; root = $data; config = (Join-Path $preview 'preview.json'); uuid = $uuid;
+        created_here = $true; initialized_library_id = $null }
 }
 
 function Get-PreviewTreeElementLimit() {
@@ -272,26 +277,79 @@ function Resolve-OwnedPreviewRoot([string]$Root, [string]$PreviewRoot) {
     }
 }
 
-function Initialize-OwnedPreviewLibrary([string]$Root, [string]$Shotd, [string]$DataRoot) {
+function Initialize-OwnedPreviewLibrary([string]$Root, [string]$Shotd, [string]$DataRoot, [hashtable]$Preview) {
+    if (-not $Preview -or -not $Preview.created_here -or $Preview.initialized_library_id -or
+        [string]$DataRoot -cne [string]$Preview.root) { throw 'Initialization requires this invocation new owned root' }
     $result = Invoke-PreviewProcess $Shotd @('--init', '--root', $DataRoot) $Root 120
     if ($result.exit -ne 0) { throw ('Library initialization failed; raw exit ' + $result.exit) }
     $report = ConvertFrom-Json $result.stdout
-    if (-not $report.library_id) { throw 'Library initialization returned no identity' }
+    if (-not (Test-PreviewCanonicalUuid ([string]$report.library_id))) { throw 'Library initialization returned invalid identity' }
+    $Preview.initialized_library_id = [string]$report.library_id
     return $report
 }
 
+function Get-PreviewLibraryBindingName() { return '.screenmemory-preview-library.json' }
+
 function Write-TrustedPreviewConfig([hashtable]$Preview, [string]$LibraryId, [string]$Shotd) {
-    $config = [ordered]@{
-        schema_version = 1
-        environment = 'test'
-        root = $Preview.root
-        library_id = $LibraryId
-        host_executable = $Shotd
-    }
-    if (-not (Test-PreviewCanonicalUuid ([string]$LibraryId))) { throw 'First-run library identity is not a canonical UUID; refusing to write a trusted config' }
+    if (-not $Preview.created_here -or -not (Test-PreviewCanonicalUuid $LibraryId) -or
+        [string]$Preview.initialized_library_id -cne $LibraryId) { throw 'Trusted config requires own successful init authority' }
+    $bindingPath = Join-Path $Preview.preview (Get-PreviewLibraryBindingName)
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $binding = [ordered]@{ directory_uuid = $Preview.uuid; library_id = $LibraryId }
+    $bindingBytes = $utf8.GetBytes((($binding | ConvertTo-Json) -replace "`r`n","`n") + "`n")
+    # Create-only, from actual own init. Never adopt a legacy ID from preview.json.
+    $stream = [System.IO.File]::Open($bindingPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+    try { $stream.Write($bindingBytes,0,$bindingBytes.Length); $stream.Flush($true) } finally { $stream.Dispose() }
+    $config = [ordered]@{ schema_version = 1; environment = 'test'; root = $Preview.root;
+        library_id = $LibraryId; host_executable = $Shotd }
     $text = (ConvertTo-Json -InputObject $config -Depth 4) -replace "`r`n", "`n"
-    [System.IO.File]::WriteAllText($Preview.config, $text + "`n", (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText($Preview.config, $text + "`n", $utf8)
     return $Preview.config
+}
+
+function Get-PreviewBytesHash([byte[]]$Bytes) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha.ComputeHash($Bytes))).Replace('-','').ToLowerInvariant() }
+    finally { $sha.Dispose() }
+}
+
+function Resolve-ValidatedPreview([string]$Root, [string]$PreviewRoot, [string]$ExpectedHostImage = '', [hashtable]$Expected = $null) {
+    $owned = Resolve-OwnedPreviewRoot $Root $PreviewRoot
+    if (-not $owned.ok) { return $owned }
+    $bindingPath = Join-Path $owned.preview (Get-PreviewLibraryBindingName)
+    if (-not (Test-Path -LiteralPath $bindingPath -PathType Leaf)) {
+        return (New-PreviewRefusal 'binding' 'init-issued library binding missing; legacy root preserved')
+    }
+    try {
+        if ((Get-Item -LiteralPath $bindingPath -Force).Length -gt 2048 -or (Get-Item -LiteralPath $owned.config -Force).Length -gt 16384) { throw 'Bounded input refused' }
+        $bindingBytes = [System.IO.File]::ReadAllBytes($bindingPath)
+        $configBytes = [System.IO.File]::ReadAllBytes($owned.config)
+        $utf8 = New-Object System.Text.UTF8Encoding($false,$true)
+        $binding = ConvertFrom-Json ($utf8.GetString($bindingBytes))
+        $config = ConvertFrom-Json ($utf8.GetString($configBytes))
+        if ($binding.directory_uuid -isnot [string] -or -not (Test-PreviewCanonicalUuid $binding.directory_uuid) -or
+            $binding.directory_uuid -cne $owned.uuid -or $binding.library_id -isnot [string] -or
+            -not (Test-PreviewCanonicalUuid $binding.library_id)) { throw 'Binding identity refused' }
+        if ($config.schema_version -isnot [int] -and $config.schema_version -isnot [long]) { throw 'Config schema type refused' }
+        if ($config.schema_version -ne 1 -or $config.environment -isnot [string] -or $config.environment -cne 'test' -or
+            $config.library_id -isnot [string] -or $config.library_id -cne $binding.library_id -or
+            $config.root -isnot [string] -or -not [System.IO.Path]::IsPathRooted($config.root)) { throw 'Config identity refused' }
+        $configRoot = [System.IO.Path]::GetFullPath($config.root).TrimEnd('\')
+        if ($configRoot -ine $owned.root -or $config.root.TrimEnd('\') -ine $configRoot) { throw 'Config root refused' }
+        if (-not $ExpectedHostImage) { $ExpectedHostImage = (Get-PreviewBinaries (Get-PreviewToolchain $Root)).shotd }
+        if ($config.host_executable -isnot [string] -or $config.host_executable -ine $ExpectedHostImage) { throw 'Config image refused' }
+        $owned.library_id = [string]$binding.library_id
+        $owned.host_image = $ExpectedHostImage
+        $owned.config_hash = Get-PreviewBytesHash $configBytes
+        $owned.binding_hash = Get-PreviewBytesHash $bindingBytes
+        $owned.config_value = $config
+        if ($Expected) {
+            foreach ($key in @('uuid','root','library_id','host_image','config_hash','binding_hash')) {
+                if ([string]$owned[$key] -cne [string]$Expected[$key]) { return (New-PreviewRefusal 'mutation' 'validated config or binding changed; privileged cleanup refused') }
+            }
+        }
+        return $owned
+    } catch { return (New-PreviewRefusal 'configuration' 'preview config/binding is invalid or not bound to this root; nothing changed') }
 }
 
 function Get-OwnedShotdProcess([string]$DataRoot) {
@@ -413,25 +471,22 @@ function Remove-OwnedPreviewRoot([hashtable]$Preview) {
     return -not (Test-Path -LiteralPath $owned.preview)
 }
 
-function Invoke-OwnedPreviewCleanup([string]$Root, [string]$PreviewRoot, [string]$Shot = '', [int]$StopTimeoutSeconds = 120) {
+function Invoke-OwnedPreviewCleanup([string]$Root, [string]$PreviewRoot, [string]$Shot = '', [int]$StopTimeoutSeconds = 120, [hashtable]$Expected = $null) {
     # Order: prove ownership (nothing else is ever touched) -> canonical library id ->
     # stop and prove the owned host gone -> exact synthetic credential delete plus absence
     # -> re-prove quiescence and ownership -> remove the owned root. Any unsuccessful or
     # uncertain step refuses with a non-zero exit and deletes nothing.
-    $owned = Resolve-OwnedPreviewRoot $Root $PreviewRoot
+    $owned = Resolve-ValidatedPreview $Root $PreviewRoot '' $Expected
     if (-not $owned.ok) { return $owned }
-    $config = $null
-    try { $config = ConvertFrom-Json ([System.IO.File]::ReadAllText($owned.config)) }
-    catch { return (New-PreviewRefusal 'config' 'preview configuration is not readable JSON') }
-    $libraryId = [string]$config.library_id
-    if (-not (Test-PreviewCanonicalUuid $libraryId)) {
-        return (New-PreviewRefusal 'identity' 'preview configuration library id is not a canonical UUID; refusing to build a credential target')
-    }
+    $frozen = $owned
+    $libraryId = $owned.library_id
     $result = New-PreviewRefusal 'pending' 'no step has completed yet'
     if (-not (Test-OwnedPreviewQuiescent $owned.root)) {
         if (-not $Shot -or -not (Test-Path -LiteralPath $Shot -PathType Leaf)) {
             return (New-PreviewRefusal 'binary' 'an owned shotd.exe is still running for this root but the owning CLI image is unavailable; nothing was deleted')
         }
+        $stillValid = Resolve-ValidatedPreview $Root $PreviewRoot $owned.host_image $frozen
+        if (-not $stillValid.ok) { return $stillValid }
         $stop = Invoke-PreviewProcess $Shot @('--config', $owned.config, 'host', 'stop', '--json') $Root $StopTimeoutSeconds
         $result.stop_exit = $stop.exit
         $result.stop_reason = [string]$stop.reason
@@ -446,8 +501,11 @@ function Invoke-OwnedPreviewCleanup([string]$Root, [string]$PreviewRoot, [string
             return $result
         }
     }
+    $stillValid = Resolve-ValidatedPreview $Root $PreviewRoot $owned.host_image $frozen
+    if (-not $stillValid.ok) { return $stillValid }
     $credential = Remove-OwnedTestCredential $libraryId
     $result.target = $credential.target
+    $result.credential_exit = $credential.exit
     $result.credential_stage = $credential.stage
     $result.credential_readback = [string]$credential.readback
     $result.credential_readback_code = $credential.readback_code
@@ -462,6 +520,8 @@ function Invoke-OwnedPreviewCleanup([string]$Root, [string]$PreviewRoot, [string
         $result.message = 'own shotd.exe appeared while cleaning; the owned root is kept for reconciliation'
         return $result
     }
+    $stillValid = Resolve-ValidatedPreview $Root $PreviewRoot $owned.host_image $frozen
+    if (-not $stillValid.ok) { return $stillValid }
     if (-not (Remove-OwnedPreviewRoot $owned)) {
         $result.stage = 'remove'
         $result.message = 'owned preview root removal failed; reconcile manually'

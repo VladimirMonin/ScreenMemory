@@ -1,5 +1,5 @@
 ---
-applyTo: "crates/host/**,crates/cli/**,scripts/preview.ps1,scripts/preview-common.ps1,scripts/smoke-host-cli.ps1,scripts/test-preview-safety.ps1,scripts/README.md,docs/progress/S01/t05d-host-cli.*,docs/adr/009-host-cli-composition.md"
+applyTo: "crates/host/**,crates/cli/**,scripts/preview.ps1,scripts/preview-common.ps1,scripts/smoke-host-cli.ps1,scripts/test-preview-safety.ps1,scripts/test-foundation-smoke.ps1,scripts/test-preview-rejection.ps1,scripts/README.md,docs/progress/S01/t05d-host-cli.*,docs/adr/009-host-cli-composition.md"
 name: "HOST.Composition"
 description: "Читай при изменении реальных shotd/shot бинарей, bootstrap-порядка, trusted preview configuration, CLI-вывода/exit codes, autostart/owned child и shutdown-порядка."
 ---
@@ -46,13 +46,29 @@ retry/discovery 5s, без retry на credential/identity ошибке, и за�
 команда) и отдельный `scripts/smoke-host-cli.ps1` (явный synthetic executable smoke вне
 обычного verify, immutable `.pi` evidence, точная очистка Test credential). Отдельные
 `.pi/temporary`/`.pi/preview` roots — синтетические, без пользовательских данных, моделей
-и сети. Whole S01 остаётся `IN_PROGRESS`: GUI, packaging, live runtime, codec/vec и полный
-lifecycle этого среза не заменяют.
+и сети. Whole S01 остаётся `IN_PROGRESS`: существующие host/CLI/GUI и WebP не заменяют
+SDK/FTS5/package proofs S04/S06/S08; embeddings/vec исключены ADR-011.
+Preview и verify используют `.pi/staging-target-t09b`, не общий `.pi/preview-target`,
+который может удерживать чужой host. MSVC failure немедленно возвращает raw exit;
+Cargo всегда offline. `smoke-host-cli.ps1` проверяет текущую storage schema 4 (не
+JSON config schema 1). Error cleanup использует тот же guarded stop→absence→remove,
+а не удаляет root/credential после неподтверждённого stop.
+`scripts/test-foundation-smoke.ps1` — отдельный composed synthetic host/CLI/GUI
+regression; его запуск не превращает весь S01 в ACCEPTED.
 
 Owned preview cleanup — только собственный root и только после проверок: канонический путь
 строго `<repo>/.pi/preview/<canonical-uuidv4>`, ownership-marker с тем же UUID (создаётся
-только preview create) и канонический `library_id`; иначе отказ с безопасным сообщением,
-non-zero exit и без единого side effect. Перед удалением: явный stop с проверкой exit,
+только preview create), **независимый init-issued binding**
+`.screenmemory-preview-library.json` `{directory_uuid, library_id}` и совпадение
+binding/config/root/schema/test/trusted image через `Resolve-ValidatedPreview`.
+Binding — create-only из успешного собственного `shotd --init` нового root; не из
+`preview.json`, не adoption legacy. Отсутствующий/неверный binding сохраняет данные
+и credentials. Успешный authenticated selfcheck связывает library/image, но не
+filesystem root, поэтому не заменяет эту проверку. Иначе nonzero без side effects.
+Validated tuple и hashes config/binding замораживаются; перед stop, credential delete
+и root delete перепроверяются. При mutation — REFUSED, возможный host локально BLOCKED,
+root/credential сохраняются. Это helper ownership guard, не sandbox против согласованной
+подделки всех файлов/конкурентного hostile same-user TOCTOU. Перед удалением: явный stop с проверкой exit,
 bounded `Wait-OwnedShotdGone` и проверка отсутствия **своего** `shotd.exe` (никогда чужой PID
 или имя образа); удаление точного synthetic Test credential — через прямой вызов `cmdkey.exe`
 с argument list, никогда через shell, и с подтверждённой absence; и только затем — удаление
@@ -60,4 +76,6 @@ root с повторной проверкой marker/UUID. Любой неусп
 credential и даёт non-zero exit. Общий `.pi/temporary/preview-build.log` больше не пишется:
 каждая сборка/команда получает новый UUID output root (immutable evidence). Негативные
 проверки — `scripts/test-preview-safety.ps1` (вызывается из `scripts/test-verify.ps1`, т.е.
-mandatory), только синтетические roots/процессы.
+mandatory), только синтетические roots/процессы. `scripts/test-preview-rejection.ps1`
+дополняет composed regression: реальные initialized A/B и живой B, подмены config/binding,
+прямой CLI cleanup и mutation после GUI arm; никакого desktop capture/clipboard/model calls.

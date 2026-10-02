@@ -39,11 +39,16 @@ function Write-SyntheticConfig([string]$Directory, [string]$LibraryId) {
         environment = 'test'
         root = (Join-Path $Directory 'root')
         library_id = $LibraryId
-        host_executable = (Join-Path $work 'shotd-stub.exe')
+        host_executable = (Get-PreviewBinaries (Get-PreviewToolchain $repo)).shotd
     }
     $text = (ConvertTo-Json -InputObject $config -Depth 4) -replace "`r`n", "`n"
     $path = Join-Path $Directory 'preview.json'
     [System.IO.File]::WriteAllText($path, $text + "`n", $utf8)
+    # Test-only stand-in for init-issued authority. Real composed cases use shotd --init;
+    # these guard fixtures deliberately have no database or authenticated host.
+    $boundId = $(if (Test-PreviewCanonicalUuid $LibraryId) { $LibraryId } else { [guid]::NewGuid().ToString('D') })
+    $binding = [ordered]@{ directory_uuid = (Split-Path $Directory -Leaf); library_id = $boundId }
+    [System.IO.File]::WriteAllText((Join-Path $Directory (Get-PreviewLibraryBindingName)), ($binding | ConvertTo-Json) + "`n", $utf8)
     return $path
 }
 
@@ -107,6 +112,13 @@ try {
     Add-SafetyStep 'OWNED-ROOT-STRICT-UUID' ((Split-Path $fresh.preview -Leaf) -ceq $fresh.uuid -and (Test-PreviewOwnedRootName $fresh.uuid)) ('uuid=' + $fresh.uuid)
     $marker = Join-Path $fresh.preview (Get-PreviewOwnedMarkerName)
     Add-SafetyStep 'OWNED-MARKER-MATCHES' ((Test-Path -LiteralPath $marker -PathType Leaf) -and (([System.IO.File]::ReadAllText($marker)).Trim() -ceq $fresh.uuid)) 'marker content equals the directory uuid'
+    # Physical evidence helper must refuse a process not belonging to the owned GUI,
+    # before allocating output or reading any pixels. Use this suite's own PS PID.
+    $refusedOutput = Join-Path $OutputRoot 'must-not-exist-window-capture'
+    $captureRefusal = Invoke-PreviewProcess (Join-Path $PSHOME 'powershell.exe') @('-NoProfile','-NonInteractive','-File',(Join-Path $PSScriptRoot 'capture-preview-window.ps1'),'-OwnedProcessId',[string]$PID,'-PreviewRoot',$fresh.preview,'-OutputRoot',$refusedOutput) $repo 60
+    Add-SafetyStep 'WINDOW-CAPTURE-NON-GUI-REFUSED' ($captureRefusal.exit -eq 1) ('raw exit=' + $captureRefusal.exit)
+    Add-SafetyStep 'WINDOW-CAPTURE-NO-OUTPUT' (-not (Test-Path -LiteralPath $refusedOutput)) 'refusal allocates no output and reads no pixels'
+    Add-SafetyStep 'PREVIEW-ISOLATED-BUILD-TARGET' ((Get-PreviewToolchain $repo).target -ceq (Join-Path $repo '.pi\staging-target-t09b')) 'never build into the foreign occupied preview-target'
     Add-SafetyStep 'OWNED-ROOT-REMOVABLE' ((Remove-OwnedPreviewRoot $fresh) -and -not (Test-Path -LiteralPath $fresh.preview)) 'marker-checked remover removes an owned root'
 
     # 2) A foreign directory outside <repo>/.pi/preview is refused (ownership, not shape).
@@ -139,7 +151,7 @@ try {
     Add-SafetyStep 'INJECTION-CREDENTIAL-REFUSED' ((-not $injectionCredential.ok) -and $injectionCredential.stage -eq 'identity' -and $null -eq $injectionCredential.target) ('stage=' + $injectionCredential.stage)
     Add-SafetyStep 'INJECTION-NO-CANARY' (-not (Test-Path -LiteralPath $injectCanary)) 'a shell-injected canary file never appeared'
     $refusal = Invoke-OwnedPreviewCleanup $repo $inject.dir (Join-Path $work 'shotd-does-not-exist.exe')
-    Add-SafetyStep 'INJECTION-CLEANUP-REFUSED' ((-not $refusal.ok) -and $refusal.stage -eq 'identity') ('stage=' + $refusal.stage)
+    Add-SafetyStep 'INJECTION-CLEANUP-REFUSED' ((-not $refusal.ok) -and $refusal.stage -eq 'configuration') ('stage=' + $refusal.stage)
     Add-SafetyStep 'INJECTION-PRESERVED' ((Test-Path -LiteralPath $inject.sentinel -PathType Leaf) -and (Test-Path -LiteralPath $inject.config -PathType Leaf)) 'sentinel and configuration survive'
     Add-SafetyStep 'INJECTION-NO-CANARY-AFTER-CLEANUP' (-not (Test-Path -LiteralPath $injectCanary)) 'no canary after the cleanup refusal'
 
@@ -147,7 +159,7 @@ try {
     foreach ($case in @(@{ id = ($validId + '.'); label = 'DOT' }, @{ id = ($validId + ' '); label = 'SPACE' })) {
         $variant = New-SyntheticCase (Get-PreviewOwnedRootBase $repo) ([guid]::NewGuid().ToString('D')) $case.id
         $refusal = Invoke-OwnedPreviewCleanup $repo $variant.dir (Join-Path $work 'shotd-does-not-exist.exe')
-        Add-SafetyStep ('INJECTION-' + $case.label + '-REFUSED') ((-not $refusal.ok) -and $refusal.stage -eq 'identity') ('stage=' + $refusal.stage)
+        Add-SafetyStep ('INJECTION-' + $case.label + '-REFUSED') ((-not $refusal.ok) -and $refusal.stage -eq 'configuration') ('stage=' + $refusal.stage)
         Add-SafetyStep ('INJECTION-' + $case.label + '-PRESERVED') (Test-Path -LiteralPath $variant.sentinel -PathType Leaf) 'sentinel survives'
     }
 

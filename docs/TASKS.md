@@ -56,9 +56,12 @@ Scope: [ADR-011 / CN-20261002-01](adr/011-private-release-scope.md).
 - [F06/F07 process crash](progress/S02/t09n4-process-crash.md): own test child termination
   и повторный recovery, узкое storage-only доказательство; commit `06763156`.
 
-Исторические [S01 result.md](progress/S01/result.md)/[result.json](progress/S01/result.json)
-отстали от Git: host/CLI/GUI уже закоммичены, хотя некоторые старые строки говорят
-candidate/no-code. Сверять актуальные commits/owners; обновить handoff без ложной приёмки.
+[S01 result.md](progress/S01/result.md)/[result.json](progress/S01/result.json)
+обновлены по фактическому Git/runner/runtime. Foundation candidate: composed smoke 6/6,
+65 cleanup-safety checks и 12 two-root/mutation cases raw 0; [P1/P2 correction](progress/S01/foundation-cleanup-fix.md)
+закрывает misbound cleanup и финализацию второго fixture. Sol6.1 scoped accept,
+parent post-P2 verify36/runner regression raw0: **ACCEPT_CODE_SCOPED**.
+Вся S01 не объявлена принятой; historical unknown synthetic residues не скрыты.
 
 ## Текущий продуктовый milestone
 

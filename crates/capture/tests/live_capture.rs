@@ -1,10 +1,10 @@
 #![cfg(all(windows, target_pointer_width = "64"))]
-//! Live native capture proofs on **owned** windows only.
+//! Opt-in live native capture proofs: they freeze the **whole current desktop**.
+//! `isolated-desktop-tests` is required by Cargo. Run only in an explicitly owned
+//! isolated Windows desktop/session; synthetic HWNDs do not isolate desktop pixels.
 //!
-//! Scope discipline of these tests:
-//! * the only pixels they may read belong to the virtual desktop frozen for the test and
-//!   to a window created by this test process; no foreign HWND is addressed, resolved or
-//!   captured outside the real virtual-desktop freeze that the product itself performs;
+//! Scope discipline inside that isolated environment:
+//! * the virtual desktop is frozen for the test, including pixels outside owned HWNDs;
 //! * the interactive overlay is addressed through `OverlayObserver`, i.e. the test posts
 //!   messages to its **own** overlay window instead of injecting global input;
 //! * every host is stopped by `Drop`; a stuck overlay cannot outlive the test.

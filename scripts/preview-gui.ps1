@@ -2,19 +2,30 @@
 # shotd/shot/screenmemory-gui binaries, no personal data, no model, no network.
 # This is an explicit development preview, NOT a production first-run installer and NOT part
 # of the offline verification suite: it is the only place where the window itself is started.
-# `-Action selfcheck` (default) drives the same window client headlessly and prints exactly one
-# JSON value with the CLI exit codes; `-Action window` really opens the Tauri window on the
+# `-Action selfcheck` (default) drives the same window client headlessly; each binary
+# emits one JSON value with CLI exit codes. The wrapper saves evidence. `window` opens the
 # owned root, closes it like a user would, and proves the same host process outlives it.
 [CmdletBinding()]
 param(
     [ValidateSet('selfcheck', 'window')][string]$Action = 'selfcheck',
     [string]$PreviewRoot,
     [switch]$SkipBuild,
-    [int]$WindowHoldSeconds = 0
+    [ValidateRange(0,600)][int]$WindowHoldSeconds = 2,
+    [switch]$Cleanup,
+    [string]$OutputRoot,
+    [ValidateSet('','after-connect','after-window-open','mutate-config','mutate-binding')][string]$FixtureCase = ''
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'preview-common.ps1')
 $root = Get-PreviewRepositoryRoot $PSScriptRoot
+. (Join-Path $PSScriptRoot 'verification-common.ps1')
+if (-not $OutputRoot) { $OutputRoot = Join-Path $root ('.pi/temporary/' + [guid]::NewGuid().ToString('D')) }
+$evidence = New-VerificationState $root $OutputRoot 'gui-preview'
+
+function Add-GuiPreviewStep([string]$Id, [bool]$Passed, $RawExit = $null) {
+    [void]$evidence.steps.Add([ordered]@{ check_id = $Id; native_exit = $RawExit; outcome = $(if ($Passed) { 'PASS' } else { 'FAIL' }) })
+    if (-not $Passed) { $evidence.failed = $true }
+}
 
 function Get-PreviewGuiFrontendToolchain([string]$RepositoryRoot) {
     # Pinned project-local Node plus the explicitly installed local package tools; no global
@@ -30,13 +41,18 @@ function Get-PreviewGuiFrontendToolchain([string]$RepositoryRoot) {
             throw 'Missing installed gui package prerequisite; bootstrap explicitly'
         }
     }
-    return @{ node = $node; pnpm = $pnpmJs }
+    $map = @{ PATH = ((Split-Path $node -Parent) + ';' + $env:PATH); NODE_OPTIONS = ''; COREPACK_ENABLE_AUTO_PIN = '0' }
+    foreach ($pin in @(@(@('--version'),'v24.13.0'), @(@($pnpmJs,'--version'),'10.32.1'))) {
+        $version = Invoke-PreviewProcess $node $pin[0] $RepositoryRoot 30 -EnvironmentMap $map
+        if ($version.exit -ne 0 -or $version.stdout.Trim() -cne $pin[1]) { throw 'Pinned frontend version mismatch' }
+    }
+    return @{ node = $node; pnpm = $pnpmJs; env = $map }
 }
 
 function Build-PreviewGuiFrontend([string]$RepositoryRoot, [hashtable]$FrontendToolchain) {
     # Own new UUID log root: a frontend build never overwrites another run's evidence.
     $log = Join-Path (New-PreviewBuildLogRoot $RepositoryRoot) 'frontend.log'
-    $build = Invoke-PreviewProcess $FrontendToolchain.node @($FrontendToolchain.pnpm, '--filter', '@screenmemory/gui', 'build') $RepositoryRoot 900
+    $build = Invoke-PreviewProcess $FrontendToolchain.node @($FrontendToolchain.pnpm, '--filter', '@screenmemory/gui', 'build') $RepositoryRoot 900 -EnvironmentMap $FrontendToolchain.env
     [System.IO.File]::WriteAllText($log, ("exit=$($build.exit) reason=$($build.reason)`n" + [string]$build.stdout + [string]$build.stderr), (New-Object System.Text.UTF8Encoding($false)))
     if ($build.exit -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $RepositoryRoot 'apps\gui\dist\index.html') -PathType Leaf)) {
         throw ('Gui frontend build failed; raw exit ' + $build.exit + '; private build log ' + $log)
@@ -78,6 +94,10 @@ function Assert-GuiSelfCheckReport($Report, [string]$LibraryId, [string]$Label) 
 
 function Invoke-GuiSelfCheck([hashtable]$Binaries, [string]$Config, [string]$LibraryId, [string]$Label) {
     $result = Invoke-PreviewProcess $Binaries.gui @('--self-check', '--config', $Config) $root 180
+    $index = $evidence.steps.Count + 1
+    [System.IO.File]::WriteAllText((Join-Path $evidence.output ("native-$index.log")), [string]$result.stdout, $script:Utf8)
+    [System.IO.File]::WriteAllText((Join-Path $evidence.output ("native-$index.log.stderr")), [string]$result.stderr, $script:Utf8)
+    Add-GuiPreviewStep $Label ($result.exit -eq 0 -and $result.reason -eq 'OK') $result.exit
     $lines = @($result.stdout -split "`r?`n" | Where-Object { $_ -ne '' })
     # Progress goes to the host, so the only value this function returns is its report.
     Write-Host ("[$Label] exit=$($result.exit) reason=$($result.reason) stdout_lines=$($lines.Count)")
@@ -92,16 +112,24 @@ function Invoke-GuiSelfCheck([hashtable]$Binaries, [string]$Config, [string]$Lib
 }
 
 function Stop-OwnedPreviewHost([hashtable]$Binaries, [hashtable]$Prepared, [string]$RepositoryRoot) {
-    # Only the owned root is named here, and the stop is verified against that root's process.
+    # Revalidate frozen authority before issuing any stop through a mutable config.
+    $current = Resolve-ValidatedPreview $RepositoryRoot $Prepared.preview $Binaries.shotd $Prepared
+    if (-not $current.ok) { throw 'Owned stop refused: validated inputs changed' }
     $result = Invoke-PreviewProcess $Binaries.shot @('--config', $Prepared.config, 'host', 'stop', '--json') $RepositoryRoot 120
+    Add-GuiPreviewStep 'HOST-STOP' ($result.exit -eq 0) $result.exit
     Write-Output ('[stop] exit=' + $result.exit + ' reason=' + $result.reason)
     if ($result.exit -ne 0) { throw ('Owned host stop returned raw exit ' + $result.exit) }
     if (-not (Wait-OwnedShotdGone $Prepared.root 10)) { throw 'Owned host process did not terminate after the requested stop' }
     Write-Output '[stop] owned host process and endpoint are gone'
 }
 
-$toolchain = Get-PreviewToolchain $root
 $binaries = $null
+$prepared = $null
+$cleanupAuthority = $null
+$window = $null
+$failure = $null
+try {
+$toolchain = Get-PreviewToolchain $root
 if ($SkipBuild) {
     $base = Get-PreviewBinaries $toolchain
     $binaries = @{ shotd = $base.shotd; shot = $base.shot; gui = (Get-PreviewGuiBinary $toolchain) }
@@ -128,20 +156,32 @@ if ($PreviewRoot) {
     $config = ConvertFrom-Json ([System.IO.File]::ReadAllText($prepared.config))
 } else {
     $prepared = New-OwnedPreviewRoot $root
-    $report = Initialize-OwnedPreviewLibrary $root $binaries.shotd $prepared.root
+    $report = Initialize-OwnedPreviewLibrary $root $binaries.shotd $prepared.root $prepared
     [void](Write-TrustedPreviewConfig $prepared ([string]$report.library_id) $binaries.shotd)
     $config = ConvertFrom-Json ([System.IO.File]::ReadAllText($prepared.config))
     Write-Output ('owned preview root: ' + $prepared.preview)
 }
-if (-not (Test-PreviewCanonicalUuid ([string]$config.library_id))) { throw 'Preview configuration library id is not a canonical UUID' }
-if ([string]$config.environment -cne 'test') { throw 'The diagnostic window preview requires the explicit test environment' }
-if ([string]$config.host_executable -cne $binaries.shotd) { throw 'The preview configuration does not name the built owned host image' }
-$libraryId = [string]$config.library_id
+$validated = Resolve-ValidatedPreview $root $prepared.preview $binaries.shotd
+if (-not $validated.ok) { throw ('Preview preflight refused at ' + $validated.stage) }
+# Only a fully bound root may arm finalization. Freeze before the first connect;
+# authentication of a different already-running library is not root ownership.
+$cleanupAuthority = $validated
+$prepared = $validated
+$config = $validated.config_value
+$libraryId = $validated.library_id
 Write-Output ('library_id: ' + $libraryId)
 Write-Output ''
 
 if ($Action -eq 'selfcheck') {
     $first = Invoke-GuiSelfCheck $binaries $prepared.config $libraryId 'self-check'
+    if ($FixtureCase -eq 'after-connect') { throw 'Synthetic failure after connect' }
+    if ($FixtureCase -in @('mutate-config','mutate-binding')) {
+        $mutable = $(if ($FixtureCase -eq 'mutate-config') { $prepared.config } else { Join-Path $prepared.preview (Get-PreviewLibraryBindingName) })
+        # Semantically unchanged, deliberately different bytes: test frozen hashes,
+        # not only tuple equality. Own synthetic fixture input, never another root.
+        [System.IO.File]::AppendAllText($mutable,"`n",$script:Utf8)
+        throw 'Synthetic input mutation after connect'
+    }
     # A second window/check attaches to the same running instance instead of starting another.
     $second = Invoke-GuiSelfCheck $binaries $prepared.config $libraryId 'self-check-reopen'
     if ([string]$first.diagnostics.host.host_instance_id -cne [string]$second.diagnostics.host.host_instance_id) {
@@ -151,10 +191,11 @@ if ($Action -eq 'selfcheck') {
     Stop-OwnedPreviewHost $binaries $prepared $root
     Write-Host ''
     Write-Host 'GUI SELF-CHECK PASS: the window client connected, read real status/doctor and released the host.'
-    Write-Host ('ONE command to see the window: powershell -NoProfile -File scripts/preview-gui.ps1 -Action window -PreviewRoot "' + $prepared.preview + '"')
-    Write-Host ('Cleanup: powershell -NoProfile -File scripts/preview.ps1 -Action cleanup -PreviewRoot "' + $prepared.preview + '"')
-    exit 0
-}
+    if (-not $Cleanup) {
+        Write-Host ('ONE command to see the window: powershell -NoProfile -File scripts/preview-gui.ps1 -Action window -PreviewRoot "' + $prepared.preview + '"')
+        Write-Host ('Cleanup: powershell -NoProfile -File scripts/preview.ps1 -Action cleanup -PreviewRoot "' + $prepared.preview + '"')
+    }
+} else {
 
 # The window really starts and shows the typed client state of the same owned host. The owned
 # host of this preview is already running (started by the headless check below), so opening and
@@ -167,6 +208,7 @@ $instance = [string]$before.diagnostics.host.host_instance_id
 Write-Output ('[window] owned host pid=' + $hostPid + ' instance=' + $instance)
 
 $window = Start-Process -FilePath $binaries.gui -ArgumentList @('--config', ('"' + $prepared.config + '"')) -PassThru
+if ($FixtureCase -eq 'after-window-open') { throw 'Synthetic failure after spawning the owned window' }
 $deadline = (Get-Date).AddSeconds(30)
 $windowProcess = $null
 while ((Get-Date) -lt $deadline) {
@@ -181,11 +223,15 @@ $hostDuring = Get-OwnedShotdProcess $prepared.root
 if ($hostDuring.Count -ne 1 -or $hostDuring[0].ProcessId -ne $hostPid) { throw 'The window did not attach to the one owned host process' }
 
 if ($WindowHoldSeconds -gt 0) { Start-Sleep -Seconds $WindowHoldSeconds }
-else { Write-Output '[window] press the window close button to continue (bounded wait 600s)'; $null = $window.WaitForExit(600000) }
+$capture = Invoke-PreviewProcess (Join-Path $PSHOME 'powershell.exe') @('-NoProfile','-NonInteractive','-File',(Join-Path $PSScriptRoot 'capture-preview-window.ps1'),'-OwnedProcessId',[string]$window.Id,'-PreviewRoot',$prepared.preview,'-OutputRoot',(Join-Path $evidence.output 'window')) $root 60
+Add-GuiPreviewStep 'OWNED-HWND-PHYSICAL-EVIDENCE' ($capture.exit -eq 0) $capture.exit
+if ($capture.exit -ne 0) { throw 'Owned window physical evidence failed' }
+# Agent-driven bounded close, never asks the owner to click.
 # A user-closed window is already gone; only request close if it is still running.
 if (-not $window.HasExited -and -not $window.CloseMainWindow()) { throw 'The diagnostic window refused the close request' }
 if (-not $window.WaitForExit(30000)) { throw 'The diagnostic window did not exit within the bounded close wait' }
 Write-Output ('[window] closed with raw code ' + $window.ExitCode)
+Add-GuiPreviewStep 'GUI-WINDOW-CLOSE' ($window.ExitCode -eq 0) $window.ExitCode
 if ($window.ExitCode -ne 0) { throw 'The closed window returned a non-zero exit code' }
 $hostAfter = Get-OwnedShotdProcess $prepared.root
 if ($hostAfter.Count -ne 1 -or $hostAfter[0].ProcessId -ne $hostPid) {
@@ -205,6 +251,55 @@ Write-Output ('[window] the reopened check attached to the same host_instance_id
 Stop-OwnedPreviewHost $binaries $prepared $root
 Write-Output ''
 Write-Output 'GUI WINDOW PASS: the window opened on the owned root, the host outlived its close and the reopened client reused it.'
-Write-Output ('ONE command to repeat: powershell -NoProfile -File scripts/preview-gui.ps1 -Action window -PreviewRoot "' + $prepared.preview + '"')
-Write-Output ('Cleanup: powershell -NoProfile -File scripts/preview.ps1 -Action cleanup -PreviewRoot "' + $prepared.preview + '"')
+if (-not $Cleanup) {
+    Write-Output ('ONE command to repeat: powershell -NoProfile -File scripts/preview-gui.ps1 -Action window -PreviewRoot "' + $prepared.preview + '"')
+    Write-Output ('Cleanup: powershell -NoProfile -File scripts/preview.ps1 -Action cleanup -PreviewRoot "' + $prepared.preview + '"')
+}
+}
+} catch {
+    $evidence.failed = $true
+    $failure = $(if ($FixtureCase) { 'SYNTHETIC_FAILURE' } else { 'GUI_PREVIEW_FAILED' })
+    [Console]::Error.WriteLine('GUI preview failed; private evidence retained, no exception payload disclosed.')
+} finally {
+    # Closing a client never authorizes leaving an owned window/host orphan on error.
+    if ($window) {
+        try {
+            if (-not $window.HasExited) {
+                [void]$window.CloseMainWindow()
+                if (-not $window.WaitForExit(10000)) { $window.Kill(); [void]$window.WaitForExit(5000) }
+            }
+            Add-GuiPreviewStep 'GUI-PROCESS-GONE' $window.HasExited
+        } catch { Add-GuiPreviewStep 'GUI-PROCESS-GONE' $false }
+        finally { $window.Dispose() }
+    }
+    if ($cleanupAuthority -and $binaries) {
+        $current = Resolve-ValidatedPreview $root $cleanupAuthority.preview $binaries.shotd $cleanupAuthority
+        if (-not $current.ok) {
+            Add-GuiPreviewStep 'OWNED-FINALIZATION-REFUSED' $false
+            $evidence.steps[-1].cleanup_stage = $current.stage
+            $evidence.steps[-1].local_host = 'BLOCKED: preserved because config/binding changed'
+        } else {
+            try {
+                if ($Cleanup) {
+                    $clean = Invoke-OwnedPreviewCleanup $root $cleanupAuthority.preview $binaries.shot 120 $cleanupAuthority
+                    Add-GuiPreviewStep 'OWNED-ROOT-CREDENTIAL-CLEANUP' ([bool]$clean.ok) $clean.credential_exit
+                    $evidence.steps[-1].readback_code = $clean.credential_readback_code
+                    $evidence.steps[-1].cleanup_stage = $clean.stage
+                    Add-GuiPreviewStep 'HOST-PROCESS-GONE' ([bool]$clean.ok -and (Test-OwnedPreviewQuiescent $prepared.root))
+                } else {
+                    if (-not (Test-OwnedPreviewQuiescent $prepared.root)) { Stop-OwnedPreviewHost $binaries $prepared $root }
+                    Add-GuiPreviewStep 'HOST-PROCESS-GONE' (Wait-OwnedShotdGone $prepared.root 10)
+                }
+            } catch { Add-GuiPreviewStep 'OWNED-FINALIZATION' $false }
+        }
+    }
+    $result = [ordered]@{ schema_version = 1; suite = 'gui-preview'; stage_result = 'IN_PROGRESS';
+        library_id = $libraryId; host_instance_id = $(if ($first) { $first.diagnostics.host.host_instance_id } elseif ($before) { $before.diagnostics.host.host_instance_id } else { $null });
+        outcome = $(if ($evidence.failed) { 'FAIL' } else { 'PASS' }); failure = $failure;
+        action = $Action; preview = $(if ($prepared) { Get-SafeVerificationToken $evidence $prepared.preview } else { $null });
+        steps = @($evidence.steps.ToArray()); capture = 'NOT_RUN'; ai_runtime = 'NOT_RUN';
+        raw_logs = 'private .pi output only; do not upload automatically' }
+    Write-VerificationJson (Join-Path $evidence.output 'result.json') $result
+}
+if ($evidence.failed) { exit 1 }
 exit 0

@@ -1,5 +1,5 @@
 ---
-applyTo: "scripts/verify.ps1,scripts/verify-contracts.ps1,scripts/verification-common.ps1,scripts/test-verify.ps1,tests/fixtures/s01/**,docs/progress/S01/t04a-verification.*,docs/progress/S01/t04b-observability.*,AGENTS.md"
+applyTo: "scripts/verify.ps1,scripts/verify-contracts.ps1,scripts/verification-common.ps1,scripts/test-verify.ps1,scripts/test-offline-safety.ps1,scripts/test-foundation-smoke.ps1,scripts/test-preview-rejection.ps1,tests/fixtures/s01/**,docs/progress/S01/t04a-verification.*,docs/progress/S01/t04b-observability.*,AGENTS.md"
 name: "BUILD.Verification"
 description: "Читай при изменении offline verify, фиксированного набора шагов, Windows PowerShell runner, evidence и synthetic verification fixtures."
 ---
@@ -34,7 +34,9 @@ MSVC и Node 24.13.0, доступный pnpm package 10.32.1, установл�
 `vcvars64.bat`, Python с jsonschema 4.26.0, Git для source enumeration.
 Не устанавливай зависимости, не меняй registry/global PATH. Runner импортирует
 VS developer environment в дочерний процесс, всем steps передаёт process-local
-env, сохраняет cargo outputs под `.pi/`. Если prerequisite/version/package/script
+env, сохраняет cargo outputs в отдельном `.pi/staging-target-t09b` (не занятый
+чужим preview target). `CARGO_NET_OFFLINE=true` наследуется всеми вложенными
+Cargo invocations, включая pnpm contract checks. Никаких автоматических downloads. Если prerequisite/version/package/script
 исчез или появился новый package, запуск должен падать до ложного PASS;
 изменивший workspace owner обновляет обязательный suite и каталог.
 
@@ -42,10 +44,20 @@ env, сохраняет cargo outputs под `.pi/`. Если prerequisite/versi
 test (включая S01-LOG-01/02 test-support, logger, synthetic HostLease и S01-DB-01/02 storage),
 отдельные `HOST-LEASE` cargo test -p sm-isolation --test host_lease, `STORAGE-FOUNDATION` cargo test -p sm-storage (синтетические файловые DB), `TESTS-CODEC` cargo test -p sm-codec (реальный bundled libwebp exact-lossless round-trip) и `TESTS-STORAGE-IMAGES` cargo test -p sm-storage image_tests (schema 0002, канонический файл и откат), и `FRAMING` cargo test -p sm-framing (синтетические AsyncRead/AsyncWrite потоки), `SESSION-NATIVE` cargo test -p sm-session (owned native pipe + synthetic in-memory verifiers/handlers); pnpm
 typecheck/lint/test/contracts:check; Python boundary/schema fixtures и source bytes.
-`FRONTEND`, `BRIDGE`, полный `HOST`/`IPC` (session subset не означает готовый host), `HOST-LOG-INTEGRATION` и остальные будущие gates
-остаются `NOT_IMPLEMENTED`/`NOT_RUN`;
-S01 всегда `IN_PROGRESS` до отдельной приёмки владельцем. Нет live/runtime,
-donor build, GUI, model download, `pnpm install` или bootstrap.
+Реальные host/CLI и Tauri/React GUI существуют: `HOST-COMPOSITION`, `CLI-SURFACE`,
+`GUI-RUST-TEST` и frontend build/typecheck/lint/test обязательны. Offline не открывает
+окно и не стартует product binary: `GUI-WINDOW-RUNTIME` — NOT_RUN; отдельный
+`scripts/test-foundation-smoke.ps1` проверяет owned host/CLI/GUI и error-finally cleanup,
+включая `test-preview-rejection.ps1` (12 actual two-root/config/binding/mutation cases).
+Это отдельный composed runtime gate, не скрытая часть offline verify.
+`CAPTURE-NATIVE` — только safe `--lib`; desktop-reading `live_capture` требует
+non-default `isolated-desktop-tests`. `OFFLINE-SAFETY` проверяет default denial
+compile-only (raw 101), live suite честно `CAPTURE-LIVE-DESKTOP=NOT_RUN`.
+Не включать all-features в offline test runner. Подробнее —
+[CAPTURE.native](CAPTURE.native.instructions.md).
+S01 всегда `IN_PROGRESS` до отдельной приёмки владельцем. Нет model download,
+`pnpm install`, donor runtime/menu либо package acceptance. По ADR-011 embeddings/vec
+исключены; SDK/FTS5/package proofs принадлежат S04/S06/S08 и не получают PASS здесь.
 `verify-contracts.ps1` генерирует Rust/TS в новые приватные каталоги и сравнивает
 checked-in bytes без overwrite-first; подробнее о DTO owner —
 [BUILD.protocol_contracts](BUILD.protocol_contracts.instructions.md).

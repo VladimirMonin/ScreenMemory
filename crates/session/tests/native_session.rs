@@ -13,8 +13,9 @@ use sm_pipe::{Endpoint, Listener, TrustedServerImage};
 use sm_protocol::{
     application::{
         AiPolicyPatch, AiPolicyView, AuthorizeProbeRequest, BridgeState, CheckResult, DoctorReport,
-        DoctorRequest, HostState, HostStatus, ProbeConsentReceipt, RuntimeProbeReport,
-        LibraryRecordsPage, LibraryRecordsRequest, RuntimeProbeRequest, ShutdownReceipt, APPLICATION_VERSION,
+        DoctorRequest, HostState, HostStatus, LibraryRecordsPage, LibraryRecordsRequest,
+        ProbeConsentReceipt, RuntimeProbeReport, RuntimeProbeRequest, ShutdownReceipt,
+        APPLICATION_VERSION,
     },
     errors::{AppError, ErrorCode},
     values::{BuildId, MethodName, SafeMessage},

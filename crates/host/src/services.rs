@@ -37,8 +37,12 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 /// The four foundation handlers always implemented by this host.
-pub const AVAILABLE_METHODS: [&str; 4] =
-    ["system.status", "system.doctor", "system.request_shutdown", "library.list_records"];
+pub const AVAILABLE_METHODS: [&str; 4] = [
+    "system.status",
+    "system.doctor",
+    "system.request_shutdown",
+    "library.list_records",
+];
 /// S02 handlers, advertised only when this composition really owns a capture adapter.
 pub const CAPTURE_METHODS: [&str; 2] = ["capture.command", "library.asset.read"];
 const PHASE_STARTING: u8 = 0;
@@ -419,11 +423,18 @@ impl FoundationApi for FoundationServices {
         request: LibraryRecordsRequest,
     ) -> Result<LibraryRecordsPage, AppError> {
         if !ctx.allows(Scope::ListRecords) {
-            return Err(app_error(ErrorCode::PermissionDenied, "Scope is not granted."));
+            return Err(app_error(
+                ErrorCode::PermissionDenied,
+                "Scope is not granted.",
+            ));
         }
         let query = RecordPageQuery::new(Some(request.limit), request.cursor.clone())
             .map_err(|_| app_error(ErrorCode::InvalidRequest, "Invalid page query."))?;
-        let page = self.storage.page_records(query).await.map_err(storage_error)?;
+        let page = self
+            .storage
+            .page_records(query)
+            .await
+            .map_err(storage_error)?;
         let items = page
             .items
             .into_iter()

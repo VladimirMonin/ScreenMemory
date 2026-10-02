@@ -30,7 +30,6 @@ pub enum Scope {
     ReadImages,
     /// S02-T11: read a bounded page of committed library records.
     ListRecords,
-
 }
 /// Constructed only by the authenticated host boundary; never decoded from request.params.
 #[derive(Clone, Debug)]

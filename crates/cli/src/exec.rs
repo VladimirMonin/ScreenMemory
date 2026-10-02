@@ -495,7 +495,8 @@ fn destination_inside_root(root: &Path, destination: &Path) -> bool {
     }
     // Both sides are canonicalized, so two spellings of one directory (case, reparse,
     // short name) compare equal on every Windows filesystem.
-    let (Ok(root_real), Some(destination_real)) = (root.canonicalize(), resolved_destination(destination))
+    let (Ok(root_real), Some(destination_real)) =
+        (root.canonicalize(), resolved_destination(destination))
     else {
         // Without a resolvable root/parent the later `create_new` fails on its own and can
         // publish nothing inside the library.

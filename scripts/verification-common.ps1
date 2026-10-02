@@ -138,7 +138,7 @@ function Add-VerificationGuardStep($State, [string]$Id, [string]$Reason) {
 function Complete-Verification($State, [string[]]$NotImplemented, [object[]]$NotRunCatalog = @()) {
     # The catalog separates the stage-wide NOT_RUN from future-owner NOT_IMPLEMENTED entries; an
     # implemented-but-not-offline-exercised surface is reported as an explicit NOT_RUN of its own.
-    $catalog = @(@{ check_id = 'FOUNDATION-OFFLINE-FULL'; outcome = 'NOT_RUN'; reason = 'implementation incomplete; subset is not stage acceptance' }) +
+    $catalog = @(@{ check_id = 'FOUNDATION-OFFLINE-FULL'; outcome = 'NOT_RUN'; reason = 'stage-wide SDK/FTS5/package proofs belong to S04/S06/S08; subset is not stage acceptance' }) +
         @($NotImplemented | ForEach-Object { @{ check_id = $_; outcome = 'NOT_IMPLEMENTED'; reason = 'future owner; not part of implemented contract subset' } }) +
         @($NotRunCatalog)
     $report = [ordered]@{ schema_version = 1; suite = $State.suite; stage = 'S01'; stage_result = 'IN_PROGRESS';
@@ -218,7 +218,9 @@ function Get-VerificationEnvironment([string]$Root, [string]$LogRoot) {
     }
     $map['PATH'] = $rustBin + ';' + $nodeBin + ';' + (Join-Path $Root 'packages\protocol\node_modules\.bin') + ';' + $map['PATH']
     $map['CARGO_HOME'] = Join-Path $Root '.pi\donor-build\.cargo-home'
-    $map['CARGO_TARGET_DIR'] = Join-Path $Root '.pi\verify-contract-target'
+    $map['CARGO_TARGET_DIR'] = Join-Path $Root '.pi\staging-target-t09b'
+    # Offline is inherited by nested Cargo invocations (including pnpm contracts:check).
+    $map['CARGO_NET_OFFLINE'] = 'true'
     $map['NODE_OPTIONS'] = ''
     $map['COREPACK_ENABLE_AUTO_PIN'] = '0'
     return @{ rust = (Join-Path $rustBin 'cargo.exe'); rustc = (Join-Path $rustBin 'rustc.exe'); node = (Join-Path $nodeBin 'node.exe'); pnpm = $pnpmJs; python = $(try { (Get-Command python.exe -ErrorAction Stop).Source } catch { '' }); env = $map }

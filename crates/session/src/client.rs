@@ -374,7 +374,7 @@ impl ApplicationClient {
             ApplicationResult::RecordsPage(page) => Ok(page),
             _ => Err(SessionError::UnexpectedResponse.into()),
         }
-   }
+    }
 
     /// Explicit best-effort cancellation, only for a request still pending on this client.
     pub async fn cancel(&self, id: RequestId) -> Result<(), SessionError> {

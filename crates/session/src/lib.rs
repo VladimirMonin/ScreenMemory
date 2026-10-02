@@ -14,8 +14,8 @@ use sm_pipe::{Connection, Endpoint, Listener, TrustedServerImage};
 use sm_protocol::{
     application::{
         ApplicationResult, CaptureCommandParams, CaptureOutcome, DoctorReport, HostStatus,
-        KnownParams, LibraryAssetChunk, LibraryAssetRequest, ProtocolVersion, RequestEnvelope, Response, ShutdownReceipt,
-        APPLICATION_VERSION,
+        KnownParams, LibraryAssetChunk, LibraryAssetRequest, ProtocolVersion, RequestEnvelope,
+        Response, ShutdownReceipt, APPLICATION_VERSION,
     },
     errors::{AppError, ErrorCode},
     values::{MethodName, SafeMessage},

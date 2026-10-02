@@ -1,5 +1,5 @@
 ---
-applyTo: "crates/gui/**,apps/gui/**,scripts/preview-gui.ps1,scripts/preview-common.ps1,scripts/verify.ps1,scripts/test-verify.ps1,docs/progress/S01/t06d-gui.*"
+applyTo: "crates/gui/**,apps/gui/**,scripts/preview-gui.ps1,scripts/capture-preview-window.ps1,scripts/test-foundation-smoke.ps1,scripts/test-preview-rejection.ps1,scripts/preview-common.ps1,scripts/verify.ps1,scripts/test-verify.ps1,docs/progress/S01/t06d-gui.*"
 name: "APP.Gui"
 description: "Читай при работе с окном Tauri+React, его диагностикой и галереей S02, командами, --self-check и developer preview окна."
 ---
@@ -62,7 +62,29 @@ exit-коды как у CLI (0/2/4/6/8), безопасная строка в st
 `cargo test -p sm-gui`, frontend typecheck/lint/test и помечает `GUI-WINDOW-RUNTIME` как
 NOT_RUN. Реальное окно запускает только `scripts/preview-gui.ps1` (owned
 `.pi/preview/<uuid>` root + явный конфиг + уникальный build-log): `-Action selfcheck`
-(по умолчанию) или `-Action window`. Workspace allowlists (`verification-common.ps1`,
+(по умолчанию) или `-Action window`. Wrapper сохраняет immutable `result.json` и
+raw exits в новом `.pi/temporary/<uuidv4>`; один JSON stdout — контракт binary,
+не прогресс-вывода PowerShell wrapper. Окно закрывается агентом автоматически через
+`-WindowHoldSeconds` (default 2s), без просьбы владельцу кликнуть. `finally` закрывает
+только собственный window handle. Stop/credential/root finalization разрешены лишь
+после полного `Resolve-ValidatedPreview` **до первого connect**: marker/tree + независимый
+create-only init-issued directory/library binding + config root/schema/test/image.
+Validated tuple/config+binding hashes замораживаются. Отказ preflight не разрешает
+cleanup; authenticated B не доказывает A→B. Mutation после arm запрещает privileged
+cleanup и сохраняет root/credential, возможный host явно локальный BLOCKED; окно
+закрывается через own handle. При неизменных входах ошибки connect/window сохраняют
+обычный stop→absence→remove; `-Cleanup` удаляет только свой exact Test credential/root.
+Контракт binding/legacy и ограничение same-user TOCTOU — у [HOST.Composition](HOST.composition.instructions.md).
+`scripts/capture-preview-window.ps1` подтверждает marker/config/process/image/HWND
+owner и снимает только PrintWindow этого HWND с per-monitor DPI-awareness; не
+читает desktop/clipboard. Кадр и его physical размеры/hash остаются private evidence.
+`scripts/test-foundation-smoke.ps1` проверяет selfcheck/window/reopen и два реальных
+injected failures после connect/spawn: raw 1, подтверждённая финализация, и отдельную
+12-case two-root/mutation suite. Mutation fixtures `mutate-config`/`mutate-binding`
+проверяют hash отказ даже при семантически неизменном JSON; harness восстанавливает
+только собственные inputs, завершает свои processes и удаляет свои exact keys.
+Это не capture→Saved→preview acceptance.
+Workspace allowlists (`verification-common.ps1`,
 `tests/contracts/check_boundaries.py`, `packages/protocol/scripts/check-boundaries.mjs`)
 перечисляют ровно `packages/protocol,apps/gui` — новый пакет требует явного обновления, не
 wildcard. Toolchain только project-local (pinned Rust/Node/pnpm, cargo cache, локальный

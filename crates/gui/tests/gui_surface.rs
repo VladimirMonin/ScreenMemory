@@ -976,13 +976,11 @@ fn t06d_gui_07_state_mapping_is_total_and_shows_no_invented_counts() {
         BTreeSet::from_iter(NOT_IMPLEMENTED.iter().map(|name| name.to_string())),
         BTreeSet::from_iter(diagnostics.not_implemented.iter().cloned())
     );
-    assert!(!diagnostics.not_implemented.iter().any(|name| name == "gallery"));
-    for capability in [
-        "search",
-        "drop_zone",
-        "model_settings",
-        "bridge_runtime",
-    ] {
+    assert!(!diagnostics
+        .not_implemented
+        .iter()
+        .any(|name| name == "gallery"));
+    for capability in ["search", "drop_zone", "model_settings", "bridge_runtime"] {
         assert!(diagnostics
             .not_implemented
             .iter()
