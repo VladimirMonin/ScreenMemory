@@ -65,18 +65,23 @@ parent post-P2 verify36/runner regression raw0: **ACCEPT_CODE_SCOPED**.
 
 ## Текущий продуктовый milestone
 
-**Сначала:** воспроизводимая рабочая основа и агентский synthetic capture→library→preview.
-Не возобновлять цепочку микросрезов recovery до полезного сквозного результата.
+Foundation boot/verify/helper seam принят scoped (`99df8f3`, handoff `de41adb`),
+не вся S01. **Сейчас:** агентский isolated synthetic capture→Saved→library→preview.
+Native workflow `e7c30bf9-0e73-4905-95df-58c04b660294` запущен; oracle пока
+согласует safety contract, runtime capture ещё NOT_RUN. Не возобновлять цепочку
+микросрезов recovery до полезного сквозного результата.
 
 | Lane | Решение и scope | Cwd / isolation | Gate / handoff |
 |---|---|---|---|
-| Parent scope-board | Уточнение scope, docs/TASKS.md, AGENTS/README/instructions и native Pi routing | `C:/PY/ScreenMemory`, один parent до launch | Ссылки/YAML/plan SHA, workflow tests + validate, локальный commit |
-| Foundation writer | Единый boot/verify/handoff seam: сделать текущую базу воспроизводимой, проверить owned host/client/GUI, починить реальные baseline препятствия в scope | `C:/PY/ScreenMemory`, один writer после parent commit | Targeted + итоговый foundation suite, synthetic host/GUI smoke, актуальный `docs/progress/S01/` и managed output |
-| Foundation reviewer | Fresh read-only: код/дифф, raw evidence, сохранность и scoped регрессии | То же cwd **после** writer, без source writes | Конкретный verdict/finding и независимые focused checks |
-| Следующий capture milestone | Native capture→Saved→list→видимый preview на собственных тестовых окнах | Назначить после handoff; заранее разделить owners при независимых seams | Physical screenshot + pixels/IDs + restart, не личный экран |
+| Foundation writer/reviewer → parent | DONE scoped: boot/verify/handoff и P1/P2 cleanup | Source released; `99df8f3`, report `de41adb` | Verify36, composed6, review accept; полная S01 IN_PROGRESS |
+| S02 isolation oracle | RUNNING: Astra выбирает конкретный guarded launcher/desktop; parent подтверждает до исполнения | `C:/PY/ScreenMemory`, read-only, никакого pixel-read/input | Actual station/thread/input-desktop, full synthetic background, bounded restore/own watchdog contract |
+| S02 desktop support | PENDING после подтверждённого oracle решения: один launcher/fixture lifecycle/privacy seam | Один Sol6.1 writer; opt-in test guards, fresh children и own handles | Runnable handoff, safety negatives и raw outcomes; compile не runtime PASS |
+| S02 integration | PENDING после ready support: четыре режима→Saved→list/get→настоящий Tauri preview | Последовательно, один Sol6.1 writer после освобождения source | Same-frame pixels/IDs/hash, genuine guarded input, empty→new/first24 bounds, restart/no duplicates |
+| S02 reviewer → parent | PENDING после integration: fresh Sol6.1 read-only | Source writes запрещены во время финальных integrity gates | Scoped verdict; parent оценивает physical screenshot/pixels и принимает, не whole-S02 по одному case |
 
-Текущий writer seam считается single-seam: existing boot/verification/handoff одной
-кодовой базы. Нет назначения одному writer «сделать S01–S08». Новые storage/runtime/
+Завершённый foundation был single-seam. В новой wave test-support и product integration
+имеют последовательных owners и durable handoff, без пересекающихся source writes.
+Нет назначения одному writer «сделать S01–S08». Новые storage/runtime/
 search контракты получают свои крупные задания и integration handoff, не writer swarm.
 Pi: `openai-codex/gpt-6.1-sol` для реализации/review;
 `openai-codex/gpt-6-astra` для oracle при реальной неопределённости.
@@ -93,9 +98,11 @@ Pi: `openai-codex/gpt-6.1-sol` для реализации/review;
 | Временный recovery codec cap 1 MP | Не production 96 MP acceptance; решить вместе с реальными memory/recovery bounds. |
 | Legacy host asset read | Полный canonical аллоцируется до GUI cap, может повторяться на чанках; будущий bounded transfer owner устраняет риск. |
 | Pin/editor/clipboard/transfer, полный CLI/MCP | Не приняты; реализовать соответствующие milestones, не назвать ранний bounded preview полным T10/T11/S07. |
-| Global fmt drift и прежний default-thread codec overflow | Исторические baseline проблемы. В foundation проверить текущий snapshot, устранить forward в scope либо оставить точное NOT_RUN с безопасным runner, без отключения тестов. |
+| Global fmt drift и прежний default-thread codec overflow | Исторические baseline проблемы, не текущий foundation blocker: verify36 и runner regression raw0. Desktop-reading target default-off; live matrix остаётся NOT_RUN. |
 | Общий preview target занят чужим host | Не останавливать чужой процесс. Использовать отдельный owned target/root; exact UUID, финализация только собственных handles. |
 | LM Studio/models и clean Windows test environment | Проверить доступность read-only, не скачивать тайно. SDK/runtime bundling и независимую работу продолжать; реальный proof без доступа не выдумывать. |
+| Исторические synthetic credentials | Malformed reviewer canary и pre-P2 absent fixture без сохранённого ID — UNKNOWN/NOT_RECONCILED; новые exact1168 proofs не доказывают старую absence. Enumeration/sweep без нового решения запрещены. |
+| Clipboard isolation | Desktops WinSta0 делят clipboard: никаких Copy/EmptyClipboard в этой capture-wave. Нужна собственная station/session/VM и host/consumer той же station. |
 
 ## Обязательная финальная оценка
 
