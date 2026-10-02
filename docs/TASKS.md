@@ -16,7 +16,7 @@ Scope: [ADR-011 / CN-20261002-01](adr/011-private-release-scope.md).
 | Scope и доска | DONE | Parent: ADR-011, маршруты, ссылки/frontmatter/9 plan SHA и 10 локальных workflow checks прошли; это не продуктовая приёмка. |
 | S01 — рабочая основа | IN_PROGRESS, не принята целиком | Sol6.1 writer → fresh Sol6.1 reviewer → parent: актуальный handoff, один host/root/DB/IPC/client, реальные gates и запуск. |
 | S02 — capture/library | IN_PROGRESS, не принята целиком | Sol6.1: сквозной capture→Saved→видимый preview, режимы/hotkeys, recovery, transfer/clipboard, pin/editor, CLI. |
-| S03 — импорт/изображения/экспорт | PENDING | Sol6.1: файлы/папки с прогрессом/отказами, собственные WebP/AVIF, metadata/orientation, resize и экспорт. |
+| S03 — импорт/изображения/экспорт | IN_PROGRESS, запуск независимого milestone | Sol6.1: codec/metadata owner → ingest owner → interface integration → fresh reviewer; files/folders→own WebP/AVIF→preview/export. Live S02 blocker документирован, не принят вместо проверки. |
 | S04 — SDK/очередь/LM Studio | PENDING | Sol6.1: bundled SDK/runtime, реальный vision API, профили, Automatic/Manual/Off, pause/cancel/retry, load/unload/TTL. |
 | S05 — OCR/карточки/правки | PENDING | Sol6.1: рабочий OCR/vision, категории, schema validation, manual overrides и revision guards. |
 | S06 — FTS5 и качество поиска | PENDING | Sol6.1 + оценка parent: lexical/exact/filters, обновление после правок/удалений, размеченный RU/EN corpus, ranking и latency. |
@@ -66,20 +66,25 @@ parent post-P2 verify36/runner regression raw0: **ACCEPT_CODE_SCOPED**.
 ## Текущий продуктовый milestone
 
 Foundation boot/verify/helper seam принят scoped (`99df8f3`, handoff `de41adb`),
-не вся S01. **Сейчас:** агентский isolated synthetic capture→Saved→library→preview.
-Native workflow `e7c30bf9-0e73-4905-95df-58c04b660294` запущен; oracle пока
-согласует safety contract, runtime capture ещё NOT_RUN. Не возобновлять цепочку
-микросрезов recovery до полезного сквозного результата.
+не вся S01. Native workflow `e7c30bf9-0e73-4905-95df-58c04b660294` завершился
+на Astra decision `blocked`: без разрешённого собственного guest writer не запускался.
+[Live-stand blocker](progress/S02/isolated-live-stand.md) остаётся у capture/input;
+Windows Sandbox preflight raw0 выявил disabled feature, не runtime PASS.
+**Сейчас:** независимый S03 files/folders→own WebP/AVIF→preview/export на синтетике.
+Импорт не заменяет capture proof. Не возвращаться к микросрезам recovery вместо
+работающего пользовательского результата.
 
 | Lane | Решение и scope | Cwd / isolation | Gate / handoff |
 |---|---|---|---|
 | Foundation writer/reviewer → parent | DONE scoped: boot/verify/handoff и P1/P2 cleanup | Source released; `99df8f3`, report `de41adb` | Verify36, composed6, review accept; полная S01 IN_PROGRESS |
-| S02 isolation oracle | RUNNING: Astra выбирает конкретный guarded launcher/desktop; parent подтверждает до исполнения | `C:/PY/ScreenMemory`, read-only, никакого pixel-read/input | Actual station/thread/input-desktop, full synthetic background, bounded restore/own watchdog contract |
-| S02 desktop support | PENDING после подтверждённого oracle решения: один launcher/fixture lifecycle/privacy seam | Один Sol6.1 writer; opt-in test guards, fresh children и own handles | Runnable handoff, safety negatives и raw outcomes; compile не runtime PASS |
-| S02 integration | PENDING после ready support: четыре режима→Saved→list/get→настоящий Tauri preview | Последовательно, один Sol6.1 writer после освобождения source | Same-frame pixels/IDs/hash, genuine guarded input, empty→new/first24 bounds, restart/no duplicates |
-| S02 reviewer → parent | PENDING после integration: fresh Sol6.1 read-only | Source writes запрещены во время финальных integrity gates | Scoped verdict; parent оценивает physical screenshot/pixels и принимает, не whole-S02 по одному case |
+| S02 isolation oracle | DONE consultation, live BLOCKED: personal WinSta0 race не разрешён | Read-only, source released, writers не запускались | Astra decision + OS metadata preflight; actual guest availability ещё не доказана |
+| S02 support/integration/review | DEFERRED до собственного чистого guest/session, capture требования сохранены | Без source writers и без live pixel-read/input | Same-frame four modes/IDs/hash/real input/restart остаются NOT_RUN |
+| S03 image owner | NEXT: decoding/inspection/metadata/normalization, WebP+AVIF, transform/export codec, private worker boundary | Один Sol6.1 writer, exclusive codec/image seam | Native synthetic corpus, pinned dependencies/provenance, runnable typed handoff |
+| S03 ingest owner | AFTER image handoff: existing storage/journal + import/origins/derived/export services/DTO | Последовательно, один writer, не второй host/asset store | Source snapshot→verified canonical→commit; duplicate/failure/cancel/protected-target tests |
+| S03 interface integration | AFTER ingest handoff: common client/CLI + GUI import/report/preview/export | Один writer после source release | Реальный own file/tree→saved→list/get→Tauri preview/export, canonical unchanged |
+| S03 reviewer → parent | AFTER integration: fresh scoped read-only review | Без source writes во время integrity gates | Actual diff/evidence/negative checks, parent physical preview и итоговый commit |
 
-Завершённый foundation был single-seam. В новой wave test-support и product integration
+Завершённый foundation был single-seam. S03 image, ingest и interface integration
 имеют последовательных owners и durable handoff, без пересекающихся source writes.
 Нет назначения одному writer «сделать S01–S08». Новые storage/runtime/
 search контракты получают свои крупные задания и integration handoff, не writer swarm.
@@ -90,7 +95,7 @@ Pi: `openai-codex/gpt-6.1-sol` для реализации/review;
 
 | Остаток | Состояние / следующий шаг |
 |---|---|
-| Единый live capture→preview и click-to-preview | NOT_RUN целиком. Агент выполняет на собственном synthetic desktop/окне, не просит владельца кликать. |
+| Единый live capture→preview и click-to-preview | BLOCKED/NOT_RUN: [изолированный stand](progress/S02/isolated-live-stand.md), own guest/session ещё не подтверждён; Windows Sandbox disabled. Не включать OS features и не просить владельца кликать вместо агента. |
 | Native WM_HOTKEY, menus/first drag/Esc, четыре режима, mixed DPI/negative coordinates | Код/частичные proofs не вся Windows matrix; подготовить собственные synthetic окна и проверить. |
 | Recovery startup/status/retry | NOT_WIRED полностью; интеграция после runnable цепочки, reuse уже принятых capability/SQL частей. |
 | Условная pending→Saved, hostile prior writable mappings | [Условная модель](progress/S02/t09n3b2-conditional-saved.md). Нельзя объявить unconditional proof или переписать guard ради PASS. |
