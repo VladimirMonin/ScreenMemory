@@ -3,12 +3,12 @@
   "stage": "S01",
   "status": "IN_PROGRESS",
   "updated_at": "2026-10-02",
-  "task": "Reproducible foundation runner + owned host/client/GUI seam; independent review required",
+  "task": "Reproducible foundation runner + owned host/client/GUI seam; ACCEPT_CODE_SCOPED after independent P1/P2 review",
   "source_commit": "9a7944d5cf33563ccb598e5b7e9dc035d8190e4e",
   "code_baseline": "18a2608cad800d1b3cb783d586964784e267351d",
-  "working_candidate": true,
-  "accepted_code_commit": null,
-  "report_commit": null,
+  "working_candidate": false,
+  "accepted_code_commit": "99df8f3c0e8d6c3a57bc6afde567829c1851a366",
+  "report_commit_policy": "resolve latest tracked report commit with git log; no self-referential SHA",
   "scope_adr": "../../adr/011-private-release-scope.md",
   "scope": "FTS5-only; SDK/runtime ships outside WebView; this seam does not implement S02 recovery/S03 import/S04 runtime/S06 search",
   "accepted_checkpoints": {
@@ -83,7 +83,7 @@
     {"id": "WHOLE-S01-G01-G10", "outcome": "NOT_RUN", "owner": "parent stage acceptance"}
   ],
   "review": {"status": "ACCEPT_CODE_SCOPED", "initial_verdict": "fix", "initial_run": "3c0724d6-c353-49e4-b575-fcbf0f22f77e", "fresh_p1_run": "7fb13900-f14e-49ff-a6eb-981b31ddef78", "p2_challenge_run": "f715cc2b-8388-4890-abf1-5168219b458c", "confirmed_p1_closed": true, "confirmed_p2_closed": true, "blocking_findings": 0, "evidence": ".pi/temporary/1b406900-3894-4dd4-ada5-05558f56a916/evidence/result.json"},
-  "handoff": {"next_task": "Scoped code accepted; parent local commit, then owned-isolated capture milestone; whole stage not accepted", "next_stage": "separate owned-isolated capture milestone; no automatic S01/S02 acceptance"},
+  "handoff": {"next_task": "Scoped code commit99df8f3 accepted; owned-isolated capture milestone next; whole stage not accepted", "next_stage": "separate owned-isolated capture milestone; no automatic S01/S02 acceptance"},
   "residual_risks": ["Early unsafe desktop dispatch cannot be undone; not acceptance evidence", "Whole native desktop/session matrix not run after gating", "Existing recovery wiring/memory/power-loss and legacy host full-file asset-read limitations remain outside this seam", "Pinned pnpm package and MSVC/Python prerequisites must already exist", "Serena Active language servers: []; authorized graph/ast/current-source fallback used"],
   "no_staged_files": true,
   "raw_logs": "private ignored .pi only; no automatic publication"

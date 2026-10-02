@@ -2,7 +2,8 @@
 
 **S01 IN_PROGRESS, не принят целиком.** Этот handoff относится к base
 `9a7944d5cf33563ccb598e5b7e9dc035d8190e4e`, кодовому baseline
-`18a2608cad800d1b3cb783d586964784e267351d` и незакоммиченному foundation seam.
+`18a2608cad800d1b3cb783d586964784e267351d`; foundation code commit
+**`99df8f3c0e8d6c3a57bc6afde567829c1851a366`**, ACCEPT_CODE_SCOPED.
 Writer ничего не staging/commit. Fresh Sol6.1 review + same-role P2 challenge завершены:
 parent **ACCEPT_CODE_SCOPED**, не full S01. Commit выполняет parent.
 [Машинный отчёт](result.json), [доска](../../TASKS.md), [ADR-011](../../adr/011-private-release-scope.md).
@@ -113,5 +114,6 @@ Code intelligence: Serena действительно вернул `Active langua
 
 Первый review вернул fix (P1), следующий закрыл P1 и нашёл P2, final challenge
 принял оба исправления. Parent принимает только этот seam, сохраняет raw failures и
-исторические unknown residues. Следующий шаг: локальный commit и owned-isolated capture milestone,
+исторические unknown residues. Code commit `99df8f3` создан локально, push не было.
+Следующий шаг: owned-isolated capture milestone,
 а не автоматическое объявление всей S01/S02 готовой.

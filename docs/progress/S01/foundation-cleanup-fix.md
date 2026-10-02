@@ -1,7 +1,8 @@
 # S01 foundation — исправление P1 cleanup, 2026-10-02
 
 Scope: developer helpers, не production storage/IPC и не полная S01 acceptance.
-Base: `9a7944d5cf33563ccb598e5b7e9dc035d8190e4e`. Parent принимает код после fresh review.
+Base: `9a7944d5cf33563ccb598e5b7e9dc035d8190e4e`. Scoped code accepted после fresh review:
+**`99df8f3c0e8d6c3a57bc6afde567829c1851a366`**, локальный commit, без push.
 
 ## Подтверждённый дефект
 

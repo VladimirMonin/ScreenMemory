@@ -57,7 +57,7 @@ Scope: [ADR-011 / CN-20261002-01](adr/011-private-release-scope.md).
   и повторный recovery, узкое storage-only доказательство; commit `06763156`.
 
 [S01 result.md](progress/S01/result.md)/[result.json](progress/S01/result.json)
-обновлены по фактическому Git/runner/runtime. Foundation candidate: composed smoke 6/6,
+обновлены по фактическому Git/runner/runtime. Foundation scoped code commit **`99df8f3`**: composed smoke 6/6,
 65 cleanup-safety checks и 12 two-root/mutation cases raw 0; [P1/P2 correction](progress/S01/foundation-cleanup-fix.md)
 закрывает misbound cleanup и финализацию второго fixture. Sol6.1 scoped accept,
 parent post-P2 verify36/runner regression raw0: **ACCEPT_CODE_SCOPED**.
