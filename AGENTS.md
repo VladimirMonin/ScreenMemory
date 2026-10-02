@@ -12,8 +12,9 @@ preview); соизмеряй глубину инженерной проверк�
 
 ## Начало работы и источники истины
 
-1. Прочитай [навигатор и план старта](docs/README.md), релевантные разделы
-   [master v3](docs/ScreenMemory_Full_Development_Plan_v3.md) и план текущего этапа.
+1. Прочитай [доску текущих задач](docs/TASKS.md), [навигатор](docs/README.md),
+   [принятое уточнение scope](docs/adr/011-private-release-scope.md), релевантные
+   разделы [master v3](docs/ScreenMemory_Full_Development_Plan_v3.md) и план этапа.
 2. Проверь фактическое дерево, Git/worktree и чужие изменения до первой записи.
    Исходные девять планов неизменны; фактические manifests/исходники и статус срезов
    сверяй с `docs/progress/S01/`, а не с историческим отсутствием кода/Git.
@@ -33,6 +34,7 @@ preview); соизмеряй глубину инженерной проверк�
 | [DOCS.instructions_style](instructions/DOCS.instructions_style.instructions.md) | Создание, обновление, переименование или разделение инструкций и AGENTS.md |
 | [DOCS.commit_messages](instructions/DOCS.commit_messages.instructions.md) | Группировка изменений, staging, проверки и создание commit |
 | [CORE.code_intelligence](instructions/CORE.code_intelligence.instructions.md) | Поиск реализации, символов, связей, структурных паттернов и оценка влияния |
+| [WORKFLOW.release](instructions/WORKFLOW.release.instructions.md) | Продолжение S01–S08, Markdown-доска, Pi Sol6.1/Astra6, FTS5-only, SDK в поставке и агентская приёмка |
 | [APP.session](instructions/APP.session.instructions.md) | Authenticated RPC session, shared Rust client, authorization, bounded dispatch/cancellation |
 | [HOST.composition](instructions/HOST.composition.instructions.md) | Реальные shotd/shot, bootstrap/shutdown-порядок, trusted preview configuration, CLI JSON/exit codes, autostart и developer preview |
 | [APP.gui](instructions/APP.gui.instructions.md) | Диагностическое окно Tauri+React, его команды/конфиг, `--self-check` и developer preview окна |
@@ -68,15 +70,17 @@ preview); соизмеряй глубину инженерной проверк�
 
 ## Ключевые границы продукта
 
-Целевой стек: Rust, Tauri + React/TypeScript, SQLite/FTS5/sqlite-vec, LM Studio.
-Windows x64 — первая платформа; полная V1 включает S01–S08.
+Целевой стек: Rust, Tauri + React/TypeScript, SQLite/FTS5, LM Studio SDK в поставке.
+Windows x64 — первая платформа; V1 включает S01–S08 с уточнением ADR-011:
+**без embeddings/sqlite-vec/семантического поиска**, vision/OCR остаются.
 
 - Один пользовательский `shotd` — writer/owner библиотеки, capture и очереди.
   GUI/CLI/MCP — клиенты общих services; приватный SDK bridge работает вне WebView.
 - Freeze раньше UI/focus; после выделения второго capture нет. `Saved` — только
   после проверенного канона и commit БД. Канон и принятый staging — не кеш.
-- WebP/AVIF, полный канон, независимость сохранения от AI, отдельные Manual/Off/OCR/
-  query policies, приоритет ручных overrides и revision guards нельзя упрощать молча.
+- WebP/AVIF, полный канон, независимость сохранения от AI, отдельные Manual/Off/OCR
+  policies, приоритет ручных overrides и revision guards нельзя упрощать молча.
+  FTS5-запрос не запускает модель; SDK и приватный runtime работают вне WebView.
 - Не трогай чужие модели, внешние исходники и живые данные. Тесты — в изолированных
   roots на синтетике; migration/cleanup требуют preflight. Нет скрытой передачи
   содержимого, скачивания моделей или чувствительных данных в обычных логах.
@@ -84,16 +88,18 @@ Windows x64 — первая платформа; полная V1 включае�
 
 ## Исполнение и отчёт
 
-Работай небольшими срезами: контракт → проверка → реализация → failure/cancel/race
-cases → review → evidence → commit. Не включай чужие правки или несвязанный рефакторинг.
+Работай связными продуктовыми milestones, без дробления на микрозадачи:
+контракт → реализация → реальные failure/cancel/race и live проверки → review →
+evidence → commit. Не включай чужие правки или несвязанный рефакторинг.
 Проверки выбирай по реальным manifests; плановые Cargo/pnpm/scripts, которых ещё нет,
 не выдавай за исполненные. Сохраняй raw exit codes;
 `NOT_RUN`/`BLOCKED` не равны `PASS`, code commit не равен принятому этапу.
 
-**Схема:** пишет `ollama-cloud/deepseek-v4.1-flash`, Sol6 (`openai-codex/gpt-6-sol`) проверяет
-важные этапы/сложности; parent оркестрирует, принимает, коммитит.
-Workflow: `.pi/orchestration/screenmemory.milestone.workflow.js` (args.writerModel/reviewModel).
-Fallback при квоте: `polza/deepseek-v4.1-flash` → `openai-codex/gpt-6-astra`.
+**Схема:** native Pi `openai-codex/gpt-6.1-sol` пишет и независимо проверяет;
+при тупике — native Pi oracle `openai-codex/gpt-6-astra`. Parent оркестрирует,
+оценивает визуал/поиск, принимает и коммитит. Пользователя не назначать ручным тестером.
+Workflow: `.pi/orchestration/screenmemory.milestone.workflow.js` (явные writerModel/reviewModel).
+Блокер локализуй, продолжай независимую работу; не меняй provider/режим скрыто.
 
 Делегирование — только при разрешении пользователя/применимых инструкций;
 один writer на worktree, независимый reviewer — read-only, commits — у интегратора.
