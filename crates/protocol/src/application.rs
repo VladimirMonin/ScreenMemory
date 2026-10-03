@@ -355,6 +355,8 @@ pub enum KnownParams {
     Export(crate::images::ExportRequest),
     #[serde(rename = "processing.request")]
     Processing(crate::processing::ProcessingRequest),
+    #[serde(rename = "knowledge.request")]
+    Knowledge(crate::knowledge::KnowledgeRequest),
 }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -381,6 +383,7 @@ pub enum ApplicationResult {
     ImportReport(crate::images::ImportReport),
     ExportReceipt(Box<crate::images::ExportReceipt>),
     Processing(Box<crate::processing::ProcessingReply>),
+    Knowledge(Box<crate::knowledge::KnowledgeReply>),
 }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -436,6 +439,7 @@ where
             | "library.import.control"
             | "library.export"
             | "processing.request"
+            | "knowledge.request"
     ) {
         return Response::Error {
             request_id: request.request_id,

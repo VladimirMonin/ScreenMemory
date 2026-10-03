@@ -27,6 +27,20 @@ function assertBad(run, value, reason) {
   assert.deepEqual(value, before); // never coerce, remove or mutate caller input
 }
 
+test('S05 manual knowledge shared positive-negative fixtures and scalar bounds', async () => {
+  for (const item of await fixture('knowledge-cases')) {
+    const request = { ...status, ...item.value };
+    if (item.valid) assert.equal(validateApplicationRequest(request).ok, true, item.id);
+    else assertBad(validateApplicationRequest, request, 'invalid_method');
+  }
+  const base = (await fixture('knowledge-cases')).find(c => c.id === 'missing-patches-keep').value;
+  for (const [length, valid] of [[0, false], [1, true], [160, true], [161, false]]) {
+    const request = { ...status, ...clone(base) };
+    request.params.patch.title = { op: 'set', value: '😀'.repeat(length) };
+    assert.equal(validateApplicationRequest(request).ok, valid);
+  }
+});
+
 test('S04 processing shared positive-negative fixtures reject wire authority', async () => {
   for (const item of await fixture('processing-execution-responses')) {
     if (item.valid) assert.equal(validateApplicationResponse(item.frame).ok, true);

@@ -74,7 +74,7 @@ retry/discovery 5s, без retry на credential/identity ошибке, и за�
 SDK/FTS5/package proofs S04/S06/S08; embeddings/vec исключены ADR-011.
 Preview и verify используют `.pi/staging-target-t09b`, не общий `.pi/preview-target`,
 который может удерживать чужой host. MSVC failure немедленно возвращает raw exit;
-Cargo всегда offline. `smoke-host-cli.ps1` проверяет текущую storage schema 6 (не
+Cargo всегда offline. `smoke-host-cli.ps1` проверяет текущую storage schema 7 (не
 JSON config schema 1). Error cleanup использует тот же guarded stop→absence→remove,
 а не удаляет root/credential после неподтверждённого stop.
 `scripts/test-foundation-smoke.ps1` — отдельный composed synthetic host/CLI/GUI
@@ -85,6 +85,11 @@ Policy/Profile mutations используют typed revisions и stable operatio
 явный operation/policy revision/record/profile ID. `gui_processing` — тот же shared client,
 не второй runtime. Inventory — отдельная Owner action: допускает bridge start при Off,
 но никогда model load/adoption. Read status/doctor/overview не запускает SDK.
+
+S05 `shot knowledge read|edit|categories|category` и `gui_knowledge` используют один
+StorageWorker/KnowledgeApi и ApplicationClient; JSON vocabulary, bounded refusals,
+revisions/replay/sensitivity — [DATA.knowledge](DATA.knowledge.instructions.md).
+Это manual-only карточка при Off, не Analyze/OCR publisher. Config schema1 unchanged.
 
 S03 `shot --config <absolute-config> import --path <absolute-file-or-folder>`:
 `--profile webp_exact|avif_sdr90`, `--duplicates reuse_record|keep_both`, optional

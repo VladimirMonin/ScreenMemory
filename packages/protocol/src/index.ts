@@ -19,6 +19,8 @@ export type { ProcessingOverview, QueuedJob, InventoryView, InventoryModel, Inve
 export type { ProcessingRequest, ProcessingPolicy, ModelProfile } from './generated/application-methods-v1.js';
 export type { ImportReport, ImportReceipt, ExportReceipt, ExportExistence, ExportAppliedParameters, RecordMetadata } from './generated/application-v1.js';
 export type { ImportRequest, ImportBatchRequest, ImportReportPageRequest, ImportControlRequest, ExportRequest, RecordMetadataRequest } from './generated/application-methods-v1.js';
+export type { CardView, CardReceipt, EffectiveCard, KnowledgeSource, CategoryCatalog, CategoryView, CategoryReceipt, KnowledgeReply, FieldSource, CategoryState } from './generated/application-v1.js';
+export type { KnowledgeRequest, CardPatch, CardEdit, CategoryChange, CategoryMutation } from './generated/application-methods-v1.js';
 export type Validation<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: 'invalid_application' | 'invalid_method' | 'invalid_bridge' | 'invalid_error_code' };
 
 // No coercion/defaults/removal, no remote refs or schema fetch; errors are never exposed.

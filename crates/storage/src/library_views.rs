@@ -53,7 +53,7 @@ pub(crate) fn page(
     for (pk, id, created, kind, context, asset, size, report) in
         rows.into_iter().take(usize::from(query.limit()))
     {
-        let (title, target, width, height) = if kind == "capture" {
+        let (_technical_title, target, width, height) = if kind == "capture" {
             let c =
                 CaptureContext::from_json(&context).map_err(|_| StorageError::IntegrityFailed)?;
             (
@@ -74,6 +74,24 @@ pub(crate) fn page(
             )
         } else {
             return Err(StorageError::IntegrityFailed);
+        };
+        let view = crate::knowledge::read(
+            db,
+            sm_protocol::knowledge::KnowledgeId(
+                uuid::Uuid::parse_str(&id).map_err(|_| StorageError::IntegrityFailed)?,
+            ),
+        )
+        .map_err(|_| StorageError::IntegrityFailed)?;
+        // ListRecords alone must not expose known restricted derived text.
+        let title = if view
+            .source
+            .required_read_scopes
+            .iter()
+            .any(|s| s != "read_metadata")
+        {
+            format!("Изображение {}", &id[..8])
+        } else {
+            view.effective.title.0
         };
         items.push(LibraryRecordEntry {
             id: RecordId::new(

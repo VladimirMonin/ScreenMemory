@@ -533,6 +533,55 @@ async fn s03_native_import_export_owner_scope_and_readonly_denial() {
 }
 
 #[tokio::test]
+async fn s05_native_knowledge_closed_scope_and_truthful_uncomposed_port() {
+    use sm_protocol::knowledge::*;
+    let f = Fixture::new();
+    let owner = f
+        .client(CredentialKey::owner(CredentialEnvironment::Test, f.library))
+        .await;
+    let ro = f.client(CredentialKey::test_read_only(f.library)).await;
+    let id = KnowledgeId(Uuid::new_v4());
+    for req in [
+        KnowledgeRequest::Read { record_id: id },
+        KnowledgeRequest::Categories {},
+        KnowledgeRequest::Edit(CardEdit {
+            operation_id: KnowledgeId(Uuid::new_v4()),
+            record_id: id,
+            expected_record_revision: SqlRevision(1),
+            expected_catalog_revision: SqlRevision(1),
+            expected_category_revision: None,
+            patch: CardPatch::default(),
+        }),
+        KnowledgeRequest::Category(CategoryMutation {
+            operation_id: KnowledgeId(Uuid::new_v4()),
+            expected_catalog_revision: SqlRevision(1),
+            change: CategoryChange::Create {
+                name: CategoryName("synthetic".into()),
+                description: CategoryDescription(String::new()),
+            },
+        }),
+    ] {
+        assert!(matches!(
+            ro.knowledge(req.clone()).await,
+            Err(ClientError::Application(AppError {
+                code: ErrorCode::PermissionDenied,
+                ..
+            }))
+        ));
+        assert!(matches!(
+            owner.knowledge(req).await,
+            Err(ClientError::Application(AppError {
+                code: ErrorCode::MethodNotSupported,
+                ..
+            }))
+        ));
+    }
+    drop(owner);
+    drop(ro);
+    f.close().await;
+}
+
+#[tokio::test]
 async fn s01_ipc_03_rejects_bad_identity_and_secret_before_handlers() {
     let f = Fixture::new();
     let source = CredentialSource::Store {

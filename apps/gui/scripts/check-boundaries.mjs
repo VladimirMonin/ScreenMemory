@@ -16,6 +16,7 @@ const applicationImports = new Set([
   './ImportPanel',
   './ExportPanel',
   './ProcessingPanel',
+  './KnowledgePanel',
   '../../../packages/protocol/src/generated/application-methods-v1',
   './App',
   './model',
@@ -60,7 +61,7 @@ for (const name of readdirSync(new URL('../src/', import.meta.url))) {
   for (const command of calls) invoked.add(command);
   for (const call of withoutPreview.matchAll(/invoke(?:<[^>]*>)?\(([^)]*)\)/g)) {
     const argument = call[1].trim();
-    const typed = /^'(gui_library_page|gui_import|gui_import_report|gui_import_control|gui_export|gui_metadata|gui_processing)',\s*\{\s*(cursor|request)\b/.exec(argument);
+    const typed = /^'(gui_library_page|gui_import|gui_import_report|gui_import_control|gui_export|gui_metadata|gui_processing|gui_knowledge)',\s*\{\s*(cursor|request)\b/.exec(argument);
     if (typed) {
       assert.equal(typed[2], typed[1] === 'gui_library_page' ? 'cursor' : 'request', 'closed typed argument role');
       invoked.add(typed[1]);

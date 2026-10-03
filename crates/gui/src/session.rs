@@ -53,6 +53,19 @@ impl GuiSession {
         })
     }
 
+    pub async fn knowledge(
+        &mut self,
+        request: sm_protocol::knowledge::KnowledgeRequest,
+    ) -> Result<sm_protocol::knowledge::KnowledgeReply, String> {
+        self.ensure(true).await.map_err(gui_code)?;
+        let result = self
+            .client
+            .as_ref()
+            .expect("connected")
+            .knowledge(request)
+            .await;
+        self.finish(result).map_err(gui_code)
+    }
     pub async fn processing(
         &mut self,
         request: sm_protocol::processing::ProcessingRequest,

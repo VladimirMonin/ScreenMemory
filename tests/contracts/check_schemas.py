@@ -69,6 +69,9 @@ for group, expected in (('valid', True), ('invalid', False)):
     for case in responses[group]:
         assert app.is_valid(case['frame']) == expected, case['id']
 # S04 execution DTOs remain metadata, never deserializable instance/claim authority.
+knowledge = json.loads((root / 'tests/fixtures/protocol/knowledge-cases.json').read_text(encoding='utf-8'))
+for case in knowledge:
+    assert methods.is_valid(case['value']) == case['valid'], case['id']
 processing = json.loads((root / 'tests/fixtures/protocol/processing-cases.json').read_text(encoding='utf-8'))
 for case in processing:
     assert methods.is_valid(case['value']) == case['valid']

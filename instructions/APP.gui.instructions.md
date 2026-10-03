@@ -73,7 +73,16 @@ Profile/model key выбирается явно, inventory отдельной к
 Physical unload/HostIdle/AfterBatch/KeepLoaded и reasoning Off/Budget100 — Unsupported;
 BackendDefault явный, native TTL requested/not_verified. Execution ledger показывает
 safe typed requested/reported-applied, не raw runtime JSON. Analyze S05 blocked, не
-карточка. Search/knowledge_pipeline остаются NOT_IMPLEMENTED; whole S04/S07 отдельно.
+AI-карточка. Search/vision_ocr_pipeline остаются NOT_IMPLEMENTED; whole S04/S07 отдельно.
+
+S05 KnowledgePanel даёт реальную manual карточку перед processing settings, независимые
+Keep/Inherit/Set controls и категории через `gui_knowledge`/тот же GuiSession. Чтение
+на mount не вызывает модель; текст черновика только в памяти, не localStorage. На конфликте
+поля не затираются: current snapshot рядом, явные reload/discard и retry с новой revision.
+Stable exact lost-response operation сохраняется до изменения draft. Source/projection
+не вычисляются в React; handler_unavailable показывается буквально. Контракт и bounds —
+[DATA.knowledge](DATA.knowledge.instructions.md). Actual GuiSession parity — native test
+`manual_knowledge`; rendered own-HWND proof отдельно от genuine input.
 
 Frontend (`apps/gui`, Vite+React+TS) импортирует только React, `@tauri-apps/api/core`,
 локальные модули и **типы** сгенерированного контракта; SDK LM Studio, SQLite, native

@@ -6,8 +6,10 @@
 mod args;
 mod image_args;
 mod images;
+mod knowledge;
 mod processing;
 pub use image_args::ImageCommand;
+pub use knowledge::KnowledgeCommand;
 pub use processing::ProcessingCommand;
 mod config;
 mod exec;

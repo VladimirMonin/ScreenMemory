@@ -1,3 +1,13 @@
+.knowledge-panel { padding: 12px 0; }
+.knowledge-panel h2, .knowledge-panel h3 { margin: 8px 0; }
+.knowledge-panel p { margin: 8px 0; }
+.knowledge-panel fieldset { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 6px 12px; padding: 10px; border-color: #637080; }
+.knowledge-panel fieldset label { margin: 0; }
+.knowledge-panel textarea { min-height: 64px; resize: vertical; }
+.knowledge-panel .card-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+.knowledge-panel aside { border: 1px solid #f4c56b; padding: 12px; }
+.knowledge-panel li { margin: 8px 0; overflow-wrap: anywhere; }
+@media (max-width: 560px) { .knowledge-panel fieldset { grid-template-columns: 1fr; } }
 .processing-panel { margin: 1rem 0; padding: 1rem; border: 1px solid #64748b; border-radius: .5rem; }
 .processing-panel summary { cursor: pointer; font-weight: 600; }
 .processing-panel label { display: inline-flex; flex-direction: column; margin: .4rem .6rem .4rem 0; }

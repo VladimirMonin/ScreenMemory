@@ -2,6 +2,7 @@
 pub mod capture;
 pub mod credentials;
 pub mod images;
+pub mod knowledge;
 pub mod observability;
 pub mod processing;
 pub mod storage;
@@ -39,6 +40,10 @@ pub enum Scope {
     ReadSourceMetadata,
     ReadProcessing,
     ManageProcessing,
+    ReadMetadata,
+    ReadPaths,
+    WriteMetadata,
+    ManageCategories,
 }
 /// Constructed only by the authenticated host boundary; never decoded from request.params.
 #[derive(Clone, Debug)]

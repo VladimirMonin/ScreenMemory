@@ -18,7 +18,7 @@ pub const GUI_ENVELOPE_VERSION: u32 = 1;
 
 /// Capabilities still absent; the window marks them as not implemented. `capture` is no
 /// longer listed: S02 wires a real button through the same host command as `shot`.
-pub const NOT_IMPLEMENTED: [&str; 2] = ["search", "knowledge_pipeline"];
+pub const NOT_IMPLEMENTED: [&str; 2] = ["search", "vision_ocr_pipeline"];
 
 /// Capture modes the window may request; the vocabulary is the wire one.
 pub const CAPTURE_MODES: [&str; 4] = ["region", "window", "monitor", "desktop"];
@@ -253,6 +253,10 @@ pub fn state_for_failure(failure: &ClientFailure) -> GuiState {
         // The S02 capture and asset vocabulary is reported by the capture answer itself;
         // it never means that the host, its root or its credential became unusable.
         ErrorCode::RevisionConflict
+        | ErrorCode::IdempotencyConflict
+        | ErrorCode::CategoryNotAvailable
+        | ErrorCode::CategoryNameConflict
+        | ErrorCode::CategoryCatalogTooLarge
         | ErrorCode::CaptureBusy
         | ErrorCode::CaptureBackpressure
         | ErrorCode::CaptureTargetLost

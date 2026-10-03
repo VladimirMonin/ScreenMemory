@@ -52,7 +52,10 @@ pub fn exit_for_code(code: ErrorCode) -> u8 {
         | ErrorCode::CredentialStoreUnavailable
         | ErrorCode::AiDisabled => crate::EXIT_POLICY,
         ErrorCode::WaitTimeout => crate::EXIT_WAIT,
-        ErrorCode::RevisionConflict => crate::EXIT_CONFLICT,
+        ErrorCode::RevisionConflict
+        | ErrorCode::IdempotencyConflict
+        | ErrorCode::CategoryNameConflict => crate::EXIT_CONFLICT,
+        ErrorCode::CategoryNotAvailable | ErrorCode::CategoryCatalogTooLarge => crate::EXIT_USAGE,
         // S02 §11.5: a known-state lookup failure is code 3, a limit that the caller asked
         // for is code 2, and a capture/GDI/save/integrity failure is code 7.
         ErrorCode::AssetNotFound => crate::EXIT_NOT_FOUND,
@@ -210,6 +213,13 @@ pub async fn run(argv: &[String], deps: &CliDeps, out: &mut dyn Write, err: &mut
         Err(failure) => return emit_failure(failure, args.json, out, err),
     };
     let exit = match args.command {
+        Command::Knowledge(command) => match crate::knowledge::run(&client, command).await {
+            Ok(reply) => {
+                output::write_json(out, &reply);
+                crate::EXIT_OK
+            }
+            Err(failure) => return emit_failure(failure, true, out, err),
+        },
         Command::Processing(command) => match crate::processing::run(&client, command).await {
             Ok(reply) => {
                 output::write_json(out, &reply);

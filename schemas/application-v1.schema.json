@@ -258,6 +258,23 @@
             "value"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "knowledge",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/KnowledgeReply"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -495,6 +512,205 @@
       ],
       "type": "object"
     },
+    "CardDescription": {
+      "maxLength": 8000,
+      "pattern": "^[^\\u0000]*$",
+      "type": "string"
+    },
+    "CardPatch": {
+      "additionalProperties": false,
+      "properties": {
+        "category_id": {
+          "$ref": "#/$defs/FieldPatch3",
+          "default": {
+            "op": "keep"
+          }
+        },
+        "description": {
+          "$ref": "#/$defs/FieldPatch2",
+          "default": {
+            "op": "keep"
+          }
+        },
+        "title": {
+          "$ref": "#/$defs/FieldPatch",
+          "default": {
+            "op": "keep"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "CardReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "card": {
+          "$ref": "#/$defs/CardView"
+        },
+        "effective_changed": {
+          "type": "boolean"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/KnowledgeId"
+        }
+      },
+      "required": [
+        "operation_id",
+        "card",
+        "effective_changed"
+      ],
+      "type": "object"
+    },
+    "CardTitle": {
+      "maxLength": 160,
+      "pattern": "^[^\\u0000]*[^\\u0000\\u0009-\\u000D\\u0020\\u0085\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000][^\\u0000]*$",
+      "type": "string"
+    },
+    "CardView": {
+      "additionalProperties": false,
+      "properties": {
+        "content_revision": {
+          "$ref": "#/$defs/SqlRevision"
+        },
+        "effective": {
+          "$ref": "#/$defs/EffectiveCard"
+        },
+        "overrides": {
+          "$ref": "#/$defs/CardPatch"
+        },
+        "projection_state": {
+          "$ref": "#/$defs/ProjectionState"
+        },
+        "record_id": {
+          "$ref": "#/$defs/KnowledgeId"
+        },
+        "record_revision": {
+          "$ref": "#/$defs/SqlRevision"
+        },
+        "source": {
+          "$ref": "#/$defs/KnowledgeSource"
+        },
+        "source_asset_id": {
+          "$ref": "#/$defs/KnowledgeId"
+        },
+        "source_sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "record_id",
+        "source_asset_id",
+        "record_revision",
+        "content_revision",
+        "overrides",
+        "effective",
+        "source",
+        "source_sha256",
+        "projection_state"
+      ],
+      "type": "object"
+    },
+    "CategoryCatalog": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/CategoryView"
+          },
+          "type": "array"
+        },
+        "revision": {
+          "$ref": "#/$defs/SqlRevision"
+        }
+      },
+      "required": [
+        "revision",
+        "items"
+      ],
+      "type": "object"
+    },
+    "CategoryDescription": {
+      "maxLength": 400,
+      "pattern": "^[^\\u0000]*$",
+      "type": "string"
+    },
+    "CategoryName": {
+      "maxLength": 80,
+      "pattern": "^[^\\u0000]*[^\\u0000\\u0009-\\u000D\\u0020\\u0085\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000][^\\u0000]*$",
+      "type": "string"
+    },
+    "CategoryReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "affected_records": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "catalog_revision": {
+          "$ref": "#/$defs/SqlRevision"
+        },
+        "category": {
+          "$ref": "#/$defs/CategoryView"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/KnowledgeId"
+        },
+        "projection_state": {
+          "$ref": "#/$defs/ProjectionState"
+        }
+      },
+      "required": [
+        "operation_id",
+        "category",
+        "catalog_revision",
+        "affected_records",
+        "projection_state"
+      ],
+      "type": "object"
+    },
+    "CategoryState": {
+      "enum": [
+        "active",
+        "archived",
+        "deleted"
+      ],
+      "type": "string"
+    },
+    "CategoryView": {
+      "additionalProperties": false,
+      "properties": {
+        "assigned_records": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "description": {
+          "$ref": "#/$defs/CategoryDescription"
+        },
+        "id": {
+          "$ref": "#/$defs/KnowledgeId"
+        },
+        "name": {
+          "$ref": "#/$defs/CategoryName"
+        },
+        "revision": {
+          "$ref": "#/$defs/SqlRevision"
+        },
+        "state": {
+          "$ref": "#/$defs/CategoryState"
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "name",
+        "description",
+        "state",
+        "assigned_records"
+      ],
+      "type": "object"
+    },
     "CheckId": {
       "maxLength": 96,
       "minLength": 1,
@@ -587,6 +803,54 @@
       ],
       "type": "object"
     },
+    "EffectiveCard": {
+      "additionalProperties": false,
+      "properties": {
+        "category_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KnowledgeId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "category_label": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CategoryName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "category_source": {
+          "$ref": "#/$defs/FieldSource"
+        },
+        "description": {
+          "$ref": "#/$defs/CardDescription"
+        },
+        "description_source": {
+          "$ref": "#/$defs/FieldSource"
+        },
+        "title": {
+          "$ref": "#/$defs/CardTitle"
+        },
+        "title_source": {
+          "$ref": "#/$defs/FieldSource"
+        }
+      },
+      "required": [
+        "title",
+        "description",
+        "title_source",
+        "description_source",
+        "category_source"
+      ],
+      "type": "object"
+    },
     "ErrorCode": {
       "description": "Fixed public registry. Never expose provider exception strings in `safe_message`.",
       "oneOf": [
@@ -609,6 +873,10 @@
             "BRIDGE_UNAVAILABLE",
             "WAIT_TIMEOUT",
             "REVISION_CONFLICT",
+            "IDEMPOTENCY_CONFLICT",
+            "CATEGORY_NOT_AVAILABLE",
+            "CATEGORY_NAME_CONFLICT",
+            "CATEGORY_CATALOG_TOO_LARGE",
             "CAPTURE_BACKPRESSURE",
             "CAPTURE_TARGET_LOST",
             "CAPTURE_TOPOLOGY_CHANGED",
@@ -848,6 +1116,162 @@
         "byte_size"
       ],
       "type": "object"
+    },
+    "FieldPatch": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "keep",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "inherit",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "set",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/CardTitle"
+            }
+          },
+          "required": [
+            "op",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "FieldPatch2": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "keep",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "inherit",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "set",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/CardDescription"
+            }
+          },
+          "required": [
+            "op",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "FieldPatch3": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "keep",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "inherit",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "set",
+              "type": "string"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/KnowledgeId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "FieldSource": {
+      "enum": [
+        "user",
+        "ai",
+        "fallback",
+        "none"
+      ],
+      "type": "string"
     },
     "HostInstanceId": {
       "maxLength": 36,
@@ -1386,6 +1810,139 @@
         "policy_revision",
         "authorization_epoch",
         "attempt_count"
+      ],
+      "type": "object"
+    },
+    "KnowledgeId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "KnowledgeReply": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "card",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/CardView"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "edited",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/CardReceipt"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "categories",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/CategoryCatalog"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "category",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/CategoryReceipt"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "KnowledgeSource": {
+      "additionalProperties": false,
+      "properties": {
+        "category_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KnowledgeId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "category_label": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CategoryName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "$ref": "#/$defs/CardDescription"
+        },
+        "record_id": {
+          "$ref": "#/$defs/KnowledgeId"
+        },
+        "required_read_scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source_asset_id": {
+          "$ref": "#/$defs/KnowledgeId"
+        },
+        "source_version": {
+          "type": "string"
+        },
+        "title": {
+          "$ref": "#/$defs/CardTitle"
+        }
+      },
+      "required": [
+        "source_version",
+        "record_id",
+        "source_asset_id",
+        "title",
+        "description",
+        "required_read_scopes"
       ],
       "type": "object"
     },
@@ -2038,6 +2595,12 @@
       ],
       "type": "object"
     },
+    "ProjectionState": {
+      "enum": [
+        "handler_unavailable"
+      ],
+      "type": "string"
+    },
     "ProtocolVersion": {
       "additionalProperties": false,
       "properties": {
@@ -2370,6 +2933,12 @@
         "state"
       ],
       "type": "object"
+    },
+    "SqlRevision": {
+      "maxLength": 19,
+      "minLength": 1,
+      "pattern": "^(?:0|[1-9][0-9]{0,17}|[1-8][0-9]{18}|9[01][0-9]{17}|920[0-9]{16}|921[0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[01][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-7])$",
+      "type": "string"
     },
     "TechnicalProbeResult": {
       "additionalProperties": false,

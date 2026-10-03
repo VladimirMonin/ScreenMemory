@@ -13,6 +13,7 @@ mod import_tests;
 #[cfg(test)]
 mod intent_tests;
 mod intents;
+pub mod knowledge;
 mod library_views;
 pub mod match_recovery;
 mod migration;
@@ -309,6 +310,11 @@ enum Fault {
 }
 
 enum Request {
+    Knowledge(
+        oneshot::Sender<Result<sm_protocol::knowledge::KnowledgeReply, knowledge::KnowledgeError>>,
+        sm_application::RequestContext,
+        sm_protocol::knowledge::KnowledgeRequest,
+    ),
     Execution(
         oneshot::Sender<Result<processing_execution::Reply, processing::ProcessingError>>,
         processing_execution::Command,
@@ -364,6 +370,49 @@ pub struct StorageWorker {
     execution_wake: Arc<tokio::sync::Notify>,
 }
 impl StorageWorker {
+    #[cfg(test)]
+    pub(crate) async fn knowledge_request(
+        &self,
+        principal: PrincipalId,
+        request: sm_protocol::knowledge::KnowledgeRequest,
+    ) -> Result<sm_protocol::knowledge::KnowledgeReply, knowledge::KnowledgeError> {
+        let ctx = sm_application::RequestContext::from_authenticated_peer(
+            sm_domain::RequestId::new(Uuid::new_v4()),
+            sm_domain::CorrelationId::new(Uuid::new_v4()),
+            principal,
+            vec![
+                sm_application::Scope::ReadMetadata,
+                sm_application::Scope::WriteMetadata,
+                sm_application::Scope::ManageCategories,
+                sm_application::Scope::ReadSourceMetadata,
+                sm_application::Scope::ReadPaths,
+            ],
+        );
+        self.knowledge_authorized(ctx, request).await
+    }
+    async fn knowledge_authorized(
+        &self,
+        ctx: sm_application::RequestContext,
+        request: sm_protocol::knowledge::KnowledgeRequest,
+    ) -> Result<sm_protocol::knowledge::KnowledgeReply, knowledge::KnowledgeError> {
+        let (tx, rx) = oneshot::channel();
+        {
+            let gate = self
+                .gate
+                .lock()
+                .map_err(|_| knowledge::KnowledgeError::Unavailable)?;
+            if gate.closing {
+                return Err(knowledge::KnowledgeError::Unavailable);
+            }
+            self.sender
+                .try_send(Request::Knowledge(tx, ctx, request))
+                .map_err(|_| knowledge::KnowledgeError::Unavailable)?;
+        }
+        tokio::time::timeout(Duration::from_secs(10), rx)
+            .await
+            .map_err(|_| knowledge::KnowledgeError::Unavailable)?
+            .map_err(|_| knowledge::KnowledgeError::Unavailable)?
+    }
     pub fn execution_wakeup(&self) -> Arc<tokio::sync::Notify> {
         self.execution_wake.clone()
     }
@@ -893,6 +942,9 @@ fn run(
     let mut db = db;
     for request in receiver {
         match request {
+            Request::Knowledge(tx, ctx, request) => {
+                let _ = tx.send(knowledge::handle_authorized(&mut db, ctx, request));
+            }
             Request::Execution(tx, command) => {
                 let _ = tx.send(processing_execution::handle(&mut db, command));
             }

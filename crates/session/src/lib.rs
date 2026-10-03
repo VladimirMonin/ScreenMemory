@@ -38,7 +38,7 @@ use uuid::Uuid;
 /// Capability list negotiated by exactly one build of this workspace. S02 adds the two
 /// capture handlers; a peer that does not speak the same list is refused instead of being
 /// served a method it cannot decode.
-pub const CAPABILITIES: [&str; 13] = [
+pub const CAPABILITIES: [&str; 14] = [
     "system.status",
     "system.doctor",
     "system.request_shutdown",
@@ -52,6 +52,7 @@ pub const CAPABILITIES: [&str; 13] = [
     "library.asset.preview",
     "library.record.metadata",
     "processing.request",
+    "knowledge.request",
 ];
 const HANDSHAKE_TIME: Duration = Duration::from_secs(3);
 const MAX_ACTIVE: usize = 8;
@@ -130,6 +131,7 @@ pub struct SessionHost {
     capture: Option<Arc<dyn CaptureApi>>,
     images: Option<Arc<dyn ImageLibraryApi>>,
     processing: Option<Arc<dyn sm_application::processing::ProcessingApi>>,
+    knowledge: Option<Arc<dyn sm_application::knowledge::KnowledgeApi>>,
     budget: BufferBudget,
 }
 impl SessionHost {
@@ -154,8 +156,16 @@ impl SessionHost {
             capture,
             images: None,
             processing: None,
+            knowledge: None,
             budget,
         }
+    }
+    pub fn with_knowledge(
+        mut self,
+        knowledge: Arc<dyn sm_application::knowledge::KnowledgeApi>,
+    ) -> Self {
+        self.knowledge = Some(knowledge);
+        self
     }
     pub fn with_processing(
         mut self,
@@ -299,13 +309,14 @@ impl SessionHost {
                             let capture = self.capture.clone();
                             let images = self.images.clone();
                             let processing = self.processing.clone();
+                            let knowledge = self.knowledge.clone();
                             let context = context.for_request(id, CorrelationId::new(Uuid::new_v4()));
                             let library = self.library;
                             tasks.spawn(async move {
                                 let response = tokio::select! {
                                     biased;
                                     _ = token.cancelled() => response_error(id, ErrorCode::WaitTimeout),
-                                    result = dispatch(request, library, context, foundation, control, capture.clone(), images, processing, token.clone()) => result,
+                                    result = dispatch(request, library, context, foundation, control, capture.clone(), images, processing, knowledge, token.clone()) => result,
                                 };
                                 // Keep the active ID/slot until a terminal response is actually sent.
                                 writer.send(Phase::Application, &response).await.map_err(|_| ())?;
@@ -404,6 +415,7 @@ async fn dispatch(
     capture: Option<Arc<dyn CaptureApi>>,
     images: Option<Arc<dyn ImageLibraryApi>>,
     processing: Option<Arc<dyn sm_application::processing::ProcessingApi>>,
+    knowledge: Option<Arc<dyn sm_application::knowledge::KnowledgeApi>>,
     cancel: CancellationToken,
 ) -> Response {
     let id = request.request_id;
@@ -434,6 +446,7 @@ async fn dispatch(
             | "library.import.control"
             | "library.export"
             | "processing.request"
+            | "knowledge.request"
     ) {
         return Response::Error {
             request_id: id,
@@ -475,6 +488,14 @@ async fn dispatch(
             | sm_protocol::processing::ProcessingRequest::Inventory {},
         ) => Scope::ReadProcessing,
         KnownParams::Processing(_) => Scope::ManageProcessing,
+        KnownParams::Knowledge(
+            sm_protocol::knowledge::KnowledgeRequest::Read { .. }
+            | sm_protocol::knowledge::KnowledgeRequest::Categories {},
+        ) => Scope::ReadMetadata,
+        KnownParams::Knowledge(sm_protocol::knowledge::KnowledgeRequest::Edit(_)) => {
+            Scope::WriteMetadata
+        }
+        KnownParams::Knowledge(_) => Scope::ManageCategories,
     };
     if !ctx.allows(scope) {
         return fail(ErrorCode::PermissionDenied);
@@ -484,6 +505,13 @@ async fn dispatch(
     }
     let operation = async {
         match params {
+            KnownParams::Knowledge(request) => match knowledge {
+                Some(api) => api
+                    .knowledge(ctx, request)
+                    .await
+                    .map(|reply| ApplicationResult::Knowledge(Box::new(reply))),
+                None => Err(AppError::method_not_supported()),
+            },
             KnownParams::Processing(request) => match processing {
                 Some(api) => api
                     .processing(ctx, request)

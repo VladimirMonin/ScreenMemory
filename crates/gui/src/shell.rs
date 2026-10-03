@@ -137,6 +137,16 @@ pub async fn gui_metadata(
     guard.metadata(request).await
 }
 
+#[tauri::command]
+pub async fn gui_knowledge(
+    app: AppHandle,
+    request: sm_protocol::knowledge::KnowledgeRequest,
+) -> Result<sm_protocol::knowledge::KnowledgeReply, String> {
+    let session = app.state::<ShellState>().session();
+    let mut guard = session.lock().await;
+    guard.knowledge(request).await
+}
+
 /// Typed processing only: no paths/secrets/endpoint/approval/load flags accepted.
 #[tauri::command]
 pub async fn gui_processing(
@@ -244,6 +254,7 @@ pub fn run_window(state: ShellState, webview_directory: std::path::PathBuf) -> t
         .invoke_handler(tauri::generate_handler![
             gui_limits,
             gui_processing,
+            gui_knowledge,
             gui_probe,
             gui_connect,
             gui_doctor,

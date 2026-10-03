@@ -3,5 +3,6 @@ pub mod application;
 pub mod bridge;
 pub mod errors;
 pub mod images;
+pub mod knowledge;
 pub mod processing;
 pub mod values;

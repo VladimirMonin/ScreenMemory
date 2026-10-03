@@ -67,6 +67,10 @@ export type ApplicationResult =
   | {
       type: 'processing';
       value: ProcessingReply;
+    }
+  | {
+      type: 'knowledge';
+      value: KnowledgeReply;
     };
 export type BridgeState = 'stopped' | 'starting' | 'ready' | 'degraded' | 'unavailable';
 export type BuildId = string;
@@ -97,6 +101,10 @@ export type ErrorCode =
       | 'BRIDGE_UNAVAILABLE'
       | 'WAIT_TIMEOUT'
       | 'REVISION_CONFLICT'
+      | 'IDEMPOTENCY_CONFLICT'
+      | 'CATEGORY_NOT_AVAILABLE'
+      | 'CATEGORY_NAME_CONFLICT'
+      | 'CATEGORY_CATALOG_TOO_LARGE'
       | 'CAPTURE_BACKPRESSURE'
       | 'CAPTURE_TARGET_LOST'
       | 'CAPTURE_TOPOLOGY_CHANGED'
@@ -233,6 +241,32 @@ export type LoadConfigurationStatus = 'reported_applied' | 'mismatch' | 'unknown
 export type RuntimeCallState = 'planned' | 'settled' | 'uncertain';
 export type ModelConsumerLeaseId = string;
 export type ModelConsumerLeaseState = 'active' | 'released' | 'abandoned' | 'uncertain';
+export type KnowledgeReply =
+  | {
+      kind: 'card';
+      value: CardView;
+    }
+  | {
+      kind: 'edited';
+      value: CardReceipt;
+    }
+  | {
+      kind: 'categories';
+      value: CategoryCatalog;
+    }
+  | {
+      kind: 'category';
+      value: CategoryReceipt;
+    };
+export type SqlRevision = string;
+export type KnowledgeId = string;
+export type CategoryName = string;
+export type FieldSource = 'user' | 'ai' | 'fallback' | 'none';
+export type CardDescription = string;
+export type CardTitle = string;
+export type ProjectionState = 'handler_unavailable';
+export type CategoryDescription = string;
+export type CategoryState = 'active' | 'archived' | 'deleted';
 export type SafeMessage = string;
 
 /**
@@ -585,6 +619,95 @@ export interface DerivativeHoldView {
   asset_id: AssetId;
   attempt_id: ProcessingAttemptId;
   operation_id: OperationId;
+}
+export interface CardView {
+  content_revision: SqlRevision;
+  effective: EffectiveCard;
+  overrides: CardPatch;
+  projection_state: ProjectionState;
+  record_id: KnowledgeId;
+  record_revision: SqlRevision;
+  source: KnowledgeSource;
+  source_asset_id: KnowledgeId;
+  source_sha256: string;
+}
+export interface EffectiveCard {
+  category_id?: KnowledgeId | null;
+  category_label?: CategoryName | null;
+  category_source: FieldSource;
+  description: CardDescription;
+  description_source: FieldSource;
+  title: CardTitle;
+  title_source: FieldSource;
+}
+export interface CardPatch {
+  category_id?:
+    | {
+        op: 'keep';
+      }
+    | {
+        op: 'inherit';
+      }
+    | {
+        op: 'set';
+        value?: KnowledgeId | null;
+      };
+  description?:
+    | {
+        op: 'keep';
+      }
+    | {
+        op: 'inherit';
+      }
+    | {
+        op: 'set';
+        value: CardDescription;
+      };
+  title?:
+    | {
+        op: 'keep';
+      }
+    | {
+        op: 'inherit';
+      }
+    | {
+        op: 'set';
+        value: CardTitle;
+      };
+}
+export interface KnowledgeSource {
+  category_id?: KnowledgeId | null;
+  category_label?: CategoryName | null;
+  description: CardDescription;
+  record_id: KnowledgeId;
+  required_read_scopes: string[];
+  source_asset_id: KnowledgeId;
+  source_version: string;
+  title: CardTitle;
+}
+export interface CardReceipt {
+  card: CardView;
+  effective_changed: boolean;
+  operation_id: KnowledgeId;
+}
+export interface CategoryCatalog {
+  items: CategoryView[];
+  revision: SqlRevision;
+}
+export interface CategoryView {
+  assigned_records: number;
+  description: CategoryDescription;
+  id: KnowledgeId;
+  name: CategoryName;
+  revision: SqlRevision;
+  state: CategoryState;
+}
+export interface CategoryReceipt {
+  affected_records: number;
+  catalog_revision: SqlRevision;
+  category: CategoryView;
+  operation_id: KnowledgeId;
+  projection_state: ProjectionState;
 }
 export interface AppError {
   code: ErrorCode;

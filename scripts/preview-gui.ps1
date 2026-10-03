@@ -78,7 +78,7 @@ function Assert-GuiSelfCheckReport($Report, [string]$LibraryId, [string]$Label) 
     foreach ($implemented in @('capture', 'gallery')) {
         if ($diagnostics.not_implemented -ccontains $implemented) { throw "$Label still reports the implemented $implemented capability as unfinished" }
     }
-    foreach ($capability in @('search', 'knowledge_pipeline')) {
+    foreach ($capability in @('search', 'vision_ocr_pipeline')) {
         if ($diagnostics.not_implemented -cnotcontains $capability) { throw "$Label does not report the unfinished capability $capability" }
     }
     if ($null -eq $diagnostics.doctor) { throw "$Label did not run the foundation doctor" }

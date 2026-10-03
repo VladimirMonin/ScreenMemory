@@ -65,7 +65,7 @@ assert(list, 'NOT_IMPLEMENTED must stay parseable in the gui owner');
 const capabilities = [...list[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
 assert.deepEqual(capabilities, [
   'search',
-  'knowledge_pipeline',
+  'vision_ocr_pipeline',
 ]);
 // The window renders that owner list and keeps the explicit "not implemented" wording.
 const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');

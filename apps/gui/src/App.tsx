@@ -28,6 +28,7 @@ import {
 import ImportPanel from './ImportPanel';
 import ExportPanel from './ExportPanel';
 import ProcessingPanel from './ProcessingPanel';
+import KnowledgePanel from './KnowledgePanel';
 import './style.css';
 
 /** The only commands this window may call; they are the same handlers `crates/gui` registers. */
@@ -247,7 +248,7 @@ export default function App() {
     <main>
       <h1>ScreenMemory</h1>
       <p>Локальная библиотека · сборка {guiBuild.version}</p>
-      <ProcessingPanel recordId={selected?.id ?? null} libraryId={report?.host?.library_id ?? null} />
+      {state === 'ready' && <KnowledgePanel recordId={selected?.id ?? null} />}
       <section aria-label="Недавние снимки">
         <h2>Недавние снимки</h2>
         <button disabled={recentLoading} onClick={() => void refreshRecent()}>Обновить список</button>
@@ -274,6 +275,7 @@ export default function App() {
         </div>}
       </section>
       <ImportPanel onSaved={() => { void refreshRecent(null, true); }} />
+      <ProcessingPanel recordId={selected?.id ?? null} libraryId={report?.host?.library_id ?? null} />
       <section aria-live="polite" aria-busy={busy}>
         <h2>Соединение</h2>
         <p>{stateText[state]}</p>

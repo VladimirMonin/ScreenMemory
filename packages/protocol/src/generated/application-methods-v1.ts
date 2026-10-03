@@ -68,6 +68,10 @@ export type KnownParams =
   | {
       method: 'processing.request';
       params: ProcessingRequest;
+    }
+  | {
+      method: 'knowledge.request';
+      params: KnowledgeRequest;
     };
 export type ConsentId = string;
 export type ProbeFixture = 'synthetic_menu_v1' | 'embedding_text_v1';
@@ -174,6 +178,56 @@ export type WorkKind = 'analyze' | 'technical_owner_self_test' | 'technical_owne
 export type ProcessingBatchId = string;
 export type BatchControl = 'pause' | 'resume' | 'cancel';
 export type JobControl = 'cancel' | 'retry';
+export type KnowledgeRequest =
+  | {
+      action: 'read';
+      record_id: KnowledgeId;
+    }
+  | {
+      action: 'edit';
+      expected_catalog_revision: SqlRevision;
+      expected_category_revision?: SqlRevision | null;
+      expected_record_revision: SqlRevision;
+      operation_id: KnowledgeId;
+      patch: CardPatch;
+      record_id: KnowledgeId;
+    }
+  | {
+      action: 'categories';
+    }
+  | {
+      action: 'category';
+      change: CategoryChange;
+      expected_catalog_revision: SqlRevision;
+      operation_id: KnowledgeId;
+    };
+export type KnowledgeId = string;
+export type SqlRevision = string;
+export type CardDescription = string;
+export type CardTitle = string;
+export type CategoryChange =
+  | {
+      action: 'create';
+      description: CategoryDescription;
+      name: CategoryName;
+    }
+  | {
+      action: 'rename';
+      category_id: KnowledgeId;
+      description: CategoryDescription;
+      expected_revision: SqlRevision;
+      name: CategoryName;
+    }
+  | {
+      action: 'state';
+      category_id: KnowledgeId;
+      expected_assigned_records: number;
+      expected_revision: SqlRevision;
+      state: CategoryState;
+    };
+export type CategoryDescription = string;
+export type CategoryName = string;
+export type CategoryState = 'active' | 'archived' | 'deleted';
 
 export interface EmptyParams {}
 export interface DoctorRequest {
@@ -279,4 +333,39 @@ export interface ModelProfile {
   reasoning: ReasoningMode;
   temperature: number;
   v_cache: CacheType;
+}
+export interface CardPatch {
+  category_id?:
+    | {
+        op: 'keep';
+      }
+    | {
+        op: 'inherit';
+      }
+    | {
+        op: 'set';
+        value?: KnowledgeId | null;
+      };
+  description?:
+    | {
+        op: 'keep';
+      }
+    | {
+        op: 'inherit';
+      }
+    | {
+        op: 'set';
+        value: CardDescription;
+      };
+  title?:
+    | {
+        op: 'keep';
+      }
+    | {
+        op: 'inherit';
+      }
+    | {
+        op: 'set';
+        value: CardTitle;
+      };
 }

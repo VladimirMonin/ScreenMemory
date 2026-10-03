@@ -465,7 +465,7 @@ fn s04_processing_migration_populated_v5_preflight_rollback_upgrade_checksum_reo
         0
     );
     let s = migration::initialize(&mut db, false, false).unwrap();
-    assert_eq!(s.schema_version, 6);
+    assert_eq!(s.schema_version, 7);
     assert_eq!(s.library_id.to_string(), library);
     assert_eq!(
         db.query_row("SELECT count(*) FROM records", [], |r| r.get::<_, u32>(0))
@@ -588,7 +588,7 @@ fn s04_execution_migration_actual_saved_canonical_origin_v5_rollback_upgrade_reo
         4
     );
     let mut db = Connection::open(f.db()).unwrap();
-    db.execute_batch("PRAGMA foreign_keys=ON; BEGIN IMMEDIATE; DROP TABLE processing_derivative_holds; DROP TABLE processing_model_leases; DROP TABLE processing_runtime_calls; DROP TABLE processing_attempts; DROP TABLE processing_jobs; DROP TABLE processing_batches; DROP TABLE processing_control_receipts; DROP TABLE processing_profiles; DROP TABLE processing_execution_host; DROP TABLE processing_policy; DELETE FROM schema_migrations WHERE version=6; COMMIT;").unwrap();
+    db.execute_batch("PRAGMA foreign_keys=ON; BEGIN IMMEDIATE; DROP TABLE knowledge_projection_debts; DROP TABLE knowledge_source_documents; DROP TABLE knowledge_cards; DROP TABLE knowledge_write_receipts; DROP TABLE knowledge_category_versions; DROP TABLE knowledge_categories; DROP TABLE category_catalog_meta; DELETE FROM schema_migrations WHERE version=7; DROP TABLE processing_derivative_holds; DROP TABLE processing_model_leases; DROP TABLE processing_runtime_calls; DROP TABLE processing_attempts; DROP TABLE processing_jobs; DROP TABLE processing_batches; DROP TABLE processing_control_receipts; DROP TABLE processing_profiles; DROP TABLE processing_execution_host; DROP TABLE processing_policy; DELETE FROM schema_migrations WHERE version=6; COMMIT;").unwrap();
     drop(db);
     let before = fs::read(f.db()).unwrap();
     assert!(!migration::preflight(&f.db(), true).unwrap());
@@ -639,13 +639,13 @@ fn s04_execution_migration_actual_saved_canonical_origin_v5_rollback_upgrade_reo
         migration::initialize(&mut db, false, false)
             .unwrap()
             .schema_version,
-        6
+        7
     );
     assert_saved(&db);
     drop(db);
     runtime.block_on(async {
         let w = StorageWorker::start(f.lease()).unwrap();
-        assert_eq!(w.schema_snapshot().await.unwrap().schema_version, 6);
+        assert_eq!(w.schema_snapshot().await.unwrap().schema_version, 7);
         w.shutdown(Duration::from_secs(20)).await.unwrap();
     });
     let db = Connection::open(f.db()).unwrap();

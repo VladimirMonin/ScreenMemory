@@ -308,6 +308,23 @@ impl ApplicationClient {
             _ => Err(SessionError::UnexpectedResponse.into()),
         }
     }
+    pub async fn knowledge(
+        &self,
+        request: sm_protocol::knowledge::KnowledgeRequest,
+    ) -> Result<sm_protocol::knowledge::KnowledgeReply, ClientError> {
+        match self
+            .call(
+                "knowledge.request",
+                serde_json::to_value(request).expect("typed request"),
+                30_000,
+                None,
+            )
+            .await?
+        {
+            ApplicationResult::Knowledge(reply) => Ok(*reply),
+            _ => Err(SessionError::UnexpectedResponse.into()),
+        }
+    }
     pub async fn processing(
         &self,
         request: sm_protocol::processing::ProcessingRequest,
