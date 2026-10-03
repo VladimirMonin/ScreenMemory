@@ -2,8 +2,10 @@
 
 Дата: 2026-10-03. Решение parent: **ACCEPT_CODE_SCOPED** после fresh review и
 исправления schema-smoke oracle. **Весь S04 и релиз остаются IN_PROGRESS.**
-Baseline: `c0648dca3abbeb75e9632d5ebea47c4eb9341555`; checkpoint идентифицируется
-локальным commit `feat(processing): встроить SDK, durable очередь и общее управление`.
+Baseline: `c0648dca3abbeb75e9632d5ebea47c4eb9341555`.
+Code commit: **`0f32ad56f40eb6020a7f82c2f34ae0e7c0d1e369`**,104 files;
+`feat(processing): встроить SDK, durable очередь и общее управление`.
+Post-commit tracked tree чист; push/публикация не выполнялись.
 
 ## Что принято
 
@@ -61,7 +63,10 @@ Parent после fresh release исправил exact schema5→6 smoke oracle/
 подтвердил отсутствие ослабления guards. Staged diff затем выявил CRLF в двух новых
 SDK documents (raw2): нормализованы только line endings DEPENDENCIES/SDK-LICENSE,
 JSON values/полный license text сохранены; исходные archive/license bytes внутри tgz
-не изменены. Notice явно описывает нормализацию; runtime-код не менялся. Новые root/credential proofs не закрывают
+не изменены. Byte equality после удаления CR и JSON value equality проверены;
+archive byte-unchanged. Notice явно описывает нормализацию; runtime-код не менялся.
+Final staged diff check raw0, exact104-file staging, no unstaged source.
+RED2/GREEN0 logs сохранены в `.pi/recovery/s04-interfaces-timeout-6e76a6d7/`. Новые root/credential proofs не закрывают
 исторические unknown/non-UUID fixtures или отсутствующие записи PID.
 
 ## Что НЕ принято и что дальше

@@ -17,7 +17,7 @@ Scope: [ADR-011 / CN-20261002-01](adr/011-private-release-scope.md).
 | S01 — рабочая основа | IN_PROGRESS, не принята целиком | Sol6.1 writer → fresh Sol6.1 reviewer → parent: актуальный handoff, один host/root/DB/IPC/client, реальные gates и запуск. |
 | S02 — capture/library | IN_PROGRESS, не принята целиком | Sol6.1: сквозной capture→Saved→видимый preview, режимы/hotkeys, recovery, transfer/clipboard, pin/editor, CLI. |
 | S03 — импорт/изображения/экспорт | ACCEPT_CODE_SCOPED; этап IN_PROGRESS | Own files/tree→verified WebP/AVIF→actual Tauri preview→export: [приёмка/evidence](progress/S03/result.md), fresh review+P2 closure PASS. Whole S03, genuine input, production upgrade и package/performance не приняты. |
-| S04 — SDK/очередь/LM Studio | ACCEPT_CODE_SCOPED; этап IN_PROGRESS | [Parent приёмка/evidence](progress/S04/result.md): SDK/private runtime, durable scheduler/ModelManager/SQLite intents и реальные shared GUI/JSON CLI приняты scoped после fresh review9cc6+targeted3e43 pass/findings[]. Published-SDK synthetic execution4/4, actual shotd/CLI regression1/1, native enrollment negatives4 и исправленный schema6 smoke56/56 raw0; own rendered settings/close-reopen proofs разделены. Live LM Studio/genuine input NOT_RUN, physical unload/unsafe retention/reasoning Unsupported, TTL requested/not_verified; весь S04/поставка не приняты. |
+| S04 — SDK/очередь/LM Studio | ACCEPT_CODE_SCOPED; этап IN_PROGRESS | Code `0f32ad56`; [Parent приёмка/evidence](progress/S04/result.md): SDK/private runtime, durable scheduler/ModelManager/SQLite intents и реальные shared GUI/JSON CLI приняты scoped после fresh review9cc6+targeted3e43 pass/findings[]. Published-SDK synthetic execution4/4, actual shotd/CLI regression1/1, native enrollment negatives4 и исправленный schema6 smoke56/56 raw0; own rendered settings/close-reopen proofs разделены. Live LM Studio/genuine input NOT_RUN, physical unload/unsafe retention/reasoning Unsupported, TTL requested/not_verified; весь S04/поставка не приняты. |
 | S05 — OCR/карточки/правки | PENDING | Sol6.1: рабочий OCR/vision, категории, schema validation, manual overrides и revision guards. |
 | S06 — FTS5 и качество поиска | PENDING | Sol6.1 + оценка parent: lexical/exact/filters, обновление после правок/удалений, размеченный RU/EN corpus, ranking и latency. |
 | S07 — GUI/CLI/MCP | PENDING | Sol6.1: полный агентский сценарий, удобный GUI, общий host, scopes, JSON/exit parity и image resources. |
@@ -74,8 +74,11 @@ Windows Sandbox preflight raw0 выявил disabled feature, не runtime PASS.
 приняты как полезные code slices, не как полные stages. [S04 parent result](progress/S04/result.md)
 связывает [SDK](progress/S04/sdk-runtime.md), [execution](progress/S04/processing.md),
 [interfaces](progress/S04/interfaces.md), fresh review и affected schema-smoke correction.
-Все writers/reviewers завершены, source released. Следующий независимый milestone —
-S05 OCR/knowledge/manual overrides с revision-safe publication, затем production FTS5.
+Code checkpoint **`0f32ad56`**, все writers/reviewers завершены, source released.
+Следующий независимый milestone — S05 рабочая карточка, категории и manual overrides
+через общий GUI/CLI при AI Off, versioned effective source и revision guards.
+OCR/vision integration и supported identity остаются отдельным следующим owner;
+полный S05 не закрывается manual-only срезом. Затем production FTS5.
 Capture/input/live-model/unload/TTL blockers остаются локальными, не паузой всей цели.
 Historical unknown fixture/PID cleanup BLOCKED/NOT_RUN; не повторять принятый SDK
 bootstrap и не выдавать bounded checks за whole S04.
