@@ -161,9 +161,13 @@ function Get-VerificationEnvironment([string]$Root, [string]$LogRoot) {
     $pnpmJs = Join-Path (Split-Path $pnpm.Source -Parent) 'node_modules\pnpm\bin\pnpm.cjs'
     if (-not (Test-Path $pnpmJs)) { throw 'Missing pnpm package prerequisite' }
     if (-not (Test-Path (Join-Path $Root 'packages\protocol\node_modules\.bin\tsc.CMD'))) { throw 'Missing installed protocol package prerequisite; bootstrap explicitly' }
-    # The current catalog covers exactly one package. New packages demand an explicit suite update.
-    $packageDirs = @(Get-ChildItem (Join-Path $Root 'packages') -Directory | ForEach-Object { $_.Name })
-    if ($packageDirs.Count -ne 1 -or $packageDirs[0] -ne 'protocol') { throw 'WORKSPACE_SUITE_UPDATE_REQUIRED' }
+    # SDK runtime has a separate frozen production closure, not the frontend workspace.
+    $packageDirs = @(Get-ChildItem (Join-Path $Root 'packages') -Directory | ForEach-Object { $_.Name } | Sort-Object)
+    if (($packageDirs -join ',') -cne 'lmstudio-bridge,protocol') { throw 'WORKSPACE_SUITE_UPDATE_REQUIRED' }
+    $bridgePackage = ConvertFrom-Json ([System.IO.File]::ReadAllText((Join-Path $Root 'packages\lmstudio-bridge\package.json')))
+    if ($bridgePackage.name -ne '@screenmemory/lmstudio-bridge' -or $bridgePackage.engines.node -ne '24.13.0' -or
+        -not $bridgePackage.scripts.typecheck -or -not $bridgePackage.scripts.test -or
+        -not (Test-Path (Join-Path $Root 'packages\lmstudio-bridge\node_modules\@lmstudio\sdk\dist\index.mjs'))) { throw 'Missing pinned SDK package prerequisite; bootstrap separately' }
     $rootPackage = ConvertFrom-Json ([System.IO.File]::ReadAllText((Join-Path $Root 'package.json')))
     $protocolPackage = ConvertFrom-Json ([System.IO.File]::ReadAllText((Join-Path $Root 'packages\protocol\package.json')))
     foreach ($name in @('typecheck','lint','test','contracts:check')) {

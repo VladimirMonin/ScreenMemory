@@ -33,6 +33,13 @@ def strict_utc_date_time(value):
     return (1 <= day <= monthrange(year, month)[1]
             and hour <= 23 and minute <= 59 and second <= 59)
 
+@formats.checks('uint64')
+def strict_uint64(value):
+    if not isinstance(value, (int, float)):
+        return True  # type keyword owns non-numbers.
+    return value == int(value) and 0 <= value < 2 ** 64
+
+
 root = Path(__file__).resolve().parents[2]
 schemas = {p.stem: json.loads(p.read_text(encoding='utf-8')) for p in (root / 'schemas').glob('*.schema.json')}
 assert len(schemas) == 4
@@ -61,6 +68,17 @@ responses = json.loads((root / 'tests/fixtures/protocol/response-cases.json').re
 for group, expected in (('valid', True), ('invalid', False)):
     for case in responses[group]:
         assert app.is_valid(case['frame']) == expected, case['id']
+# S04 execution DTOs remain metadata, never deserializable instance/claim authority.
+processing = json.loads((root / 'tests/fixtures/protocol/processing-cases.json').read_text(encoding='utf-8'))
+for case in processing:
+    assert methods.is_valid(case['value']) == case['valid']
+execution = json.loads((root / 'tests/fixtures/protocol/processing-execution-responses.json').read_text(encoding='utf-8'))
+for case in execution:
+    assert app.is_valid(case['frame']) == case['valid']
+    for tokens in case.get('reject_generated_tokens', []):
+        frame = copy.deepcopy(case['frame'])
+        frame['result']['value']['value']['probe_result']['generated_tokens'] = tokens
+        assert not app.is_valid(frame)
 # Mutation proof: without the strict calendar checker, the ordinary shared
 # negative fixture is erroneously accepted (without modifying source/schema).
 calendar_case = next(c['frame'] for c in responses['invalid'] if c['id'] == 'consent-not-leap-year')

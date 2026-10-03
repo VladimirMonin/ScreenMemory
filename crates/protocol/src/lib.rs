@@ -3,4 +3,5 @@ pub mod application;
 pub mod bridge;
 pub mod errors;
 pub mod images;
+pub mod processing;
 pub mod values;

@@ -44,11 +44,12 @@ preview); соизмеряй глубину инженерной проверк�
 | [INFRA.observability](instructions/INFRA.observability.instructions.md) | SafeEvent, bounded logger, sinks, rotation и S01-LOG проверки |
 | [INFRA.root_isolation](instructions/INFRA.root_isolation.instructions.md) | Identity продукта, explicit root, Windows native root resolver и pre-host isolation |
 | [DATA.storage_owner](instructions/DATA.storage_owner.instructions.md) | Foundation SQLite worker, миграции, DB entries и владение HostLease |
-| [SEC.credentials](instructions/SEC.credentials.instructions.md) | Локальные credentials, Windows Credential Manager и host principal/scopes перед secure listener |
+| [SEC.credentials](instructions/SEC.credentials.instructions.md) | Локальные/session/backend credentials, bounded stdin, exact Windows Credential Manager authority и host scopes |
 | [SEC.pipe_endpoint](instructions/SEC.pipe_endpoint.instructions.md) | Windows named-pipe ACL, sealed pool, peer identity и trusted server image |
 | [CAPTURE.native](instructions/CAPTURE.native.instructions.md) | Win32 capture, region picker, overlay, hotkey, GDI/DIB |
 | [CODEC.webp](instructions/CODEC.webp.instructions.md) | WebP codec (bundled libwebp), exact lossless, bounds/отказы |
 | [IMAGE.pipeline](instructions/IMAGE.pipeline.instructions.md) | S03 ingest/source snapshots/decode/metadata/color/resize/export и private worker/packaging boundary |
+| [RUNTIME.sdk](instructions/RUNTIME.sdk.instructions.md) | Published SDK bridge, host execution/ModelManager, private runtime/supervisor, load intent/instance ownership, inference lease, cancellation и staging |
 
 - **Каждую новую инструкцию обязательно добавляй сюда рабочей ссылкой с условием чтения.**
   При переименовании, разделении или удалении обновляй ссылки и маршруты.

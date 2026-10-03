@@ -63,6 +63,10 @@ export type ApplicationResult =
   | {
       type: 'export_receipt';
       value: ExportReceipt;
+    }
+  | {
+      type: 'processing';
+      value: ProcessingReply;
     };
 export type BridgeState = 'stopped' | 'starting' | 'ready' | 'degraded' | 'unavailable';
 export type BuildId = string;
@@ -92,6 +96,7 @@ export type ErrorCode =
       | 'MODEL_CONFIG_UNSUPPORTED'
       | 'BRIDGE_UNAVAILABLE'
       | 'WAIT_TIMEOUT'
+      | 'REVISION_CONFLICT'
       | 'CAPTURE_BACKPRESSURE'
       | 'CAPTURE_TARGET_LOST'
       | 'CAPTURE_TOPOLOGY_CHANGED'
@@ -156,6 +161,78 @@ export type ImportBatchState =
   | 'completed_with_errors';
 export type ExportFormat = 'png' | 'jpeg' | 'webp' | 'avif';
 export type ExportExistence = 'verified' | 'not_checked';
+export type ProcessingReply =
+  | {
+      kind: 'policy';
+      value: PolicyView;
+    }
+  | {
+      kind: 'overview';
+      value: ProcessingOverview;
+    }
+  | {
+      kind: 'inventory';
+      value: InventoryView;
+    }
+  | {
+      kind: 'profile';
+      value: ProfileView;
+    }
+  | {
+      kind: 'batch';
+      value: BatchView;
+    }
+  | {
+      kind: 'job';
+      value: JobView;
+    }
+  | {
+      kind: 'execution';
+      value: ExecutionReport;
+    };
+export type LoadPermission = 'allow' | 'forbid';
+export type ProcessingMode = 'automatic' | 'manual' | 'off';
+export type QueryLoadPermission = 'ask' | 'allow' | 'forbid';
+export type HostRetention =
+  | {
+      kind: 'no_host_eviction';
+    }
+  | {
+      kind: 'idle';
+      seconds: number;
+    }
+  | {
+      kind: 'after_batch';
+    }
+  | {
+      kind: 'keep_loaded';
+    };
+export type ProcessingBatchId = string;
+export type ProcessingJobId = string;
+export type WorkKind = 'analyze' | 'technical_owner_self_test' | 'technical_owner_background_self_test';
+export type ModelProfileId = string;
+export type CacheType = 'f16' | 'f32' | 'q8' | 'q4' | 'q5';
+export type ReasoningMode = 'backend_default' | 'off' | 'budget100';
+export type BlockReason =
+  | 'handler_unavailable'
+  | 'runtime_unconfigured'
+  | 'ai_disabled'
+  | 'interrupted'
+  | 'backend_uncertain'
+  | 'cancel_requested'
+  | 'profile_retired'
+  | 'runtime_refused'
+  | 'lease_expired';
+export type JobState = 'pending' | 'running' | 'blocked' | 'failed' | 'cancelled' | 'superseded' | 'succeeded';
+export type BatchControl = 'pause' | 'resume' | 'cancel';
+export type ProcessingAttemptId = string;
+export type AttemptState = 'claimed' | 'dispatched' | 'settled' | 'uncertain' | 'interrupted';
+export type RuntimeCallId = string;
+export type RuntimeCallKind = 'load' | 'inference';
+export type LoadConfigurationStatus = 'reported_applied' | 'mismatch' | 'unknown';
+export type RuntimeCallState = 'planned' | 'settled' | 'uncertain';
+export type ModelConsumerLeaseId = string;
+export type ModelConsumerLeaseState = 'active' | 'released' | 'abandoned' | 'uncertain';
 export type SafeMessage = string;
 
 /**
@@ -355,6 +432,159 @@ export interface ExportSidecar {
   byte_size: string;
   export_path: string;
   sha256: string;
+}
+export interface PolicyView {
+  authorization_epoch: Revision;
+  revision: Revision;
+  value: ProcessingPolicy;
+}
+export interface ProcessingPolicy {
+  background_loading: LoadPermission;
+  mode: ProcessingMode;
+  query_loading: QueryLoadPermission;
+  queue_paused: boolean;
+  retention: HostRetention;
+}
+export interface ProcessingOverview {
+  analyze_handler_available: boolean;
+  bridge_state: BridgeState;
+  /**
+   * @maxItems 32
+   */
+  jobs: QueuedJob[];
+  model_autostart: boolean;
+  native_ttl_verification: string;
+  next_before?: ProcessingJobId | null;
+  physical_unload_supported: boolean;
+  policy: PolicyView;
+  /**
+   * @maxItems 32
+   */
+  profiles: ProfileView[];
+  runtime_configured: boolean;
+  supported_reasoning: ReasoningMode[];
+  supported_retention: HostRetention[];
+}
+export interface QueuedJob {
+  batch_id: ProcessingBatchId;
+  batch_revision: Revision;
+  job: JobView;
+}
+export interface JobView {
+  asset_id: AssetId;
+  asset_sha256: string;
+  attempt_count: number;
+  authorization_epoch: Revision;
+  id: ProcessingJobId;
+  kind: WorkKind;
+  policy_revision: Revision;
+  probe_result?: TechnicalProbeResult | null;
+  profile?: ProfileView | null;
+  reason?: BlockReason | null;
+  record_id: RecordId;
+  revision: Revision;
+  state: JobState;
+}
+export interface TechnicalProbeResult {
+  generated_tokens?: number | null;
+  image_operation_id: OperationId;
+  reasoning_tokens?: number | null;
+  stop_reason: string;
+  validated: boolean;
+}
+export interface ProfileView {
+  fingerprint: string;
+  revision: Revision;
+  value: ModelProfile;
+}
+export interface ModelProfile {
+  context_length: number;
+  eval_batch_size: number;
+  flash_attention: boolean;
+  id: ModelProfileId;
+  k_cache: CacheType;
+  max_generation_tokens: number;
+  model_key: string;
+  native_ttl_seconds?: number | null;
+  offload_kv_cache_to_gpu: boolean;
+  reasoning: ReasoningMode;
+  temperature: number;
+  v_cache: CacheType;
+}
+export interface InventoryView {
+  /**
+   * @maxItems 512
+   */
+  downloaded: InventoryModel[];
+  /**
+   * @maxItems 512
+   */
+  loaded: InventoryInstance[];
+}
+export interface InventoryModel {
+  model_key: string;
+  vision: boolean;
+}
+export interface InventoryInstance {
+  identifier: string;
+  instance_reference: string;
+  model_key: string;
+  owned: boolean;
+}
+export interface BatchView {
+  control: BatchControl;
+  id: ProcessingBatchId;
+  jobs: JobView[];
+  revision: Revision;
+}
+export interface ExecutionReport {
+  attempts: AttemptView[];
+  calls: RuntimeCallView[];
+  model_leases: ModelConsumerLeaseView[];
+  reconciliation_required: boolean;
+  retained_derivatives: DerivativeHoldView[];
+}
+export interface AttemptView {
+  authorization_epoch: Revision;
+  host_id: HostInstanceId;
+  id: ProcessingAttemptId;
+  job_id: ProcessingJobId;
+  outcome_code?: string | null;
+  state: AttemptState;
+}
+export interface RuntimeCallView {
+  attempt_id: ProcessingAttemptId;
+  generation: string;
+  id: RuntimeCallId;
+  kind: RuntimeCallKind;
+  load_configuration?: LoadConfigurationStatus | null;
+  load_reported_applied?: LoadConfigurationView | null;
+  load_requested?: LoadConfigurationView | null;
+  native_ttl_requested_seconds?: number | null;
+  native_ttl_verification?: string | null;
+  outcome_code?: string | null;
+  state: RuntimeCallState;
+}
+export interface LoadConfigurationView {
+  context_length?: number | null;
+  eval_batch_size?: number | null;
+  flash_attention?: boolean | null;
+  k_cache_type?: string | null;
+  max_parallel_predictions?: number | null;
+  offload_kv_cache_to_gpu?: boolean | null;
+  v_cache_type?: string | null;
+}
+export interface ModelConsumerLeaseView {
+  attempt_id: ProcessingAttemptId;
+  generation: string;
+  id: ModelConsumerLeaseId;
+  profile_fingerprint: string;
+  state: ModelConsumerLeaseState;
+}
+export interface DerivativeHoldView {
+  asset_id: AssetId;
+  attempt_id: ProcessingAttemptId;
+  operation_id: OperationId;
 }
 export interface AppError {
   code: ErrorCode;

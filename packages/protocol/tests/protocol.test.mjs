@@ -27,6 +27,23 @@ function assertBad(run, value, reason) {
   assert.deepEqual(value, before); // never coerce, remove or mutate caller input
 }
 
+test('S04 processing shared positive-negative fixtures reject wire authority', async () => {
+  for (const item of await fixture('processing-execution-responses')) {
+    if (item.valid) assert.equal(validateApplicationResponse(item.frame).ok, true);
+    else assertBad(validateApplicationResponse, item.frame, 'invalid_application');
+    for (const tokens of item.reject_generated_tokens ?? []) {
+      const frame = clone(item.frame);
+      frame.result.value.value.probe_result.generated_tokens = tokens;
+      assertBad(validateApplicationResponse, frame, 'invalid_application');
+    }
+  }
+  for (const item of await fixture('processing-cases')) {
+    const request = { ...status, ...item.value };
+    if (item.valid) assert.equal(validateApplicationRequest(request).ok, true);
+    else assertBad(validateApplicationRequest, request, 'invalid_method');
+  }
+});
+
 test('S01-TS-DTO-01 shared Rust/schema/TS requests and two-pass method validation', () => {
   for (const req of [status, control]) assert.equal(validateApplicationRequest(req).ok, true);
   for (const item of parity.valid) {
@@ -102,6 +119,7 @@ test('S01-TS-DTO-05 shared Rust/Ajv/schema response parity and calendar mutation
   ajv.addFormat('uint8', { type: 'number', validate: n => Number.isInteger(n) && n >= 0 && n <= 255 });
   ajv.addFormat('uint16', { type: 'number', validate: n => Number.isInteger(n) && n >= 0 && n <= 65535 });
   ajv.addFormat('uint32', { type: 'number', validate: n => Number.isInteger(n) && n >= 0 && n <= 4294967295 });
+  ajv.addFormat('uint64', { type: 'number', validate: n => Number.isInteger(n) && n >= 0 && n < 2 ** 64 });
   const withoutCalendar = ajv.compile(mutated);
   const invalidLeapDay = responses.invalid.find(item => item.id === 'consent-not-leap-year').frame;
   assert.equal(validateApplicationResponse(clone(invalidLeapDay)).ok, false);
@@ -166,6 +184,7 @@ test('S01-TS-MUT-01 in-memory removal of Rust SafeMessage guard fails shared neg
   ajv.addFormat('uint8', { type: 'number', validate: n => Number.isInteger(n) && n >= 0 && n <= 255 });
   ajv.addFormat('uint16', { type: 'number', validate: n => Number.isInteger(n) && n >= 0 && n <= 65535 });
   ajv.addFormat('uint32', { type: 'number', validate: n => Number.isInteger(n) && n >= 0 && n <= 4294967295 });
+  ajv.addFormat('uint64', { type: 'number', validate: n => Number.isInteger(n) && n >= 0 && n < 2 ** 64 });
   const unguarded = ajv.compile(mutated);
   for (const item of messages.invalid) {
     const candidate = { ...error, error: { ...error.error, safe_message: item.safe_message } };

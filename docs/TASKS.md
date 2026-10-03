@@ -1,6 +1,6 @@
 # ScreenMemory — доска работ до локального релиза
 
-Обновлено: 2026-10-02. Цель: `muqhdldy-5nzeny`.
+Обновлено: 2026-10-03. Цель: `muqhdldy-5nzeny`.
 Исходная кодовая база: `18a2608cad800d1b3cb783d586964784e267351d` (`main`).
 Scope: [ADR-011 / CN-20261002-01](adr/011-private-release-scope.md).
 Исполнение: [WORKFLOW.release](../instructions/WORKFLOW.release.instructions.md).
@@ -17,7 +17,7 @@ Scope: [ADR-011 / CN-20261002-01](adr/011-private-release-scope.md).
 | S01 — рабочая основа | IN_PROGRESS, не принята целиком | Sol6.1 writer → fresh Sol6.1 reviewer → parent: актуальный handoff, один host/root/DB/IPC/client, реальные gates и запуск. |
 | S02 — capture/library | IN_PROGRESS, не принята целиком | Sol6.1: сквозной capture→Saved→видимый preview, режимы/hotkeys, recovery, transfer/clipboard, pin/editor, CLI. |
 | S03 — импорт/изображения/экспорт | ACCEPT_CODE_SCOPED; этап IN_PROGRESS | Own files/tree→verified WebP/AVIF→actual Tauri preview→export: [приёмка/evidence](progress/S03/result.md), fresh review+P2 closure PASS. Whole S03, genuine input, production upgrade и package/performance не приняты. |
-| S04 — SDK/очередь/LM Studio | PENDING | Sol6.1: bundled SDK/runtime, реальный vision API, профили, Automatic/Manual/Off, pause/cancel/retry, load/unload/TTL. |
+| S04 — SDK/очередь/LM Studio | ACCEPT_CODE_SCOPED; этап IN_PROGRESS | [Parent приёмка/evidence](progress/S04/result.md): SDK/private runtime, durable scheduler/ModelManager/SQLite intents и реальные shared GUI/JSON CLI приняты scoped после fresh review9cc6+targeted3e43 pass/findings[]. Published-SDK synthetic execution4/4, actual shotd/CLI regression1/1, native enrollment negatives4 и исправленный schema6 smoke56/56 raw0; own rendered settings/close-reopen proofs разделены. Live LM Studio/genuine input NOT_RUN, physical unload/unsafe retention/reasoning Unsupported, TTL requested/not_verified; весь S04/поставка не приняты. |
 | S05 — OCR/карточки/правки | PENDING | Sol6.1: рабочий OCR/vision, категории, schema validation, manual overrides и revision guards. |
 | S06 — FTS5 и качество поиска | PENDING | Sol6.1 + оценка parent: lexical/exact/filters, обновление после правок/удалений, размеченный RU/EN corpus, ranking и latency. |
 | S07 — GUI/CLI/MCP | PENDING | Sol6.1: полный агентский сценарий, удобный GUI, общий host, scopes, JSON/exit parity и image resources. |
@@ -70,10 +70,15 @@ Foundation boot/verify/helper seam принят scoped (`99df8f3`, handoff `de41
 на Astra decision `blocked`: без разрешённого собственного guest writer не запускался.
 [Live-stand blocker](progress/S02/isolated-live-stand.md) остаётся у capture/input;
 Windows Sandbox preflight raw0 выявил disabled feature, не runtime PASS.
-**Сейчас:** S03 files/folders→own WebP/AVIF→preview/export принят scoped на синтетике;
-следующий полезный milestone — S04 private SDK/runtime и durable processing.
-Импорт не заменяет capture proof. Не возвращаться к микросрезам recovery вместо
-работающего пользовательского результата.
+**Сейчас:** S03 import/preview/export и S04 SDK/processing/shared GUI/JSON CLI
+приняты как полезные code slices, не как полные stages. [S04 parent result](progress/S04/result.md)
+связывает [SDK](progress/S04/sdk-runtime.md), [execution](progress/S04/processing.md),
+[interfaces](progress/S04/interfaces.md), fresh review и affected schema-smoke correction.
+Все writers/reviewers завершены, source released. Следующий независимый milestone —
+S05 OCR/knowledge/manual overrides с revision-safe publication, затем production FTS5.
+Capture/input/live-model/unload/TTL blockers остаются локальными, не паузой всей цели.
+Historical unknown fixture/PID cleanup BLOCKED/NOT_RUN; не повторять принятый SDK
+bootstrap и не выдавать bounded checks за whole S04.
 
 | Lane | Решение и scope | Cwd / isolation | Gate / handoff |
 |---|---|---|---|
@@ -84,6 +89,7 @@ Windows Sandbox preflight raw0 выявил disabled feature, не runtime PASS.
 | S03 ingest owner | READY handoff: retained source→verified canonical→no-replace→commit/Saved, durable control/export | Source сохранён, один прежний SQLite/file owner | Duplicate/failure/cancel/protected-target/TTL-lease tests; production populated upgrade guarded |
 | S03 interface integration | ACCEPT_CODE_SCOPED: common RPC/client/JSON CLI + typed/native-path GUI, source-aware pagination, bounded AVIF derivative | Source released; [факты/остатки](progress/S03/interfaces.md) | Actual own Tauri DPI144 RGB preview/source deletion/export/reopen/cleanup1168; final Rust/frontend raw0, comments-only schema drift исправлен, contracts raw0 |
 | S03 reviewer → parent | DONE scoped: fresh review и retained P2 follow-up PASS/findings0 | Все writers завершены; parent принимает/коммитит | Оба report defects исправлены, public-progress invariant/empty CLI raw7 независимо проверены; whole stage не объявлен DONE |
+| S04 writers/reviewers → parent | ACCEPT_CODE_SCOPED: real installation authority, SDK/durable execution, common typed GUI/JSON CLI | Native SDK/execution/interfaces CHECKED, fresh9cc6/targeted3e43 pass; source released | [Final evidence/остатки](progress/S04/result.md); independent actual native case1/1+4 enrollment refusals; schema-smoke RED1 сохранён/GREEN56 raw0. Whole S04/LM live/unload/TTL/genuine input не приняты |
 
 Завершённый foundation был single-seam. S03 image, ingest и interface integration
 имеют последовательных owners и durable handoff, без пересекающихся source writes.

@@ -37,11 +37,12 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 /// The four foundation handlers always implemented by this host.
-pub const AVAILABLE_METHODS: [&str; 4] = [
+pub const AVAILABLE_METHODS: [&str; 5] = [
     "system.status",
     "system.doctor",
     "system.request_shutdown",
     "library.list_records",
+    "processing.request",
 ];
 /// S02 handlers, advertised only when this composition really owns a capture adapter.
 pub const CAPTURE_METHODS: [&str; 2] = ["capture.command", "library.asset.read"];
@@ -122,6 +123,7 @@ pub struct FoundationServices {
     /// S02 capture port; `None` means this composition serves no capture handler at all.
     capture: Option<Arc<dyn CaptureApi>>,
     images_enabled: std::sync::atomic::AtomicBool,
+    runtime_status: std::sync::OnceLock<Arc<crate::processing_execution::RuntimeStatus>>,
 }
 
 impl FoundationServices {
@@ -151,6 +153,7 @@ impl FoundationServices {
             logger,
             capture,
             images_enabled: std::sync::atomic::AtomicBool::new(false),
+            runtime_status: std::sync::OnceLock::new(),
         }
     }
 
@@ -173,6 +176,12 @@ impl FoundationServices {
             ]);
         }
         methods
+    }
+    pub(crate) fn bind_runtime_status(
+        &self,
+        status: Arc<crate::processing_execution::RuntimeStatus>,
+    ) {
+        let _ = self.runtime_status.set(status);
     }
     pub fn enable_images(&self) {
         self.images_enabled.store(true, Ordering::SeqCst);
@@ -218,7 +227,10 @@ impl FoundationServices {
             state: self.state(),
             schema_version,
             ai_enabled,
-            bridge_state: BridgeState::Stopped,
+            bridge_state: self
+                .runtime_status
+                .get()
+                .map_or(BridgeState::Stopped, |s| s.bridge()),
             available_methods: self.methods(),
         }
     }
@@ -407,7 +419,24 @@ impl FoundationApi for FoundationServices {
         // and never fail the foundation on their own.
         for (id, outcome) in [
             ("foundation.resource_manifest", CheckOutcome::Unsupported),
-            ("bridge.supervisor", CheckOutcome::Unsupported),
+            (
+                "bridge.supervisor",
+                self.runtime_status
+                    .get()
+                    .map_or(CheckOutcome::Unsupported, |s| {
+                        if !s.configured() {
+                            CheckOutcome::Unsupported
+                        } else {
+                            match s.bridge() {
+                                BridgeState::Ready => CheckOutcome::Passed,
+                                BridgeState::Stopped | BridgeState::Starting => {
+                                    CheckOutcome::NotRun
+                                }
+                                _ => CheckOutcome::Failed,
+                            }
+                        }
+                    }),
+            ),
             ("runtime.lmstudio", CheckOutcome::NotRun),
             ("codec.webp_avif", CheckOutcome::NotRun),
             ("index.fts_vec", CheckOutcome::NotRun),

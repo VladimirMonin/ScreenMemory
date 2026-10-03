@@ -11,7 +11,7 @@ use uuid::Uuid;
 /// capture-operation journal (`ingest_operations`); `0004` adds pending capture
 /// intents without changing the images contract. All are applied in a single
 /// transaction on a fresh file; interrupted upgrades roll back their migration rows.
-const SHIPPED: [(&str, &str); 5] = [
+const SHIPPED: [(&str, &str); 6] = [
     (
         "0001_foundation",
         include_str!("../migrations/0001_foundation.sql"),
@@ -28,6 +28,10 @@ const SHIPPED: [(&str, &str); 5] = [
     (
         "0005_import_export",
         include_str!("../migrations/0005_import_export.sql"),
+    ),
+    (
+        "0006_processing",
+        include_str!("../migrations/0006_processing.sql"),
     ),
 ];
 /// Applied images schema version, reported by `SchemaSnapshot::images`. The
@@ -142,17 +146,29 @@ fn validate_settings(db: &Connection) -> Result<bool, StorageError> {
     if rows.len() != 2 || rows[0].0 != "ai.enabled" || rows[1].0 != "model.autostart" {
         return Err(StorageError::IntegrityFailed);
     }
-    for (_, json, rev) in &rows {
-        if *rev < 1
-            || !matches!(
-                serde_json::from_str::<serde_json::Value>(json),
-                Ok(serde_json::Value::Bool(false))
-            )
-        {
+    let processing_exists: bool = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='processing_policy')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|_| StorageError::IntegrityFailed)?;
+    let enabled = if processing_exists {
+        crate::processing::policy(db)
+            .map_err(|_| StorageError::IntegrityFailed)?
+            .value
+            .mode
+            != sm_protocol::processing::ProcessingMode::Off
+    } else {
+        false
+    };
+    for (key, json, rev) in &rows {
+        let expected = key == "ai.enabled" && enabled;
+        if *rev < 1 || serde_json::from_str::<bool>(json).ok() != Some(expected) {
             return Err(StorageError::IntegrityFailed);
         }
     }
-    Ok(false)
+    Ok(enabled)
 }
 
 /// Identity and settings checks shared by every accepted version.

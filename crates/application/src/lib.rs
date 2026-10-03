@@ -3,6 +3,7 @@ pub mod capture;
 pub mod credentials;
 pub mod images;
 pub mod observability;
+pub mod processing;
 pub mod storage;
 
 use async_trait::async_trait;
@@ -36,6 +37,8 @@ pub enum Scope {
     ExportSourceSidecar,
     /// Private source observations (EXIF/GPS), independent of pixel access.
     ReadSourceMetadata,
+    ReadProcessing,
+    ManageProcessing,
 }
 /// Constructed only by the authenticated host boundary; never decoded from request.params.
 #[derive(Clone, Debug)]

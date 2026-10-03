@@ -241,6 +241,23 @@
             "value"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "processing",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/ProcessingReply"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -248,6 +265,99 @@
       "maxLength": 36,
       "minLength": 36,
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "AttemptState": {
+      "enum": [
+        "claimed",
+        "dispatched",
+        "settled",
+        "uncertain",
+        "interrupted"
+      ],
+      "type": "string"
+    },
+    "AttemptView": {
+      "additionalProperties": false,
+      "properties": {
+        "authorization_epoch": {
+          "$ref": "#/$defs/Revision"
+        },
+        "host_id": {
+          "$ref": "#/$defs/HostInstanceId"
+        },
+        "id": {
+          "$ref": "#/$defs/ProcessingAttemptId"
+        },
+        "job_id": {
+          "$ref": "#/$defs/ProcessingJobId"
+        },
+        "outcome_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/AttemptState"
+        }
+      },
+      "required": [
+        "id",
+        "job_id",
+        "state",
+        "host_id",
+        "authorization_epoch"
+      ],
+      "type": "object"
+    },
+    "BatchControl": {
+      "enum": [
+        "pause",
+        "resume",
+        "cancel"
+      ],
+      "type": "string"
+    },
+    "BatchView": {
+      "additionalProperties": false,
+      "properties": {
+        "control": {
+          "$ref": "#/$defs/BatchControl"
+        },
+        "id": {
+          "$ref": "#/$defs/ProcessingBatchId"
+        },
+        "jobs": {
+          "items": {
+            "$ref": "#/$defs/JobView"
+          },
+          "type": "array"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "control",
+        "jobs"
+      ],
+      "type": "object"
+    },
+    "BlockReason": {
+      "enum": [
+        "handler_unavailable",
+        "runtime_unconfigured",
+        "ai_disabled",
+        "interrupted",
+        "backend_uncertain",
+        "cancel_requested",
+        "profile_retired",
+        "runtime_refused",
+        "lease_expired"
+      ],
       "type": "string"
     },
     "BridgeState": {
@@ -264,6 +374,16 @@
       "maxLength": 128,
       "minLength": 1,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "type": "string"
+    },
+    "CacheType": {
+      "enum": [
+        "f16",
+        "f32",
+        "q8",
+        "q4",
+        "q5"
+      ],
       "type": "string"
     },
     "CancelReason": {
@@ -424,6 +544,26 @@
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
       "type": "string"
     },
+    "DerivativeHoldView": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "$ref": "#/$defs/AssetId"
+        },
+        "attempt_id": {
+          "$ref": "#/$defs/ProcessingAttemptId"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "attempt_id",
+        "operation_id",
+        "asset_id"
+      ],
+      "type": "object"
+    },
     "DoctorReport": {
       "additionalProperties": false,
       "properties": {
@@ -468,6 +608,7 @@
             "MODEL_CONFIG_UNSUPPORTED",
             "BRIDGE_UNAVAILABLE",
             "WAIT_TIMEOUT",
+            "REVISION_CONFLICT",
             "CAPTURE_BACKPRESSURE",
             "CAPTURE_TARGET_LOST",
             "CAPTURE_TOPOLOGY_CHANGED",
@@ -504,6 +645,46 @@
       "minLength": 36,
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
       "type": "string"
+    },
+    "ExecutionReport": {
+      "additionalProperties": false,
+      "properties": {
+        "attempts": {
+          "items": {
+            "$ref": "#/$defs/AttemptView"
+          },
+          "type": "array"
+        },
+        "calls": {
+          "items": {
+            "$ref": "#/$defs/RuntimeCallView"
+          },
+          "type": "array"
+        },
+        "model_leases": {
+          "items": {
+            "$ref": "#/$defs/ModelConsumerLeaseView"
+          },
+          "type": "array"
+        },
+        "reconciliation_required": {
+          "type": "boolean"
+        },
+        "retained_derivatives": {
+          "items": {
+            "$ref": "#/$defs/DerivativeHoldView"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "attempts",
+        "calls",
+        "retained_derivatives",
+        "model_leases",
+        "reconciliation_required"
+      ],
+      "type": "object"
     },
     "ExportAppliedParameters": {
       "additionalProperties": false,
@@ -673,6 +854,68 @@
       "minLength": 36,
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
       "type": "string"
+    },
+    "HostRetention": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "no_host_eviction",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "idle",
+              "type": "string"
+            },
+            "seconds": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "seconds"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "after_batch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "keep_loaded",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "HostState": {
       "enum": [
@@ -989,6 +1232,163 @@
       ],
       "type": "string"
     },
+    "InventoryInstance": {
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "type": "string"
+        },
+        "instance_reference": {
+          "type": "string"
+        },
+        "model_key": {
+          "type": "string"
+        },
+        "owned": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "model_key",
+        "identifier",
+        "instance_reference",
+        "owned"
+      ],
+      "type": "object"
+    },
+    "InventoryModel": {
+      "additionalProperties": false,
+      "properties": {
+        "model_key": {
+          "type": "string"
+        },
+        "vision": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "model_key",
+        "vision"
+      ],
+      "type": "object"
+    },
+    "InventoryView": {
+      "additionalProperties": false,
+      "properties": {
+        "downloaded": {
+          "items": {
+            "$ref": "#/$defs/InventoryModel"
+          },
+          "maxItems": 512,
+          "type": "array"
+        },
+        "loaded": {
+          "items": {
+            "$ref": "#/$defs/InventoryInstance"
+          },
+          "maxItems": 512,
+          "type": "array"
+        }
+      },
+      "required": [
+        "downloaded",
+        "loaded"
+      ],
+      "type": "object"
+    },
+    "JobState": {
+      "enum": [
+        "pending",
+        "running",
+        "blocked",
+        "failed",
+        "cancelled",
+        "superseded",
+        "succeeded"
+      ],
+      "type": "string"
+    },
+    "JobView": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "$ref": "#/$defs/AssetId"
+        },
+        "asset_sha256": {
+          "type": "string"
+        },
+        "attempt_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "authorization_epoch": {
+          "$ref": "#/$defs/Revision"
+        },
+        "id": {
+          "$ref": "#/$defs/ProcessingJobId"
+        },
+        "kind": {
+          "$ref": "#/$defs/WorkKind"
+        },
+        "policy_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "probe_result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TechnicalProbeResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProfileView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlockReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "record_id": {
+          "$ref": "#/$defs/RecordId"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "state": {
+          "$ref": "#/$defs/JobState"
+        }
+      },
+      "required": [
+        "id",
+        "record_id",
+        "asset_id",
+        "asset_sha256",
+        "kind",
+        "revision",
+        "state",
+        "policy_revision",
+        "authorization_epoch",
+        "attempt_count"
+      ],
+      "type": "object"
+    },
     "LibraryAssetChunk": {
       "additionalProperties": false,
       "description": "One bounded image transfer chunk. `library.asset.read` carries canonical bytes;\n`library.asset.preview` carries a bounded immutable WebP derivative (which may\ndiffer from the canonical). Digest/MIME/size describe that transfer, never a URL.\n`data_hex` keeps the frame printable without a base64 dependency.",
@@ -1115,10 +1515,202 @@
       ],
       "type": "object"
     },
+    "LoadConfigurationStatus": {
+      "enum": [
+        "reported_applied",
+        "mismatch",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "LoadConfigurationView": {
+      "additionalProperties": false,
+      "properties": {
+        "context_length": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "eval_batch_size": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "flash_attention": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "k_cache_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_parallel_predictions": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "offload_kv_cache_to_gpu": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "v_cache_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "LoadPermission": {
+      "enum": [
+        "allow",
+        "forbid"
+      ],
+      "type": "string"
+    },
     "MethodName": {
       "maxLength": 96,
       "minLength": 1,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "type": "string"
+    },
+    "ModelConsumerLeaseId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "ModelConsumerLeaseState": {
+      "enum": [
+        "active",
+        "released",
+        "abandoned",
+        "uncertain"
+      ],
+      "type": "string"
+    },
+    "ModelConsumerLeaseView": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "$ref": "#/$defs/ProcessingAttemptId"
+        },
+        "generation": {
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/ModelConsumerLeaseId"
+        },
+        "profile_fingerprint": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ModelConsumerLeaseState"
+        }
+      },
+      "required": [
+        "id",
+        "attempt_id",
+        "state",
+        "generation",
+        "profile_fingerprint"
+      ],
+      "type": "object"
+    },
+    "ModelProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "context_length": {
+          "format": "uint32",
+          "maximum": 262144,
+          "minimum": 1024,
+          "type": "integer"
+        },
+        "eval_batch_size": {
+          "format": "uint32",
+          "maximum": 2048,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "flash_attention": {
+          "type": "boolean"
+        },
+        "id": {
+          "$ref": "#/$defs/ModelProfileId"
+        },
+        "k_cache": {
+          "$ref": "#/$defs/CacheType"
+        },
+        "max_generation_tokens": {
+          "format": "uint32",
+          "maximum": 4000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "model_key": {
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        },
+        "native_ttl_seconds": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "offload_kv_cache_to_gpu": {
+          "type": "boolean"
+        },
+        "reasoning": {
+          "$ref": "#/$defs/ReasoningMode"
+        },
+        "temperature": {
+          "format": "double",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "v_cache": {
+          "$ref": "#/$defs/CacheType"
+        }
+      },
+      "required": [
+        "id",
+        "model_key",
+        "context_length",
+        "eval_batch_size",
+        "flash_attention",
+        "offload_kv_cache_to_gpu",
+        "k_cache",
+        "v_cache",
+        "max_generation_tokens",
+        "temperature",
+        "reasoning"
+      ],
+      "type": "object"
+    },
+    "ModelProfileId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
       "type": "string"
     },
     "OperationId": {
@@ -1132,6 +1724,26 @@
       "minLength": 36,
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
       "type": "string"
+    },
+    "PolicyView": {
+      "additionalProperties": false,
+      "properties": {
+        "authorization_epoch": {
+          "$ref": "#/$defs/Revision"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "value": {
+          "$ref": "#/$defs/ProcessingPolicy"
+        }
+      },
+      "required": [
+        "revision",
+        "authorization_epoch",
+        "value"
+      ],
+      "type": "object"
     },
     "ProbeConsentReceipt": {
       "additionalProperties": false,
@@ -1150,6 +1762,279 @@
         "consent_id",
         "expires_at",
         "policy_revision"
+      ],
+      "type": "object"
+    },
+    "ProcessingAttemptId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "ProcessingBatchId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "ProcessingJobId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "ProcessingMode": {
+      "enum": [
+        "automatic",
+        "manual",
+        "off"
+      ],
+      "type": "string"
+    },
+    "ProcessingOverview": {
+      "additionalProperties": false,
+      "properties": {
+        "analyze_handler_available": {
+          "type": "boolean"
+        },
+        "bridge_state": {
+          "$ref": "#/$defs/BridgeState"
+        },
+        "jobs": {
+          "items": {
+            "$ref": "#/$defs/QueuedJob"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "model_autostart": {
+          "type": "boolean"
+        },
+        "native_ttl_verification": {
+          "type": "string"
+        },
+        "next_before": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProcessingJobId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "physical_unload_supported": {
+          "type": "boolean"
+        },
+        "policy": {
+          "$ref": "#/$defs/PolicyView"
+        },
+        "profiles": {
+          "items": {
+            "$ref": "#/$defs/ProfileView"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "runtime_configured": {
+          "type": "boolean"
+        },
+        "supported_reasoning": {
+          "items": {
+            "$ref": "#/$defs/ReasoningMode"
+          },
+          "type": "array"
+        },
+        "supported_retention": {
+          "items": {
+            "$ref": "#/$defs/HostRetention"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "policy",
+        "profiles",
+        "jobs",
+        "runtime_configured",
+        "bridge_state",
+        "model_autostart",
+        "analyze_handler_available",
+        "physical_unload_supported",
+        "supported_reasoning",
+        "supported_retention",
+        "native_ttl_verification"
+      ],
+      "type": "object"
+    },
+    "ProcessingPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "background_loading": {
+          "$ref": "#/$defs/LoadPermission"
+        },
+        "mode": {
+          "$ref": "#/$defs/ProcessingMode"
+        },
+        "query_loading": {
+          "$ref": "#/$defs/QueryLoadPermission"
+        },
+        "queue_paused": {
+          "type": "boolean"
+        },
+        "retention": {
+          "$ref": "#/$defs/HostRetention"
+        }
+      },
+      "required": [
+        "mode",
+        "background_loading",
+        "query_loading",
+        "queue_paused",
+        "retention"
+      ],
+      "type": "object"
+    },
+    "ProcessingReply": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "policy",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/PolicyView"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "overview",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/ProcessingOverview"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "inventory",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/InventoryView"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "profile",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/ProfileView"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "batch",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/BatchView"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "job",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/JobView"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "execution",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/ExecutionReport"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ProfileView": {
+      "additionalProperties": false,
+      "properties": {
+        "fingerprint": {
+          "type": "string"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "value": {
+          "$ref": "#/$defs/ModelProfile"
+        }
+      },
+      "required": [
+        "revision",
+        "fingerprint",
+        "value"
       ],
       "type": "object"
     },
@@ -1174,6 +2059,42 @@
         "minor"
       ],
       "type": "object"
+    },
+    "QueryLoadPermission": {
+      "enum": [
+        "ask",
+        "allow",
+        "forbid"
+      ],
+      "type": "string"
+    },
+    "QueuedJob": {
+      "additionalProperties": false,
+      "properties": {
+        "batch_id": {
+          "$ref": "#/$defs/ProcessingBatchId"
+        },
+        "batch_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "job": {
+          "$ref": "#/$defs/JobView"
+        }
+      },
+      "required": [
+        "batch_id",
+        "batch_revision",
+        "job"
+      ],
+      "type": "object"
+    },
+    "ReasoningMode": {
+      "enum": [
+        "backend_default",
+        "off",
+        "budget100"
+      ],
+      "type": "string"
     },
     "RecordId": {
       "maxLength": 36,
@@ -1301,6 +2222,108 @@
       "pattern": "^(?:0|[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]{1}|1844674407370955161[0-4]|18446744073709551615)$",
       "type": "string"
     },
+    "RuntimeCallId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "RuntimeCallKind": {
+      "enum": [
+        "load",
+        "inference"
+      ],
+      "type": "string"
+    },
+    "RuntimeCallState": {
+      "enum": [
+        "planned",
+        "settled",
+        "uncertain"
+      ],
+      "type": "string"
+    },
+    "RuntimeCallView": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "$ref": "#/$defs/ProcessingAttemptId"
+        },
+        "generation": {
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/RuntimeCallId"
+        },
+        "kind": {
+          "$ref": "#/$defs/RuntimeCallKind"
+        },
+        "load_configuration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoadConfigurationStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "load_reported_applied": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoadConfigurationView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "load_requested": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoadConfigurationView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "native_ttl_requested_seconds": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "native_ttl_verification": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "outcome_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeCallState"
+        }
+      },
+      "required": [
+        "id",
+        "attempt_id",
+        "state",
+        "kind",
+        "generation"
+      ],
+      "type": "object"
+    },
     "RuntimeProbeReport": {
       "additionalProperties": false,
       "properties": {
@@ -1348,9 +2371,53 @@
       ],
       "type": "object"
     },
+    "TechnicalProbeResult": {
+      "additionalProperties": false,
+      "properties": {
+        "generated_tokens": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "image_operation_id": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "reasoning_tokens": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "stop_reason": {
+          "type": "string"
+        },
+        "validated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "validated",
+        "stop_reason",
+        "image_operation_id"
+      ],
+      "type": "object"
+    },
     "UtcTime": {
       "format": "date-time",
       "pattern": "Z$",
+      "type": "string"
+    },
+    "WorkKind": {
+      "enum": [
+        "analyze",
+        "technical_owner_self_test",
+        "technical_owner_background_self_test"
+      ],
       "type": "string"
     }
   },

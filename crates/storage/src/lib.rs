@@ -16,6 +16,10 @@ mod intents;
 mod library_views;
 pub mod match_recovery;
 mod migration;
+pub mod processing;
+pub mod processing_execution;
+#[cfg(test)]
+mod processing_tests;
 pub mod recovery_candidate;
 mod recovery_commit;
 #[cfg(test)]
@@ -305,6 +309,18 @@ enum Fault {
 }
 
 enum Request {
+    Execution(
+        oneshot::Sender<Result<processing_execution::Reply, processing::ProcessingError>>,
+        processing_execution::Command,
+    ),
+    Processing(
+        oneshot::Sender<
+            Result<sm_protocol::processing::ProcessingReply, processing::ProcessingError>,
+        >,
+        PrincipalId,
+        sm_protocol::processing::ProcessingRequest,
+        Arc<tokio::sync::Notify>,
+    ),
     Images(Response<import_db::Reply>, import_db::Command),
     Snapshot(Response<SchemaSnapshot>),
     AiEnabled(Response<bool>),
@@ -345,8 +361,64 @@ pub struct StorageWorker {
     file_sender: SyncSender<FileRequest>,
     gate: Arc<Mutex<Admission>>,
     image_active: Arc<Mutex<std::collections::HashMap<Uuid, Arc<image_services::JobControl>>>>,
+    execution_wake: Arc<tokio::sync::Notify>,
 }
 impl StorageWorker {
+    pub fn execution_wakeup(&self) -> Arc<tokio::sync::Notify> {
+        self.execution_wake.clone()
+    }
+    /// Native-only scheduler port; the sealed fence is not deserializable or application RPC input.
+    pub async fn execution(
+        &self,
+        command: processing_execution::Command,
+    ) -> Result<processing_execution::Reply, processing::ProcessingError> {
+        let (tx, rx) = oneshot::channel();
+        {
+            let gate = self
+                .gate
+                .lock()
+                .map_err(|_| processing::ProcessingError::Unavailable)?;
+            if gate.closing {
+                return Err(processing::ProcessingError::Unavailable);
+            }
+            self.sender
+                .try_send(Request::Execution(tx, command))
+                .map_err(|_| processing::ProcessingError::Unavailable)?;
+        }
+        tokio::time::timeout(Duration::from_secs(10), rx)
+            .await
+            .map_err(|_| processing::ProcessingError::Unavailable)?
+            .map_err(|_| processing::ProcessingError::Unavailable)?
+    }
+    /// Path-free durable controls. Full queue/closed admission refuses immediately.
+    pub async fn processing(
+        &self,
+        principal: PrincipalId,
+        request: sm_protocol::processing::ProcessingRequest,
+    ) -> Result<sm_protocol::processing::ProcessingReply, processing::ProcessingError> {
+        let (tx, rx) = oneshot::channel();
+        {
+            let gate = self
+                .gate
+                .lock()
+                .map_err(|_| processing::ProcessingError::Unavailable)?;
+            if gate.closing {
+                return Err(processing::ProcessingError::Unavailable);
+            }
+            self.sender
+                .try_send(Request::Processing(
+                    tx,
+                    principal,
+                    request,
+                    self.execution_wake.clone(),
+                ))
+                .map_err(|_| processing::ProcessingError::Unavailable)?;
+        }
+        tokio::time::timeout(Duration::from_secs(10), rx)
+            .await
+            .map_err(|_| processing::ProcessingError::Unavailable)?
+            .map_err(|_| processing::ProcessingError::Unavailable)?
+    }
     pub async fn library_page(
         &self,
         query: RecordPageQuery,
@@ -475,6 +547,7 @@ impl StorageWorker {
             file_sender,
             gate,
             image_active: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            execution_wake: Arc::new(tokio::sync::Notify::new()),
         })
     }
     /// Separate, single-slot file queue. Only accepted requests own file-lane memory;
@@ -820,6 +893,26 @@ fn run(
     let mut db = db;
     for request in receiver {
         match request {
+            Request::Execution(tx, command) => {
+                let _ = tx.send(processing_execution::handle(&mut db, command));
+            }
+            Request::Processing(tx, p, request, wake) => {
+                let changed = !matches!(
+                    request,
+                    sm_protocol::processing::ProcessingRequest::Policy {}
+                        | sm_protocol::processing::ProcessingRequest::Profile { .. }
+                        | sm_protocol::processing::ProcessingRequest::Batch { .. }
+                        | sm_protocol::processing::ProcessingRequest::Execution { .. }
+                        | sm_protocol::processing::ProcessingRequest::Reconcile {}
+                        | sm_protocol::processing::ProcessingRequest::Overview { .. }
+                        | sm_protocol::processing::ProcessingRequest::Inventory {}
+                );
+                let result = processing::handle(&mut db, p, request);
+                if changed && result.is_ok() {
+                    wake.notify_one();
+                }
+                let _ = tx.send(result);
+            }
             Request::Images(tx, command) => {
                 let _ = tx.send(import_db::execute(&mut db, command));
             }
@@ -827,7 +920,11 @@ fn run(
                 let _ = tx.send(migration::validate(&db));
             }
             Request::AiEnabled(tx) => {
-                let _ = tx.send(migration::validate(&db).map(|_| false));
+                let _ = tx.send(migration::validate(&db).and_then(|_| {
+                    processing::policy(&db)
+                        .map(|p| p.value.mode != sm_protocol::processing::ProcessingMode::Off)
+                        .map_err(|_| StorageError::IntegrityFailed)
+                }));
             }
             Request::SqliteVersion(tx) => {
                 let _ = tx.send(migration::sqlite_version(&db));

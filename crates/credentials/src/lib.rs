@@ -4,7 +4,7 @@
 mod native_tests;
 
 use sm_application::credentials::CredentialEnvironment;
-use sm_application::credentials::{CredentialKey, Secret, SecretStore, StoreError};
+use sm_application::credentials::{CredentialKey, Profile, Secret, SecretStore, StoreError};
 use sm_isolation::Environment;
 use std::ffi::c_void;
 use windows_sys::Win32::Foundation::{GetLastError, ERROR_NOT_FOUND};
@@ -94,7 +94,7 @@ impl WindowsSecretStore {
         let owned = OwnedCredential(raw);
         let credential = unsafe { &*owned.0 };
         if credential.Type != CRED_TYPE_GENERIC
-            || credential.CredentialBlobSize != 33
+            || !valid_size(key, credential.CredentialBlobSize as usize)
             || credential.CredentialBlob.is_null()
         {
             return Err(NativeReadFailure::Unavailable(None));
@@ -107,6 +107,17 @@ impl WindowsSecretStore {
         };
         Ok(Secret::from_bytes(bytes.to_vec()))
     }
+}
+fn valid_size(key: &CredentialKey, size: usize) -> bool {
+    if key.profile() == Profile::RuntimeBackend {
+        (1..=2048).contains(&size)
+    } else {
+        size == 33
+    }
+}
+fn valid_backend_token(bytes: &[u8]) -> bool {
+    std::str::from_utf8(bytes)
+        .is_ok_and(|s| !s.chars().any(char::is_control) && !s.trim().is_empty())
 }
 struct OwnedCredential(*mut CREDENTIALW);
 impl Drop for OwnedCredential {
@@ -139,7 +150,10 @@ impl SecretStore for WindowsSecretStore {
             Err(StoreError::Missing) => (),
             _ => return Err(StoreError::Unavailable),
         }
-        if value.as_bytes().len() != 33 || value.as_bytes()[0] != 1 {
+        if !valid_size(key, value.as_bytes().len())
+            || (key.profile() != Profile::RuntimeBackend && value.as_bytes()[0] != 1)
+            || (key.profile() == Profile::RuntimeBackend && !valid_backend_token(value.as_bytes()))
+        {
             return Err(StoreError::Unavailable);
         }
         // Windows takes pointer to writable buffer, do not expose caller's backing allocation.

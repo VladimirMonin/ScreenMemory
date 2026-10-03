@@ -15,13 +15,14 @@ const applicationImports = new Set([
   '@tauri-apps/api/event',
   './ImportPanel',
   './ExportPanel',
+  './ProcessingPanel',
   '../../../packages/protocol/src/generated/application-methods-v1',
   './App',
   './model',
   './style.css',
   generatedTypes,
 ]);
-const testImports = new Set([...applicationImports, 'vitest', 'node:assert/strict', 'node:fs', 'node:url']);
+const testImports = new Set([...applicationImports, 'vitest', 'node:assert/strict', 'node:fs', 'node:url', 'react-dom/server']);
 const forbiddenModules = /(@lmstudio\/sdk|lmstudio|better-sqlite3|sqlite|child_process|ipcRenderer|node:net|node:worker_threads)/i;
 
 // The typed commands the Rust shell really registers; a rename in either direction fails here.
@@ -59,7 +60,7 @@ for (const name of readdirSync(new URL('../src/', import.meta.url))) {
   for (const command of calls) invoked.add(command);
   for (const call of withoutPreview.matchAll(/invoke(?:<[^>]*>)?\(([^)]*)\)/g)) {
     const argument = call[1].trim();
-    const typed = /^'(gui_library_page|gui_import|gui_import_report|gui_import_control|gui_export|gui_metadata)',\s*\{\s*(cursor|request)\b/.exec(argument);
+    const typed = /^'(gui_library_page|gui_import|gui_import_report|gui_import_control|gui_export|gui_metadata|gui_processing)',\s*\{\s*(cursor|request)\b/.exec(argument);
     if (typed) {
       assert.equal(typed[2], typed[1] === 'gui_library_page' ? 'cursor' : 'request', 'closed typed argument role');
       invoked.add(typed[1]);

@@ -46,6 +46,24 @@
       ],
       "type": "object"
     },
+    "BatchControl": {
+      "enum": [
+        "pause",
+        "resume",
+        "cancel"
+      ],
+      "type": "string"
+    },
+    "CacheType": {
+      "enum": [
+        "f16",
+        "f32",
+        "q8",
+        "q4",
+        "q5"
+      ],
+      "type": "string"
+    },
     "CanonicalProfile": {
       "enum": [
         "webp_exact",
@@ -194,6 +212,68 @@
       ],
       "type": "object"
     },
+    "HostRetention": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "no_host_eviction",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "idle",
+              "type": "string"
+            },
+            "seconds": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "seconds"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "after_batch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "keep_loaded",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "ImportBatchId": {
       "maxLength": 36,
       "minLength": 36,
@@ -282,6 +362,13 @@
       ],
       "type": "object"
     },
+    "JobControl": {
+      "enum": [
+        "cancel",
+        "retry"
+      ],
+      "type": "string"
+    },
     "LibraryAssetRequest": {
       "additionalProperties": false,
       "description": "S02 §10.1: bounded read of one committed canonical asset.",
@@ -323,6 +410,93 @@
       ],
       "type": "object"
     },
+    "LoadPermission": {
+      "enum": [
+        "allow",
+        "forbid"
+      ],
+      "type": "string"
+    },
+    "ModelProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "context_length": {
+          "format": "uint32",
+          "maximum": 262144,
+          "minimum": 1024,
+          "type": "integer"
+        },
+        "eval_batch_size": {
+          "format": "uint32",
+          "maximum": 2048,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "flash_attention": {
+          "type": "boolean"
+        },
+        "id": {
+          "$ref": "#/$defs/ModelProfileId"
+        },
+        "k_cache": {
+          "$ref": "#/$defs/CacheType"
+        },
+        "max_generation_tokens": {
+          "format": "uint32",
+          "maximum": 4000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "model_key": {
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        },
+        "native_ttl_seconds": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "offload_kv_cache_to_gpu": {
+          "type": "boolean"
+        },
+        "reasoning": {
+          "$ref": "#/$defs/ReasoningMode"
+        },
+        "temperature": {
+          "format": "double",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "v_cache": {
+          "$ref": "#/$defs/CacheType"
+        }
+      },
+      "required": [
+        "id",
+        "model_key",
+        "context_length",
+        "eval_batch_size",
+        "flash_attention",
+        "offload_kv_cache_to_gpu",
+        "k_cache",
+        "v_cache",
+        "max_generation_tokens",
+        "temperature",
+        "reasoning"
+      ],
+      "type": "object"
+    },
+    "ModelProfileId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
     "OperationId": {
       "maxLength": 36,
       "minLength": 36,
@@ -336,10 +510,337 @@
       ],
       "type": "string"
     },
+    "ProcessingBatchId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "ProcessingJobId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "ProcessingMode": {
+      "enum": [
+        "automatic",
+        "manual",
+        "off"
+      ],
+      "type": "string"
+    },
+    "ProcessingPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "background_loading": {
+          "$ref": "#/$defs/LoadPermission"
+        },
+        "mode": {
+          "$ref": "#/$defs/ProcessingMode"
+        },
+        "query_loading": {
+          "$ref": "#/$defs/QueryLoadPermission"
+        },
+        "queue_paused": {
+          "type": "boolean"
+        },
+        "retention": {
+          "$ref": "#/$defs/HostRetention"
+        }
+      },
+      "required": [
+        "mode",
+        "background_loading",
+        "query_loading",
+        "queue_paused",
+        "retention"
+      ],
+      "type": "object"
+    },
+    "ProcessingRequest": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "policy",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "overview",
+              "type": "string"
+            },
+            "before": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ProcessingJobId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Explicit owner inventory only; may start the private bridge, never loads a model.",
+          "properties": {
+            "action": {
+              "const": "inventory",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "update_policy",
+              "type": "string"
+            },
+            "expected_revision": {
+              "$ref": "#/$defs/Revision"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/OperationId"
+            },
+            "value": {
+              "$ref": "#/$defs/ProcessingPolicy"
+            }
+          },
+          "required": [
+            "action",
+            "operation_id",
+            "expected_revision",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "save_profile",
+              "type": "string"
+            },
+            "expected_revision": {
+              "$ref": "#/$defs/Revision"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/OperationId"
+            },
+            "value": {
+              "$ref": "#/$defs/ModelProfile"
+            }
+          },
+          "required": [
+            "action",
+            "operation_id",
+            "expected_revision",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "profile",
+              "type": "string"
+            },
+            "id": {
+              "$ref": "#/$defs/ModelProfileId"
+            }
+          },
+          "required": [
+            "action",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "plan",
+              "type": "string"
+            },
+            "expected_policy_revision": {
+              "$ref": "#/$defs/Revision"
+            },
+            "kind": {
+              "$ref": "#/$defs/WorkKind"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/OperationId"
+            },
+            "profile_id": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ModelProfileId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "records": {
+              "items": {
+                "$ref": "#/$defs/RecordId"
+              },
+              "maxItems": 512,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "action",
+            "operation_id",
+            "expected_policy_revision",
+            "records",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "batch",
+              "type": "string"
+            },
+            "id": {
+              "$ref": "#/$defs/ProcessingBatchId"
+            }
+          },
+          "required": [
+            "action",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "control_batch",
+              "type": "string"
+            },
+            "control": {
+              "$ref": "#/$defs/BatchControl"
+            },
+            "expected_revision": {
+              "$ref": "#/$defs/Revision"
+            },
+            "id": {
+              "$ref": "#/$defs/ProcessingBatchId"
+            }
+          },
+          "required": [
+            "action",
+            "id",
+            "expected_revision",
+            "control"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "control_job",
+              "type": "string"
+            },
+            "control": {
+              "$ref": "#/$defs/JobControl"
+            },
+            "expected_revision": {
+              "$ref": "#/$defs/Revision"
+            },
+            "id": {
+              "$ref": "#/$defs/ProcessingJobId"
+            }
+          },
+          "required": [
+            "action",
+            "id",
+            "expected_revision",
+            "control"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "execution",
+              "type": "string"
+            },
+            "id": {
+              "$ref": "#/$defs/ProcessingJobId"
+            }
+          },
+          "required": [
+            "action",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Read-only durable reconciliation; never authorizes replay/retry or adopts an instance.",
+          "properties": {
+            "action": {
+              "const": "reconcile",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "ProfileId": {
       "maxLength": 128,
       "minLength": 1,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "type": "string"
+    },
+    "QueryLoadPermission": {
+      "enum": [
+        "ask",
+        "allow",
+        "forbid"
+      ],
+      "type": "string"
+    },
+    "ReasoningMode": {
+      "enum": [
+        "backend_default",
+        "off",
+        "budget100"
+      ],
       "type": "string"
     },
     "RecordId": {
@@ -389,6 +890,14 @@
         "consent_id"
       ],
       "type": "object"
+    },
+    "WorkKind": {
+      "enum": [
+        "analyze",
+        "technical_owner_self_test",
+        "technical_owner_background_self_test"
+      ],
+      "type": "string"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -657,6 +1166,23 @@
         },
         "params": {
           "$ref": "#/$defs/ExportRequest"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "const": "processing.request",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/ProcessingRequest"
         }
       },
       "required": [

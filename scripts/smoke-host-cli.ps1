@@ -82,8 +82,8 @@ try {
     Assert-SmokeTrue (Test-PreviewCanonicalUuid $libraryId) 'first-run library identity is not a canonical UUID' 'LIBRARY-IDENTITY'
     $preview.initialized_library_id = $libraryId # this own root's successful --init above
     [void](Write-TrustedPreviewConfig $preview $libraryId $binaries.shotd)
-    # Current foundation plus S02 image/recovery/list migrations; config schema stays 1.
-    Assert-SmokeTrue ([int]$report.schema_version -eq 5) 'first-run storage schema version is not 5' 'SCHEMA-VERSION'
+    # Shipped foundation/S02/S03 plus additive S04 processing; config schema stays 1.
+    Assert-SmokeTrue ([int]$report.schema_version -eq 6) 'first-run storage schema version is not 6' 'SCHEMA-VERSION'
     Assert-SmokeTrue ([int]$report.format_major -eq 1) 'first-run format major is not 1' 'FORMAT-MAJOR'
     Assert-SmokeTrue (Test-Path -LiteralPath (Join-Path $preview.root 'data\library.sqlite3') -PathType Leaf) 'library database was not created in the owned root' 'DATABASE-CREATED'
 
@@ -172,7 +172,7 @@ try {
     }
     Assert-SmokeTrue ($children.Count -eq 0) 'the owned host started a child process (no bridge/model child is expected)' 'NO-CHILD-PROCESS'
     Assert-SmokeTrue ($restarted.ai_enabled -eq $false -and [string]$restarted.bridge_state -eq 'stopped') 'AI or bridge state is not off/stopped' 'NO-AI-STATE'
-    [void]$notes.Add('The workspace dependency boundary suite proves no model, SDK, HTTP client or network crate is linked.')
+    [void]$notes.Add('The owned host has no child processes: AI is off and bridge stopped. Private SDK support is host-only; no live backend was exercised.')
 
     # 9) Stop again and clean up only this owned root and its exact Test credential.
     $finalStop = Invoke-SmokeStep 'CLI-HOST-STOP-FINAL' $binaries.shot @('--config', $preview.config, 'host', 'stop', '--json') 120 0

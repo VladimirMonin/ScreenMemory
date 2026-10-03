@@ -25,6 +25,7 @@ impl CredentialSource {
                 let profile = match key.profile() {
                     Profile::Owner => WireProfile::Owner,
                     Profile::TestReadOnly => WireProfile::TestReadOnly,
+                    Profile::RuntimeBackend => return Err(SessionError::PermissionDenied),
                 };
                 store
                     .read(key)
@@ -304,6 +305,23 @@ impl ApplicationClient {
             {
                 Ok(v)
             }
+            _ => Err(SessionError::UnexpectedResponse.into()),
+        }
+    }
+    pub async fn processing(
+        &self,
+        request: sm_protocol::processing::ProcessingRequest,
+    ) -> Result<sm_protocol::processing::ProcessingReply, ClientError> {
+        match self
+            .call(
+                "processing.request",
+                serde_json::to_value(request).expect("typed request"),
+                10_000,
+                None,
+            )
+            .await?
+        {
+            ApplicationResult::Processing(value) => Ok(*value),
             _ => Err(SessionError::UnexpectedResponse.into()),
         }
     }

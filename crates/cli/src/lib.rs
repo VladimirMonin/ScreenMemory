@@ -6,7 +6,9 @@
 mod args;
 mod image_args;
 mod images;
+mod processing;
 pub use image_args::ImageCommand;
+pub use processing::ProcessingCommand;
 mod config;
 mod exec;
 mod launcher;
@@ -28,6 +30,7 @@ pub const EXIT_USAGE: u8 = 2;
 /// A named record/asset/operation is not found while the state is known.
 pub const EXIT_NOT_FOUND: u8 = 3;
 pub const EXIT_HOST: u8 = 4;
+pub const EXIT_CONFLICT: u8 = 5;
 pub const EXIT_POLICY: u8 = 6;
 pub const EXIT_STORAGE: u8 = 7;
 /// Capture, GDI, canonical save or integrity failure.

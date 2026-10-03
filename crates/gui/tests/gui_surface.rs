@@ -39,12 +39,12 @@ use uuid::Uuid;
 
 struct Roots(PathBuf);
 impl Roots {
-    fn new(label: &str) -> Self {
+    fn new(_label: &str) -> Self {
         let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.pi/temporary");
         fs::create_dir_all(&parent).unwrap();
         let parent = fs::canonicalize(parent).unwrap();
         let parent = PathBuf::from(parent.to_string_lossy().trim_start_matches(r"\\?\"));
-        let root = parent.join(format!("sm-gui-{label}-{}", Uuid::new_v4()));
+        let root = parent.join(Uuid::new_v4().to_string());
         fs::create_dir(&root).unwrap();
         for child in ["data", "config", "cache", "webview"] {
             fs::create_dir(root.join(child)).unwrap();
@@ -416,6 +416,177 @@ fn prepared_roots(
 }
 
 #[test]
+fn s04_interfaces_shared_policy_profile_status_and_refusal_parity() {
+    use sm_domain::{ModelProfileId, OperationId, Revision};
+    use sm_protocol::processing::*;
+    let store = Arc::new(MemoryStore::default());
+    let (rt, roots, library) = prepared_roots("s04", &store);
+    let launcher = Arc::new(InProcessLauncher::new(store.clone()));
+    let deps = CliDeps {
+        store: store.clone(),
+        launcher: launcher.clone(),
+    };
+    let config = write_config(&roots, library, "test", &std::env::current_exe().unwrap());
+    rt.block_on(async {
+        let mut gui = GuiSession::open(load_window_config(&config).unwrap(), deps.clone()).unwrap();
+        assert_eq!(gui.connect().await.state, GuiState::Ready);
+        let target = sm_cli::resolve_target(&load_window_config(&config).unwrap()).unwrap();
+        let backend_key = CredentialKey::runtime_backend(CredentialEnvironment::Test, library);
+        let refused = sm_session::ApplicationClient::connect(
+            &target.endpoint,
+            &target.image,
+            library,
+            None,
+            &sm_session::CredentialSource::Store {
+                store: store.clone(),
+                key: backend_key,
+            },
+            BufferBudget::new(),
+        )
+        .await;
+        assert!(
+            matches!(refused, Err(sm_session::SessionError::PermissionDenied)),
+            "backend profile never authenticates application session"
+        );
+        let ProcessingReply::Overview(initial) = gui
+            .processing(ProcessingRequest::Overview { before: None })
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(initial.policy.value.mode, ProcessingMode::Off);
+        assert!(
+            !initial.runtime_configured
+                && !initial.model_autostart
+                && !initial.physical_unload_supported
+        );
+        assert!(initial.jobs.is_empty());
+        for (mode, background, query) in [
+            ("manual", "forbid", "ask"),
+            ("automatic", "allow", "forbid"),
+            ("off", "forbid", "allow"),
+        ] {
+            let argv = [
+                "--config",
+                config_arg(&config).as_str(),
+                "processing",
+                "policy",
+                "--mode",
+                mode,
+                "--background",
+                background,
+                "--query",
+                query,
+            ]
+            .map(str::to_owned)
+            .to_vec();
+            let mut out = Vec::new();
+            let mut err = Vec::new();
+            assert_eq!(run(&argv, &deps, &mut out, &mut err).await, 0);
+            let cli = single_json(&out);
+            let gui_value =
+                serde_json::to_value(gui.processing(ProcessingRequest::Policy {}).await.unwrap())
+                    .unwrap();
+            assert_eq!(cli, gui_value);
+        }
+        let ProcessingReply::Policy(old) =
+            gui.processing(ProcessingRequest::Policy {}).await.unwrap()
+        else {
+            panic!()
+        };
+        let mut unsupported = old.value.clone();
+        unsupported.retention = HostRetention::KeepLoaded;
+        assert_eq!(
+            gui.processing(ProcessingRequest::UpdatePolicy {
+                operation_id: OperationId::new(Uuid::new_v4()),
+                expected_revision: old.revision,
+                value: unsupported
+            })
+            .await
+            .unwrap_err(),
+            "MODEL_CONFIG_UNSUPPORTED"
+        );
+        let profile = ModelProfile {
+            id: ModelProfileId::new(Uuid::new_v4()),
+            model_key: "synthetic/vision.gguf".into(),
+            context_length: 4096,
+            eval_batch_size: 256,
+            flash_attention: true,
+            offload_kv_cache_to_gpu: true,
+            k_cache: CacheType::F16,
+            v_cache: CacheType::Q8,
+            native_ttl_seconds: Some(900),
+            max_generation_tokens: 4000,
+            temperature: 0.2,
+            reasoning: ReasoningMode::Off,
+        };
+        for reasoning in [ReasoningMode::Off, ReasoningMode::Budget100] {
+            let mut refused = profile.clone();
+            refused.reasoning = reasoning;
+            assert_eq!(
+                gui.processing(ProcessingRequest::SaveProfile {
+                    operation_id: OperationId::new(Uuid::new_v4()),
+                    expected_revision: Revision::new(0),
+                    value: refused
+                })
+                .await
+                .unwrap_err(),
+                "MODEL_CONFIG_UNSUPPORTED"
+            );
+        }
+        let mut supported = profile;
+        supported.reasoning = ReasoningMode::BackendDefault;
+        let json = serde_json::to_string(&supported).unwrap();
+        let argv = vec![
+            "--config".into(),
+            config_arg(&config),
+            "processing".into(),
+            "save-profile".into(),
+            "--revision".into(),
+            "0".into(),
+            "--profile-json".into(),
+            json,
+        ];
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        assert_eq!(run(&argv, &deps, &mut out, &mut err).await, 0);
+        assert_eq!(
+            single_json(&out),
+            serde_json::to_value(
+                gui.processing(ProcessingRequest::Profile { id: supported.id })
+                    .await
+                    .unwrap()
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            gui.processing(ProcessingRequest::Inventory {})
+                .await
+                .unwrap_err(),
+            "RUNTIME_UNAVAILABLE"
+        );
+        assert!(matches!(
+            gui.status(false).await.unwrap().bridge_state,
+            BridgeState::Stopped
+        ));
+        let host = gui.status(false).await.unwrap().host_instance_id;
+        drop(gui);
+        let mut reopened = GuiSession::open(load_window_config(&config).unwrap(), deps).unwrap();
+        assert_eq!(reopened.status(false).await.unwrap().host_instance_id, host);
+        let ProcessingReply::Overview(after) = reopened
+            .processing(ProcessingRequest::Overview { before: None })
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(after.profiles.len(), 1);
+        launcher.shutdown().await;
+    });
+}
+
+#[test]
 fn t06d_gui_01_arguments_and_config_refusals_are_stable() {
     let store = Arc::new(MemoryStore::default());
     let rt = runtime();
@@ -633,9 +804,8 @@ fn t06d_gui_03_real_host_states_and_instance_reuse_on_reopen() {
             sm_protocol::application::HostState::Ready
         ));
         assert_eq!(host.protocol, APPLICATION_VERSION);
-        // Images (0002), saved operations (0003), and pending intents (0004) are applied, so
-        // the real host reports global schema 4 (images contract remains 2).
-        assert_eq!(host.schema_version, 5);
+        // All shipped migrations are applied; the images contract remains version 2.
+        assert_eq!(host.schema_version, 6);
         assert!(!host.ai_enabled);
         assert!(matches!(host.bridge_state, BridgeState::Stopped));
         assert!(!runtime_available(host));
@@ -980,7 +1150,7 @@ fn t06d_gui_07_state_mapping_is_total_and_shows_no_invented_counts() {
         .not_implemented
         .iter()
         .any(|name| name == "gallery"));
-    for capability in ["search", "model_settings", "bridge_runtime"] {
+    for capability in ["search", "knowledge_pipeline"] {
         assert!(diagnostics
             .not_implemented
             .iter()
@@ -1066,6 +1236,19 @@ fn t06d_gui_09_autostart_uses_the_configured_fixed_image_once() {
         assert_eq!(launcher.calls(), 1);
         launcher.shutdown().await;
     });
+}
+
+#[test]
+fn s04_processing_revision_conflict_keeps_host_ready() {
+    assert_eq!(
+        state_for_failure(&sm_cli::ClientFailure {
+            exit: 5,
+            code: ErrorCode::RevisionConflict,
+            message: "conflict",
+            retryable: false
+        }),
+        GuiState::Ready
+    );
 }
 
 #[test]

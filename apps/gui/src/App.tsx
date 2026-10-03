@@ -27,6 +27,7 @@ import {
 } from './model';
 import ImportPanel from './ImportPanel';
 import ExportPanel from './ExportPanel';
+import ProcessingPanel from './ProcessingPanel';
 import './style.css';
 
 /** The only commands this window may call; they are the same handlers `crates/gui` registers. */
@@ -246,6 +247,7 @@ export default function App() {
     <main>
       <h1>ScreenMemory</h1>
       <p>Локальная библиотека · сборка {guiBuild.version}</p>
+      <ProcessingPanel recordId={selected?.id ?? null} libraryId={report?.host?.library_id ?? null} />
       <section aria-label="Недавние снимки">
         <h2>Недавние снимки</h2>
         <button disabled={recentLoading} onClick={() => void refreshRecent()}>Обновить список</button>
@@ -350,10 +352,10 @@ export default function App() {
       )}
       <section>
         <h2>Вне текущего этапа</h2>
-        <p>Поиск, настройки моделей и AI bridge — не реализовано на этом этапе. Preview — проверенный WebP ≤8 MiB; AVIF и большие каноны показываются через bounded derivative без изменения оригинала.</p>
+        <p>Поиск и OCR/описания S05 — не реализовано на этом этапе. S04 настройки/очередь доступны выше; private SDK работает только у host. Preview — проверенный WebP ≤8 MiB; AVIF и большие каноны показываются через bounded derivative без изменения оригинала.</p>
         {absentCapabilities.length > 0 && <p>Отсутствующие возможности по данным host: {absentCapabilities.join(', ')}.</p>}
       </section>
-      <p>Закрытие окна не останавливает host. Вызовов моделей и загрузки весов нет.</p>
+      <p>Закрытие окна не останавливает host и не отменяет принятую работу. Модель вызывается только явно разрешённой работой; скачивания весов нет.</p>
     </main>
   );
 }

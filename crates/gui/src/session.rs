@@ -53,6 +53,19 @@ impl GuiSession {
         })
     }
 
+    pub async fn processing(
+        &mut self,
+        request: sm_protocol::processing::ProcessingRequest,
+    ) -> Result<sm_protocol::processing::ProcessingReply, String> {
+        self.ensure(true).await.map_err(gui_code)?;
+        let result = self
+            .client
+            .as_ref()
+            .expect("connected")
+            .processing(request)
+            .await;
+        self.finish(result).map_err(gui_code)
+    }
     pub fn library_id(&self) -> LibraryId {
         self.config.library_id
     }

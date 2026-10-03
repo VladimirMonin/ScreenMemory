@@ -268,7 +268,7 @@ fn s02_images_01_migration_applies_all_versions_and_stays_reopenable() {
     let f = Fixture::new();
     let worker = StorageWorker::start(f.lease()).unwrap();
     let snapshot = f.rt(worker.schema_snapshot()).unwrap();
-    assert_eq!(snapshot.schema_version, 5);
+    assert_eq!(snapshot.schema_version, 6);
     assert_eq!(
         snapshot.images.migration_version, 2,
         "0003 and 0004 add global journals without changing the images schema contract"
@@ -803,12 +803,12 @@ fn s02_images_09_upgrade_from_foundation_is_atomic_and_adds_no_rows() {
     let library_id = write_foundation_library(&f);
     let worker = StorageWorker::start(f.lease()).unwrap();
     let snapshot = f.rt(worker.schema_snapshot()).unwrap();
-    assert_eq!(snapshot.schema_version, 5);
+    assert_eq!(snapshot.schema_version, 6);
     assert_eq!(snapshot.library_id, library_id);
     assert!(!f.rt(worker.read_ai_enabled()).unwrap());
     f.close(&worker);
     let db = direct(&f.db());
-    assert_eq!(count(&db, "schema_migrations"), 5);
+    assert_eq!(count(&db, "schema_migrations"), 6);
     assert_eq!(count(&db, "records"), 0);
     assert_eq!(count(&db, "assets"), 0);
     let stored: String = db
@@ -842,7 +842,7 @@ fn s02_images_09_upgrade_from_foundation_is_atomic_and_adds_no_rows() {
     assert!(broken.published_files().is_empty());
     // The retry completes the interrupted upgrade exactly once.
     let worker = StorageWorker::start(broken.lease()).unwrap();
-    assert_eq!(f.rt(worker.schema_snapshot()).unwrap().schema_version, 5);
+    assert_eq!(f.rt(worker.schema_snapshot()).unwrap().schema_version, 6);
     assert_eq!(
         broken
             .rt(worker.page_records(RecordPageQuery::first(None).unwrap()))
@@ -854,7 +854,7 @@ fn s02_images_09_upgrade_from_foundation_is_atomic_and_adds_no_rows() {
     );
     broken.close(&worker);
     let db = direct(&broken.db());
-    assert_eq!(count(&db, "schema_migrations"), 5);
+    assert_eq!(count(&db, "schema_migrations"), 6);
 }
 
 #[test]
@@ -1142,7 +1142,7 @@ fn s02_t09a_14_v2_upgrade_to_latest_is_atomic_reopenable_and_keeps_images_contra
     let library_id = write_images_v2_library(&f);
     let worker = StorageWorker::start(f.lease()).unwrap();
     let snapshot = f.rt(worker.schema_snapshot()).unwrap();
-    assert_eq!(snapshot.schema_version, 5);
+    assert_eq!(snapshot.schema_version, 6);
     assert_eq!(snapshot.library_id, library_id);
     assert_eq!(
         snapshot.images.migration_version, 2,
@@ -1151,7 +1151,7 @@ fn s02_t09a_14_v2_upgrade_to_latest_is_atomic_reopenable_and_keeps_images_contra
     f.close(&worker);
 
     let db = direct(&f.db());
-    assert_eq!(count(&db, "schema_migrations"), 5);
+    assert_eq!(count(&db, "schema_migrations"), 6);
     assert_eq!(count(&db, "ingest_operations"), 0);
     let checksum: String = db
         .query_row(
@@ -1207,7 +1207,7 @@ fn s02_t09a_14_v2_upgrade_to_latest_is_atomic_reopenable_and_keeps_images_contra
     );
     broken.close(&worker);
     let db = direct(&broken.db());
-    assert_eq!(count(&db, "schema_migrations"), 5);
+    assert_eq!(count(&db, "schema_migrations"), 6);
     assert_eq!(count(&db, "ingest_operations"), 0);
 }
 
@@ -1231,12 +1231,12 @@ fn s02_t09m1_01_v3_upgrade_rollback_checksum_and_reopen() {
     let library_id = write_operations_v3_library(&f);
     let worker = StorageWorker::start(f.lease()).unwrap();
     let snapshot = f.rt(worker.schema_snapshot()).unwrap();
-    assert_eq!(snapshot.schema_version, 5);
+    assert_eq!(snapshot.schema_version, 6);
     assert_eq!(snapshot.images.migration_version, 2);
     assert_eq!(snapshot.library_id, library_id);
     f.close(&worker);
     let db = direct(&f.db());
-    assert_eq!(count(&db, "schema_migrations"), 5);
+    assert_eq!(count(&db, "schema_migrations"), 6);
     assert_eq!(count(&db, "capture_intents"), 0);
     let checksums: Vec<String> = db
         .prepare("SELECT checksum FROM schema_migrations ORDER BY version")

@@ -38,7 +38,7 @@ use uuid::Uuid;
 /// Capability list negotiated by exactly one build of this workspace. S02 adds the two
 /// capture handlers; a peer that does not speak the same list is refused instead of being
 /// served a method it cannot decode.
-pub const CAPABILITIES: [&str; 12] = [
+pub const CAPABILITIES: [&str; 13] = [
     "system.status",
     "system.doctor",
     "system.request_shutdown",
@@ -51,6 +51,7 @@ pub const CAPABILITIES: [&str; 12] = [
     "library.export",
     "library.asset.preview",
     "library.record.metadata",
+    "processing.request",
 ];
 const HANDSHAKE_TIME: Duration = Duration::from_secs(3);
 const MAX_ACTIVE: usize = 8;
@@ -128,6 +129,7 @@ pub struct SessionHost {
     control: Arc<dyn FoundationControlApi>,
     capture: Option<Arc<dyn CaptureApi>>,
     images: Option<Arc<dyn ImageLibraryApi>>,
+    processing: Option<Arc<dyn sm_application::processing::ProcessingApi>>,
     budget: BufferBudget,
 }
 impl SessionHost {
@@ -151,8 +153,16 @@ impl SessionHost {
             control,
             capture,
             images: None,
+            processing: None,
             budget,
         }
+    }
+    pub fn with_processing(
+        mut self,
+        processing: Arc<dyn sm_application::processing::ProcessingApi>,
+    ) -> Self {
+        self.processing = Some(processing);
+        self
     }
     pub fn with_images(mut self, images: Arc<dyn ImageLibraryApi>) -> Self {
         self.images = Some(images);
@@ -288,13 +298,14 @@ impl SessionHost {
                             let control = self.control.clone();
                             let capture = self.capture.clone();
                             let images = self.images.clone();
+                            let processing = self.processing.clone();
                             let context = context.for_request(id, CorrelationId::new(Uuid::new_v4()));
                             let library = self.library;
                             tasks.spawn(async move {
                                 let response = tokio::select! {
                                     biased;
                                     _ = token.cancelled() => response_error(id, ErrorCode::WaitTimeout),
-                                    result = dispatch(request, library, context, foundation, control, capture.clone(), images, token.clone()) => result,
+                                    result = dispatch(request, library, context, foundation, control, capture.clone(), images, processing, token.clone()) => result,
                                 };
                                 // Keep the active ID/slot until a terminal response is actually sent.
                                 writer.send(Phase::Application, &response).await.map_err(|_| ())?;
@@ -392,6 +403,7 @@ async fn dispatch(
     control: Arc<dyn FoundationControlApi>,
     capture: Option<Arc<dyn CaptureApi>>,
     images: Option<Arc<dyn ImageLibraryApi>>,
+    processing: Option<Arc<dyn sm_application::processing::ProcessingApi>>,
     cancel: CancellationToken,
 ) -> Response {
     let id = request.request_id;
@@ -421,6 +433,7 @@ async fn dispatch(
             | "library.import.report"
             | "library.import.control"
             | "library.export"
+            | "processing.request"
     ) {
         return Response::Error {
             request_id: id,
@@ -452,6 +465,16 @@ async fn dispatch(
         | KnownParams::ImportReportPage(_)
         | KnownParams::ImportControl(_) => Scope::ImportFiles,
         KnownParams::Export(_) => Scope::ExportImages,
+        KnownParams::Processing(
+            sm_protocol::processing::ProcessingRequest::Policy {}
+            | sm_protocol::processing::ProcessingRequest::Profile { .. }
+            | sm_protocol::processing::ProcessingRequest::Batch { .. }
+            | sm_protocol::processing::ProcessingRequest::Execution { .. }
+            | sm_protocol::processing::ProcessingRequest::Reconcile {}
+            | sm_protocol::processing::ProcessingRequest::Overview { .. }
+            | sm_protocol::processing::ProcessingRequest::Inventory {},
+        ) => Scope::ReadProcessing,
+        KnownParams::Processing(_) => Scope::ManageProcessing,
     };
     if !ctx.allows(scope) {
         return fail(ErrorCode::PermissionDenied);
@@ -461,6 +484,13 @@ async fn dispatch(
     }
     let operation = async {
         match params {
+            KnownParams::Processing(request) => match processing {
+                Some(api) => api
+                    .processing(ctx, request)
+                    .await
+                    .map(|reply| ApplicationResult::Processing(Box::new(reply))),
+                None => Err(AppError::method_not_supported()),
+            },
             KnownParams::Status(_) => foundation.status(ctx).await.map(ApplicationResult::Status),
             KnownParams::Doctor(d) if !d.include_runtime_inventory => foundation
                 .doctor(ctx, d, cancel.clone())

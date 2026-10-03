@@ -1,0 +1,18 @@
+{
+  "name": "@screenmemory/lmstudio-bridge",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": { "node": "24.13.0" },
+  "packageManager": "pnpm@10.32.1",
+  "scripts": {
+    "typecheck": "node ../protocol/node_modules/typescript/bin/tsc --project tsconfig.json && node --check src/bridge.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@lmstudio/sdk": "file:vendor/sdk-2.0.0.tgz",
+    "jsonschema": "1.5.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": { "ws": "8.18.3" }
+}

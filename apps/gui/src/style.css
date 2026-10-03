@@ -1,3 +1,8 @@
+.processing-panel { margin: 1rem 0; padding: 1rem; border: 1px solid #64748b; border-radius: .5rem; }
+.processing-panel summary { cursor: pointer; font-weight: 600; }
+.processing-panel label { display: inline-flex; flex-direction: column; margin: .4rem .6rem .4rem 0; }
+.processing-panel button { margin: .3rem; }
+.processing-ledger { max-height: 24rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 :root { font-family: system-ui, sans-serif; color: #e5eaf2; background: #18212e; }
 body { margin: 0; }
 main { max-width: 900px; padding: 24px; margin: auto; }

@@ -42,6 +42,38 @@ fn error_code(response: Response) -> ErrorCode {
 }
 
 #[test]
+fn s04_processing_strict_positive_negative_fixtures() {
+    let responses: Vec<Value> = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/protocol/processing-execution-responses.json"
+    ))
+    .unwrap();
+    for case in responses {
+        assert_eq!(
+            serde_json::from_value::<Response>(case["frame"].clone()).is_ok(),
+            case["valid"].as_bool().unwrap()
+        );
+        if let Some(tokens) = case["reject_generated_tokens"].as_array() {
+            for token in tokens {
+                let mut frame = case["frame"].clone();
+                frame["result"]["value"]["value"]["probe_result"]["generated_tokens"] =
+                    token.clone();
+                assert!(serde_json::from_value::<Response>(frame).is_err());
+            }
+        }
+    }
+    let cases: Vec<Value> = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/protocol/processing-cases.json"
+    ))
+    .unwrap();
+    for case in cases {
+        assert_eq!(
+            serde_json::from_value::<KnownParams>(case["value"].clone()).is_ok(),
+            case["valid"].as_bool().unwrap()
+        );
+    }
+}
+
+#[test]
 fn s01_ipc_03_valid_requests_route_once_and_precision_survives() {
     let called = Cell::new(0);
     let result = route(fixture(), &called);

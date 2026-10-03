@@ -138,6 +138,7 @@ pub struct ShutdownOutcome {
     pub command_drain_in_budget: bool,
     /// False if the hotkey consumer outlived grace or unexpectedly stopped.
     pub hotkey_drain_in_budget: bool,
+    pub processing_drain_in_budget: bool,
 }
 impl ShutdownOutcome {
     pub fn exit_code(self) -> u8 {
@@ -145,6 +146,7 @@ impl ShutdownOutcome {
             && self.serve_ok
             && self.command_drain_in_budget
             && self.hotkey_drain_in_budget
+            && self.processing_drain_in_budget
         {
             crate::EXIT_OK
         } else {
@@ -248,15 +250,40 @@ fn emit_startup_failure(mut logger: BoundedLogger, error: HostError) -> HostErro
 /// handshake runs on a dedicated blocking thread; the runtime thread only awaits typed
 /// storage responses.
 pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, HostError> {
-    // Validate optional fixed package authority before creating a lease, DB or native owner.
-    let image_worker = tokio::task::spawn_blocking(package_worker)
-        .await
-        .map_err(|_| HostError::Compose)??;
+    bootstrap_inner(options, None, false).await
+}
+/// Explicit trusted host configuration; never accepted from an application request or ENV.
+pub async fn bootstrap_with_processing(
+    options: BootstrapOptions,
+    runtime: crate::processing::TrustedProcessingRuntime,
+) -> Result<BootstrappedHost, HostError> {
+    bootstrap_inner(options, Some(runtime), false).await
+}
+/// Production entry: fixed installed package and host-owned library configuration.
+pub async fn bootstrap_from_installation(
+    options: BootstrapOptions,
+) -> Result<BootstrappedHost, HostError> {
+    bootstrap_inner(options, None, true).await
+}
+async fn bootstrap_inner(
+    options: BootstrapOptions,
+    mut runtime: Option<crate::processing::TrustedProcessingRuntime>,
+    installed_config: bool,
+) -> Result<BootstrappedHost, HostError> {
+    // Package/worker are pinned before lease/DB/listener. No runtime start at bootstrap.
+    let image_worker = if let Some(config) = runtime.as_ref() {
+        Some(config.image_worker())
+    } else {
+        tokio::task::spawn_blocking(package_worker)
+            .await
+            .map_err(|_| HostError::Compose)??
+    };
     let mode = options.mode;
     let root = options.root.clone();
     let store = options.store.clone();
     let capture = options.capture;
-    let prepared = tokio::task::spawn_blocking(move || prepare(&root))
+    let prepare_root = root.clone();
+    let prepared = tokio::task::spawn_blocking(move || prepare(&prepare_root))
         .await
         .map_err(|_| HostError::Compose)??;
     let snapshot = prepared
@@ -268,6 +295,9 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
         return Err(HostError::Storage(StorageError::IntegrityFailed));
     }
     let library = LibraryId::new(snapshot.library_id);
+    if installed_config && mode == BootstrapMode::Serve {
+        runtime = crate::runtime_config::open(&root, library, store.clone(), image_worker.clone())?;
+    }
     // Step 5a: credential policy first. The owner credential is enrolled/reopened explicitly
     // (Test namespace only) while the lease is held and *before* the bounded logger starts:
     // S01 §6.3 step 5 orders credential/session policy, then structured logs and minimal
@@ -364,10 +394,22 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
         capture.clone(),
         BufferBudget::new(),
     );
-    if let Some(images) = images {
+    if let Some(images) = images.as_ref() {
         services.enable_images();
-        session = session.with_images(images);
+        session = session.with_images(images.clone());
     }
+    let processing = Arc::new(
+        crate::processing::ProcessingServices::compose(
+            prepared.storage.clone(),
+            host_instance,
+            runtime,
+            images.clone(),
+        )
+        .await
+        .map_err(|_| HostError::Compose)?,
+    );
+    services.bind_runtime_status(processing.runtime_status());
+    session = session.with_processing(processing.clone());
     let session = Arc::new(session);
     // Step 6: the sealed listener exists before any readiness claim; connections are
     // only accepted once `serve` runs the bounded loop.
@@ -381,6 +423,7 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
                 let _ = close_hotkeys(hotkey_task).await;
                 command_tasks.drain().await;
                 // No detached consumer or lease may survive a failed bind.
+                let _ = processing.shutdown().await;
                 let _ = prepared.storage.shutdown(SHUTDOWN_BUDGET).await;
                 return Err(emit_startup_failure(logger, HostError::Endpoint));
             }
@@ -419,6 +462,7 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
         storage: prepared.storage,
         logger,
         services,
+        processing,
         hotkey_task,
         command_tasks,
     })
@@ -508,6 +552,7 @@ pub struct BootstrappedHost {
     storage: StorageWorker,
     logger: BoundedLogger,
     services: Arc<FoundationServices>,
+    processing: Arc<crate::processing::ProcessingServices>,
     hotkey_task: Option<HotkeyConsumer>,
     command_tasks: Arc<CommandTasks>,
 }
@@ -550,6 +595,7 @@ impl BootstrappedHost {
             storage,
             mut logger,
             services,
+            processing,
             hotkey_task,
             command_tasks,
             ..
@@ -589,6 +635,7 @@ impl BootstrappedHost {
         } else {
             true
         };
+        let processing_drain_in_budget = processing.shutdown().await;
         let storage_closed = storage.shutdown(SHUTDOWN_BUDGET).await.is_ok();
         let sink_failed = logger.counters().sink_failed;
         let mut stopped = SafeEvent::new(
@@ -600,6 +647,7 @@ impl BootstrappedHost {
         stopped.outcome = Some(
             if storage_closed
                 && drained_in_budget
+                && processing_drain_in_budget
                 && hotkey_drain_in_budget
                 && serve_ok
                 && sink_failed == 0
@@ -624,6 +672,7 @@ impl BootstrappedHost {
             serve_ok,
             command_drain_in_budget: drained_in_budget,
             hotkey_drain_in_budget,
+            processing_drain_in_budget,
         }
     }
 }

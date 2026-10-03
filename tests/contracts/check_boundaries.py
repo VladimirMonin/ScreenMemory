@@ -5,7 +5,7 @@ import tomllib
 
 root = Path(__file__).resolve().parents[2]
 workspace = tomllib.loads((root / 'Cargo.toml').read_text(encoding='utf-8'))['workspace']
-assert set(workspace['members']) == {'crates/domain', 'crates/protocol', 'crates/application', 'crates/observability', 'crates/isolation', 'crates/storage', 'crates/codec', 'crates/image', 'crates/image-worker', 'crates/credentials', 'crates/framing', 'crates/pipe', 'crates/capture', 'crates/session', 'crates/host', 'crates/cli', 'crates/gui'}
+assert set(workspace['members']) == {'crates/domain', 'crates/protocol', 'crates/application', 'crates/observability', 'crates/isolation', 'crates/storage', 'crates/codec', 'crates/image', 'crates/image-worker', 'crates/runtime', 'crates/credentials', 'crates/framing', 'crates/pipe', 'crates/capture', 'crates/session', 'crates/host', 'crates/cli', 'crates/gui'}
 allowed = {
     'domain': {'serde', 'uuid', 'schemars'},
     'protocol': {'sm-domain', 'serde', 'serde_json', 'schemars', 'time'},
@@ -16,12 +16,13 @@ allowed = {
     'codec': {'libwebp-sys'},
     'image': {'sm-codec', 'serde', 'sha2', 'image', 'libavif-sys', 'libaom-sys', 'kamadak-exif', 'quick-xml', 'lcms2', 'time'},
     'image-worker': {'sm-image', 'serde', 'serde_json', 'sha2', 'uuid', 'windows-sys'},
+    'runtime': {'sm-application', 'sm-domain', 'sm-protocol', 'sm-storage', 'async-trait', 'serde', 'serde_json', 'uuid', 'sha2', 'zeroize', 'getrandom', 'tokio-util', 'tokio', 'windows-sys'},
     'credentials': {'sm-application', 'sm-isolation', 'windows-sys', 'zeroize'},
     'framing': {'serde', 'serde_json', 'tokio', 'zeroize'},
     'pipe': {'sm-isolation', 'sha2', 'tokio', 'windows-sys'},
     'capture': {'sm-application', 'uuid', 'windows-sys'},
     'session': {'sm-application', 'sm-domain', 'sm-protocol', 'sm-framing', 'sm-pipe', 'serde', 'serde_json', 'uuid', 'tokio-util', 'tokio'},
-    'host': {'sm-application', 'sm-capture', 'sm-codec', 'sm-credentials', 'sm-domain', 'sm-framing', 'sm-isolation', 'sm-observability', 'sm-pipe', 'sm-protocol', 'sm-session', 'sm-storage', 'sm-image-worker', 'sha2', 'async-trait', 'serde', 'serde_json', 'tokio', 'tokio-util', 'uuid'},
+    'host': {'sm-application', 'sm-capture', 'sm-codec', 'sm-credentials', 'sm-domain', 'sm-framing', 'sm-isolation', 'sm-observability', 'sm-pipe', 'sm-protocol', 'sm-session', 'sm-storage', 'sm-runtime', 'sm-image-worker', 'sha2', 'async-trait', 'serde', 'serde_json', 'tokio', 'tokio-util', 'uuid', 'zeroize'},
     'cli': {'sm-application', 'sm-credentials', 'sm-domain', 'sm-framing', 'sm-isolation', 'sm-pipe', 'sm-protocol', 'sm-session', 'serde', 'serde_json', 'tokio', 'uuid', 'windows-sys'},
     'gui': {'sm-application', 'sm-cli', 'sm-credentials', 'sm-domain', 'sm-isolation', 'sm-protocol', 'sm-session', 'serde', 'serde_json', 'sha2', 'tauri', 'tokio', 'uuid', 'windows-sys'},
 }
@@ -62,7 +63,10 @@ for crate, expected in allowed.items():
     if crate == 'session':
         assert set(manifest['dev-dependencies']) == {'async-trait', 'sm-isolation', 'sm-storage', 'sm-image', 'sm-image-worker'}
     if crate == 'host':
-        assert 'dev-dependencies' not in manifest, 'host composition tests use the production ports only'
+        # Exact host backend authority owns zeroization; SDK remains outside clients.
+        assert not manifest['dev-dependencies']
+        assert manifest['dependencies']['zeroize'] == {'workspace': True}
+        assert manifest['features'] == {'processing-test-seams': ['sm-storage/processing-test-seams']}
     if crate == 'cli':
         assert set(manifest['dev-dependencies']) == {'sm-host', 'tokio-util', 'uuid'}
     if crate == 'gui':
@@ -84,7 +88,7 @@ for crate, expected in allowed.items():
             forbidden_modules = ('rusqlite::', 'sm_storage::', 'std::fs::', 'std::net::', 'std::env::', 'winapi::', 'windows::', 'tauri::', 'lmstudio::', 'println!', 'eprintln!', 'log::', 'tracing::')
         for forbidden in forbidden_modules:
             assert forbidden not in text, (crate, source.name, forbidden)
-        if crate not in ('observability', 'isolation', 'storage', 'credentials', 'pipe', 'session', 'host', 'cli', 'gui', 'image-worker'):
+        if crate not in ('observability', 'isolation', 'storage', 'credentials', 'pipe', 'session', 'host', 'cli', 'gui', 'image-worker', 'runtime'):
             for forbidden in ('windows::', 'std::fs::'):
                 assert forbidden not in text, (crate, source.name, forbidden)
 # S01-T05d boundaries: the CLI never opens the library database, never links the storage
@@ -93,7 +97,7 @@ cli_sources = {source.name: source.read_text(encoding='utf-8') for source in (ro
 for name, text in cli_sources.items():
     for forbidden in ('sm_storage::', 'rusqlite::', 'Connection::open', 'sqlite'):
         assert forbidden not in text, ('cli', name, forbidden)
-assert set(cli_sources) == {'args.rs', 'config.rs', 'exec.rs', 'launcher.rs', 'lib.rs', 'main.rs', 'output.rs', 'image_args.rs', 'images.rs'}
+assert set(cli_sources) == {'args.rs', 'config.rs', 'exec.rs', 'launcher.rs', 'lib.rs', 'main.rs', 'output.rs', 'image_args.rs', 'images.rs', 'processing.rs'}
 assert 'std::fs::OpenOptions' in cli_sources['exec.rs'], 'the capture copy writes only its explicit --output file'
 assert 'Command::new' in cli_sources['launcher.rs']
 for name, text in cli_sources.items():
@@ -128,7 +132,7 @@ assert 'rusqlite::' not in (root / 'crates/application/src/storage.rs').read_tex
 # S02 images storage: the owner keeps its single writer, the canonical file layout and
 # the closed canonical-format vocabulary; the codec never reaches the filesystem.
 storage_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/storage/src').rglob('*.rs')}
-assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_files.rs', 'staging_tests.rs', 'staging_recovery_tests.rs', 'staging_files_tests.rs', 'file_lane_tests.rs', 'tests.rs', 'image_tests.rs', 'intents.rs', 'intent_tests.rs', 'match_recovery.rs', 'match_recovery_tests.rs', 'recovery_candidate.rs', 'recovery_commit.rs', 'recovery_commit_tests.rs', 'recovery_process_tests.rs', 'image_services.rs', 'import_db.rs', 'import_tests.rs', 'library_views.rs'}
+assert set(storage_sources) == {'lib.rs', 'migration.rs', 'images.rs', 'staging.rs', 'staging_files.rs', 'staging_tests.rs', 'staging_recovery_tests.rs', 'staging_files_tests.rs', 'file_lane_tests.rs', 'tests.rs', 'image_tests.rs', 'intents.rs', 'intent_tests.rs', 'match_recovery.rs', 'match_recovery_tests.rs', 'recovery_candidate.rs', 'recovery_commit.rs', 'recovery_commit_tests.rs', 'recovery_process_tests.rs', 'image_services.rs', 'import_db.rs', 'import_tests.rs', 'library_views.rs', 'processing.rs', 'processing_execution.rs', 'processing_tests.rs'}
 # T09m2: only the SQLite worker receives the path-free intent request; read scopes
 # principal/mode/request before projecting row contents and never writes stage/canonical.
 assert 'CreateIntent(' in storage_sources['lib.rs'] and 'intents::create(&mut db' in storage_sources['lib.rs']
@@ -257,7 +261,7 @@ assert 'validate_staging(' in storage_sources['staging_files.rs']
 assert 'StagingTempKind::ManifestJson' in storage_sources['staging_files.rs'], \
     'the manifest must be the last published artifact'
 assert 'std::fs::' not in storage_sources['staging.rs'], ('storage', 'staging.rs')
-assert {path.name for path in (root / 'crates/storage/migrations').glob('*.sql')} == {'0001_foundation.sql', '0002_images.sql', '0003_operations.sql', '0004_capture_intents.sql', '0005_import_export.sql'}
+assert {path.name for path in (root / 'crates/storage/migrations').glob('*.sql')} == {'0001_foundation.sql', '0002_images.sql', '0003_operations.sql', '0004_capture_intents.sql', '0005_import_export.sql', '0006_processing.sql'}
 intents_sql = (root / 'crates/storage/migrations/0004_capture_intents.sql').read_text(encoding='utf-8')
 assert 'CREATE TABLE capture_intents (' in intents_sql
 for column in ('operation_id', 'principal_id'):
@@ -335,7 +339,7 @@ gui_package = json.loads((root / 'apps/gui/package.json').read_text(encoding='ut
 assert set(gui_package['dependencies']) == {'@tauri-apps/api', 'react', 'react-dom'}
 assert set(gui_package['devDependencies']) == {'@types/react', '@types/react-dom', 'typescript', 'vite', 'vitest'}
 frontend = {source.name: source.read_text(encoding='utf-8') for source in (root / 'apps/gui/src').glob('*') if source.suffix in ('.ts', '.tsx')}
-assert set(frontend) == {'App.tsx', 'main.tsx', 'model.ts', 'model.test.ts', 'ImportPanel.tsx', 'ExportPanel.tsx'}
+assert set(frontend) == {'App.tsx', 'main.tsx', 'model.ts', 'model.test.ts', 'ImportPanel.tsx', 'ExportPanel.tsx', 'ProcessingPanel.tsx', 'ProcessingPanel.test.tsx'}
 for name, text in frontend.items():
     for forbidden in ('@lmstudio/sdk', 'better-sqlite3', 'sqlite', 'child_process', 'XMLHttpRequest'):
         assert forbidden not in text, ('gui-frontend', name, forbidden)
@@ -366,4 +370,4 @@ assert '"capture.command"' in protocol_capture and '"library.asset.read"' in pro
 assert 'struct CaptureCommandParams' in protocol_capture and 'enum CaptureOutcome' in protocol_capture
 session_sources = {source.name: source.read_text(encoding='utf-8') for source in (root / 'crates/session/src').rglob('*.rs')}
 assert '"capture.command"' in session_sources['lib.rs'] and 'Scope::CaptureScreen' in session_sources['lib.rs']
-print('S01-DEP-01/S02-DEP-02 PASS: fifteen crates, exact dependency allowlists, bundled SQLite in storage, bundled static libwebp in the codec, closed images schema vocabulary and the diagnostic-window client boundary retained')
+print('S01-DEP-01/S02-DEP-02 PASS: exact workspace including private runtime, exact dependency allowlists, bundled SQLite in storage, bundled static libwebp in the codec, closed images schema vocabulary and the diagnostic-window client boundary retained')

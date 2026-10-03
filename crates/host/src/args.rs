@@ -14,6 +14,7 @@ pub enum BootstrapMode {
 pub struct BootstrapArgs {
     pub root: PathBuf,
     pub mode: BootstrapMode,
+    pub enroll_runtime_token: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,6 +28,7 @@ pub enum ArgError {
 pub fn parse_bootstrap_args(argv: &[String]) -> Result<BootstrapArgs, ArgError> {
     let mut root: Option<PathBuf> = None;
     let mut mode = BootstrapMode::Serve;
+    let mut enroll_runtime_token = false;
     let mut index = 0;
     while index < argv.len() {
         match argv[index].as_str() {
@@ -37,6 +39,12 @@ pub fn parse_bootstrap_args(argv: &[String]) -> Result<BootstrapArgs, ArgError> 
                 let value = argv.get(index + 1).ok_or(ArgError::MissingRoot)?;
                 root = Some(PathBuf::from(value));
                 index += 1;
+            }
+            "--enroll-runtime-token" => {
+                if enroll_runtime_token {
+                    return Err(ArgError::UnsupportedArgument);
+                }
+                enroll_runtime_token = true;
             }
             "--init" => {
                 if mode == BootstrapMode::Initialize {
@@ -52,7 +60,14 @@ pub fn parse_bootstrap_args(argv: &[String]) -> Result<BootstrapArgs, ArgError> 
     if !absolute_local(&root) {
         return Err(ArgError::RootNotAbsolute);
     }
-    Ok(BootstrapArgs { root, mode })
+    if enroll_runtime_token {
+        mode = BootstrapMode::Initialize;
+    }
+    Ok(BootstrapArgs {
+        root,
+        mode,
+        enroll_runtime_token,
+    })
 }
 
 /// Cheap shape check only; `sm-isolation` re-validates volume, reparse and overlap.

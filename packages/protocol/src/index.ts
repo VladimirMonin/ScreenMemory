@@ -10,6 +10,13 @@ import type { KnownParams } from './generated/application-methods-v1.js';
 import type { BridgeFrame } from './generated/bridge-v1.js';
 
 export type { ApplicationFrame, RequestEnvelope, Response, KnownParams, BridgeFrame };
+export type { ProcessingOverview, QueuedJob, InventoryView, InventoryModel, InventoryInstance, ProcessingReply, PolicyView, ProfileView, BatchView, JobView,
+  TechnicalProbeResult, ExecutionReport, AttemptView, AttemptState,
+  RuntimeCallView, RuntimeCallKind, RuntimeCallState, ModelConsumerLeaseView,
+  ModelConsumerLeaseState, DerivativeHoldView, ModelConsumerLeaseId,
+  ProcessingAttemptId, RuntimeCallId, ProcessingBatchId, ProcessingJobId,
+  ModelProfileId } from './generated/application-v1.js';
+export type { ProcessingRequest, ProcessingPolicy, ModelProfile } from './generated/application-methods-v1.js';
 export type { ImportReport, ImportReceipt, ExportReceipt, ExportExistence, ExportAppliedParameters, RecordMetadata } from './generated/application-v1.js';
 export type { ImportRequest, ImportBatchRequest, ImportReportPageRequest, ImportControlRequest, ExportRequest, RecordMetadataRequest } from './generated/application-methods-v1.js';
 export type Validation<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: 'invalid_application' | 'invalid_method' | 'invalid_bridge' | 'invalid_error_code' };
@@ -24,6 +31,8 @@ addFormats(ajv, { mode: 'full' });
 ajv.addFormat('uint8', { type: 'number', validate: (n: number) => Number.isInteger(n) && n >= 0 && n <= 255 });
 ajv.addFormat('uint16', { type: 'number', validate: (n: number) => Number.isInteger(n) && n >= 0 && n <= 65535 });
 ajv.addFormat('uint32', { type: 'number', validate: (n: number) => Number.isInteger(n) && n >= 0 && n <= 4294967295 });
+// SDK usage counters use Rust u64; upper-exclusive avoids rounding UINT64_MAX to 2^64.
+ajv.addFormat('uint64', { type: 'number', validate: (n: number) => Number.isInteger(n) && n >= 0 && n < 2 ** 64 });
 const appValidate = ajv.compile<ApplicationFrame>(application);
 const methodValidate = ajv.compile<KnownParams>(methods);
 const bridgeValidate = ajv.compile<BridgeFrame>(bridge);

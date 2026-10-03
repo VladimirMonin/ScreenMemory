@@ -6,11 +6,16 @@
 mod args;
 mod bootstrap;
 mod capture;
+pub mod processing;
+mod processing_execution;
+mod runtime_config;
+pub use runtime_config::read_backend_secret;
 mod services;
 
 pub use args::{parse_bootstrap_args, ArgError, BootstrapArgs, BootstrapMode};
 pub use bootstrap::{
-    bootstrap, emit_pre_root_failure, BootstrapOptions, BootstrappedHost, CaptureOptions,
+    bootstrap, bootstrap_from_installation, bootstrap_with_processing, emit_pre_root_failure,
+    BootstrapOptions, BootstrappedHost, CaptureOptions,
 };
 pub use bootstrap::{HostError, ShutdownOutcome, DEFAULT_DRAIN, SHUTDOWN_BUDGET};
 pub use services::FoundationServices;

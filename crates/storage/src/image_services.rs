@@ -1391,8 +1391,18 @@ pub(crate) fn begin_export_read(
         .as_ref()
         .and_then(|e| e.parse::<u64>().ok())
         .ok_or(StorageError::InvalidQuery)?;
-    if expiry <= epoch() || receipt.partial {
+    if receipt.partial {
         return Err(StorageError::Unavailable);
+    }
+    if expiry <= epoch() {
+        // A durable unresolved processing hold outlives cache TTL, including host reopen.
+        // This is a scoped operation/asset binding, not adoption of an arbitrary expired file.
+        if !matches!(
+            sql(sender, Command::ExportRetained(p, id))?,
+            Reply::Retained(true)
+        ) {
+            return Err(StorageError::Unavailable);
+        }
     }
     let directory = lease
         .image_export_directory()

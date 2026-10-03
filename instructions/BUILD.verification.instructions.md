@@ -57,6 +57,11 @@ S03 image seam добавляет явные `TESTS-IMAGE` (sm-image), `TESTS-IM
 Native prerequisites — уже установленные VS CMake/Git Perl, process-local only;
 source bootstrap/SHA/build-script review отдельно, не в runner. Подробности —
 [IMAGE.pipeline](IMAGE.pipeline.instructions.md).
+S04 добавляет explicit `TESTS-RUNTIME`, `SDK-TYPECHECK`, `SDK-PROTOCOL-PACKAGE`:
+standalone frozen `packages/lmstudio-bridge` closure, actual published SDK против
+owned synthetic endpoint и private Node staged clone. Это не real LM Studio/model
+proof; см. [RUNTIME.sdk](RUNTIME.sdk.instructions.md). Full suite/catalog regression
+после этого изменения не заменяются affected-only S04 проверками.
 `CAPTURE-NATIVE` — только safe `--lib`; desktop-reading `live_capture` требует
 non-default `isolated-desktop-tests`. `OFFLINE-SAFETY` проверяет default denial
 compile-only (raw 101), live suite честно `CAPTURE-LIVE-DESKTOP=NOT_RUN`.

@@ -1,7 +1,7 @@
 ---
 applyTo: "crates/gui/**,apps/gui/**,scripts/preview-gui.ps1,scripts/capture-preview-window.ps1,scripts/test-foundation-smoke.ps1,scripts/test-preview-rejection.ps1,scripts/preview-common.ps1,scripts/verify.ps1,scripts/test-verify.ps1,docs/progress/S01/t06d-gui.*"
 name: "APP.Gui"
-description: "Читай при работе с окном Tauri+React, его диагностикой и галереей S02, командами, --self-check и developer preview окна."
+description: "Читай при работе с Tauri+React, диагностикой/галереей, S04 settings/queue/profile, typed командами, --self-check и owned developer preview."
 ---
 
 # APP — диагностическое окно и первая галерея S02
@@ -59,6 +59,21 @@ React listener освобождается даже при async registration п�
 до invoke и между reopen. Pause/cancel/resume/retry используют тот же batch, export
 retry — тот же сохранённый request/operation UUID. Metadata требует отдельный
 ReadSourceMetadata scope. Genuine drag/input acceptance — отдельная live проверка.
+
+S04 `ProcessingPanel` показывает host policy/revisions/authorization epoch, configured
+runtime/observed bridge state/capabilities, bounded32 queue page и saved profile revisions.
+`gui_processing` принимает только typed ProcessingRequest и передаёт его тому же
+ApplicationClient; no endpoint/package/token/approval/claim flags. Default-open settings
+делает только readonly overview; mount/StrictMode не выполняют inventory/model load.
+Policy Automatic/Manual/Off, independent background/query permission, queue pause,
+profile save и TechnicalOwnerSelfTest требуют явных buttons. Stable exact self-test request
+сохраняется до invoke под library-scoped localStorage key (только IDs/policy revision,
+никаких tokens/paths). Потерянный ответ/reopen повторяет тот же operation; close не cancel.
+Profile/model key выбирается явно, inventory отдельной кнопкой и без load/adoption.
+Physical unload/HostIdle/AfterBatch/KeepLoaded и reasoning Off/Budget100 — Unsupported;
+BackendDefault явный, native TTL requested/not_verified. Execution ledger показывает
+safe typed requested/reported-applied, не raw runtime JSON. Analyze S05 blocked, не
+карточка. Search/knowledge_pipeline остаются NOT_IMPLEMENTED; whole S04/S07 отдельно.
 
 Frontend (`apps/gui`, Vite+React+TS) импортирует только React, `@tauri-apps/api/core`,
 локальные модули и **типы** сгенерированного контракта; SDK LM Studio, SQLite, native

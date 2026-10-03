@@ -31,13 +31,17 @@ use uuid::Uuid;
 
 struct Roots(PathBuf);
 impl Roots {
-    fn new(label: &str) -> Self {
+    fn new(_label: &str) -> Self {
         let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.pi/temporary");
         fs::create_dir_all(&parent).unwrap();
         let parent = fs::canonicalize(parent).unwrap();
         let parent = PathBuf::from(parent.to_string_lossy().trim_start_matches(r"\\?\"));
-        let root = parent.join(format!("sm-cli-{label}-{}", Uuid::new_v4()));
+        let root = parent.join(Uuid::new_v4().to_string());
         fs::create_dir(&root).unwrap();
+        println!(
+            "owned CLI surface library {}",
+            root.file_name().unwrap().to_string_lossy()
+        );
         for child in ["data", "config", "cache", "webview"] {
             fs::create_dir(root.join(child)).unwrap();
         }
@@ -480,7 +484,7 @@ fn s01_cli_03_status_doctor_and_stop_share_one_real_host_identity() {
         assert_eq!(status["ai_enabled"], false);
         assert_eq!(status["bridge_state"], "stopped");
         assert_eq!(
-            status["schema_version"], 5,
+            status["schema_version"], 6,
             "the real host reports the fully migrated library schema"
         );
 
@@ -612,6 +616,11 @@ fn s01_cli_04_autostart_uses_the_configured_image_once() {
             let _ = tokio::time::timeout(Duration::from_secs(8), handle).await;
         }
     });
+}
+
+#[test]
+fn s04_processing_revision_conflict_exit_is_five() {
+    assert_eq!(sm_cli::exit_for_code(ErrorCode::RevisionConflict), 5);
 }
 
 #[test]

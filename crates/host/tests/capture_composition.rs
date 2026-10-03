@@ -458,6 +458,128 @@ fn command(mode: CaptureMode) -> CaptureCommandParams {
 }
 
 #[test]
+fn s04_processing_shared_client_saved_policy_plan_controls_disconnect_and_reopen() {
+    use sm_domain::{OperationId, Revision};
+    use sm_protocol::processing::*;
+    runtime().block_on(async {
+        let roots = Roots::new();
+        let store = Arc::new(MemoryStore::default());
+        let adapter = SyntheticAdapter::new(64, 48, Answer::Accept);
+        let host = bootstrap(options(
+            &roots.path(),
+            CaptureOptions::Injected(adapter.clone()),
+            store.clone(),
+        ))
+        .await
+        .unwrap();
+        let library = host.library_id();
+        let handle = tokio::spawn(async move { host.serve(DEFAULT_DRAIN).await });
+        let client = connect(&roots, library, &store).await;
+        assert!(!client.status().await.unwrap().ai_enabled);
+        let receipt = match client
+            .capture_command(command(CaptureMode::Region), 10_000, None)
+            .await
+            .unwrap()
+        {
+            WireCaptureOutcome::Saved { receipt } => receipt,
+            _ => panic!("saved"),
+        };
+        let policy = client
+            .processing(ProcessingRequest::UpdatePolicy {
+                operation_id: OperationId::new(Uuid::new_v4()),
+                expected_revision: Revision::new(1),
+                value: ProcessingPolicy {
+                    mode: ProcessingMode::Manual,
+                    ..ProcessingPolicy::default()
+                },
+            })
+            .await
+            .unwrap();
+        let pol = match policy {
+            ProcessingReply::Policy(p) => p,
+            _ => panic!("policy"),
+        };
+        let plan = ProcessingRequest::Plan {
+            operation_id: OperationId::new(Uuid::new_v4()),
+            expected_policy_revision: pol.revision,
+            records: vec![receipt.record_id],
+            kind: WorkKind::Analyze,
+            profile_id: None,
+        };
+        let b = match client.processing(plan.clone()).await.unwrap() {
+            ProcessingReply::Batch(b) => b,
+            _ => panic!("batch"),
+        };
+        assert_eq!(b.jobs[0].reason, Some(BlockReason::HandlerUnavailable));
+        assert_eq!(b.jobs[0].asset_id, receipt.asset_id);
+        drop(client);
+        let client = connect(&roots, library, &store).await;
+        let replay = match client.processing(plan).await.unwrap() {
+            ProcessingReply::Batch(b) => b,
+            _ => panic!("batch"),
+        };
+        assert_eq!(replay.jobs[0].id, b.jobs[0].id);
+        let paused = match client
+            .processing(ProcessingRequest::ControlBatch {
+                id: b.id,
+                expected_revision: b.revision,
+                control: BatchControl::Pause,
+            })
+            .await
+            .unwrap()
+        {
+            ProcessingReply::Batch(b) => b,
+            _ => panic!("batch"),
+        };
+        assert_eq!(paused.control, BatchControl::Pause);
+        client
+            .processing(ProcessingRequest::UpdatePolicy {
+                operation_id: OperationId::new(Uuid::new_v4()),
+                expected_revision: pol.revision,
+                value: ProcessingPolicy::default(),
+            })
+            .await
+            .unwrap();
+        assert!(!client.status().await.unwrap().ai_enabled);
+        let bytes = client
+            .read_asset(LibraryAssetRequest {
+                asset_id: receipt.asset_id,
+                offset: 0,
+            })
+            .await
+            .unwrap();
+        assert_eq!(bytes.sha256, receipt.canonical_sha256);
+        client.request_shutdown().await.unwrap();
+        drop(client);
+        assert_eq!(handle.await.unwrap().unwrap().exit_code(), 0);
+        let host = bootstrap(options(
+            &roots.path(),
+            CaptureOptions::Disabled,
+            store.clone(),
+        ))
+        .await
+        .unwrap();
+        let handle = tokio::spawn(async move { host.serve(DEFAULT_DRAIN).await });
+        let client = connect(&roots, library, &store).await;
+        let reopened = match client
+            .processing(ProcessingRequest::Batch { id: b.id })
+            .await
+            .unwrap()
+        {
+            ProcessingReply::Batch(b) => b,
+            _ => panic!("batch"),
+        };
+        assert_eq!(reopened.jobs[0].id, b.jobs[0].id);
+        assert_eq!(reopened.jobs[0].reason, Some(BlockReason::AiDisabled));
+        assert_eq!(reopened.jobs[0].attempt_count, 0);
+        client.request_shutdown().await.unwrap();
+        drop(client);
+        assert_eq!(handle.await.unwrap().unwrap().exit_code(), 0);
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+    });
+}
+
+#[test]
 fn s02_capture_host_01_command_commits_a_canonical_record_and_serves_its_bytes() {
     let rt = runtime();
     rt.block_on(async {
@@ -483,7 +605,7 @@ fn s02_capture_host_01_command_commits_a_canonical_record_and_serves_its_bytes()
             .collect();
         assert!(methods.contains(&"capture.command"));
         assert!(methods.contains(&"library.asset.read"));
-        assert_eq!(methods.len(), 6);
+        assert_eq!(methods.len(), 7);
         let params = command(CaptureMode::Region);
         let outcome = client
             .capture_command(params.clone(), 10_000, None)
@@ -722,7 +844,7 @@ fn s02_capture_host_03_composition_without_a_capture_owner_supports_no_capture()
         let handle = tokio::spawn(async move { host.serve(DEFAULT_DRAIN).await });
         let client = connect(&roots, library, &store).await;
         let status = client.status().await.unwrap();
-        assert_eq!(status.available_methods.len(), 4);
+        assert_eq!(status.available_methods.len(), 5);
         assert!(!status
             .available_methods
             .iter()

@@ -58,6 +58,7 @@ pub(crate) enum Command {
     SaveExport(OperationId, ExportReceipt),
     CheckDestination(String),
     ExportRead(PrincipalId, OperationId),
+    ExportRetained(PrincipalId, OperationId),
     ExpiredExports(PrincipalId),
 }
 pub(crate) enum Reply {
@@ -69,6 +70,7 @@ pub(crate) enum Reply {
     Asset(Option<AssetSnapshot>),
     Export(AssetSnapshot, Option<(ExportReceipt, bool)>, String),
     ExportReceipt(ExportReceipt),
+    Retained(bool),
     Exports(Vec<ExportReceipt>),
 }
 fn err(_: rusqlite::Error) -> StorageError {
@@ -422,6 +424,10 @@ pub(crate) fn execute(db: &mut Connection, command: Command) -> Result<Reply, St
             }
             Ok(Reply::Unit)
         }
+        Command::ExportRetained(p, id) => {
+            let retained:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM processing_derivative_holds h JOIN export_operations e ON e.id=h.operation_id WHERE h.principal_id=?1 AND h.operation_id=?2 AND e.principal_id=h.principal_id AND e.source_asset_id=h.asset_id)",params![p.as_uuid().to_string(),id.as_uuid().to_string()],|r|r.get(0)).map_err(err)?;
+            Ok(Reply::Retained(retained))
+        }
         Command::ExportRead(p, id) => {
             let json:String=db.query_row("SELECT receipt_json FROM export_operations WHERE id=?1 AND principal_id=?2 AND state='saved'",params![id.as_uuid().to_string(),p.as_uuid().to_string()],|r|r.get(0)).map_err(err)?;
             Ok(Reply::ExportReceipt(
@@ -429,7 +435,7 @@ pub(crate) fn execute(db: &mut Connection, command: Command) -> Result<Reply, St
             ))
         }
         Command::ExpiredExports(p) => {
-            let mut stmt=db.prepare("SELECT receipt_json FROM export_operations WHERE principal_id=?1 AND state='saved' AND CAST(json_extract(receipt_json,'$.expires_at_epoch_seconds') AS INTEGER) <= CAST(strftime('%s','now') AS INTEGER) LIMIT 100").map_err(err)?;
+            let mut stmt=db.prepare("SELECT receipt_json FROM export_operations WHERE principal_id=?1 AND state='saved' AND NOT EXISTS(SELECT 1 FROM processing_derivative_holds h WHERE h.operation_id=export_operations.id) AND CAST(json_extract(receipt_json,'$.expires_at_epoch_seconds') AS INTEGER) <= CAST(strftime('%s','now') AS INTEGER) LIMIT 100").map_err(err)?;
             let rows = stmt
                 .query_map([p.as_uuid().to_string()], |r| r.get::<_, String>(0))
                 .map_err(err)?;

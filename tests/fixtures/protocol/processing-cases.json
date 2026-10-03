@@ -1,0 +1,17 @@
+[
+  {"valid":true,"value":{"method":"processing.request","params":{"action":"policy"}}},
+  {"valid":true,"value":{"method":"processing.request","params":{"action":"overview","before":null}}},
+  {"valid":true,"value":{"method":"processing.request","params":{"action":"inventory"}}},
+  {"valid":false,"value":{"method":"processing.request","params":{"action":"inventory","endpoint":"ws://127.0.0.1:1234","load":true}}},
+  {"valid":false,"value":{"method":"processing.request","params":{"action":"overview","before":null,"principal_id":"caller"}}},
+  {"valid":true,"value":{"method":"processing.request","params":{"action":"execution","id":"01900000-0000-7000-8000-000000000401"}}},
+  {"valid":true,"value":{"method":"processing.request","params":{"action":"reconcile"}}},
+  {"valid":true,"value":{"method":"processing.request","params":{"action":"plan","operation_id":"01900000-0000-7000-8000-000000000401","expected_policy_revision":"1","records":["01900000-0000-7000-8000-000000000402"],"kind":"technical_owner_background_self_test","profile_id":"01900000-0000-7000-8000-000000000403"}}},
+  {"valid":false,"value":{"method":"processing.request","params":{"action":"claim","host_id":"01900000-0000-7000-8000-000000000401"}}},
+  {"valid":false,"value":{"method":"processing.request","params":{"action":"reconcile","backend_settled":true}}},
+  {"valid":false,"value":{"method":"processing.request","params":{"action":"execution","id":"01900000-0000-7000-8000-000000000401","lease_token":"caller-minted"}}},
+  {"valid":true,"value":{"method":"processing.request","params":{"action":"update_policy","operation_id":"01900000-0000-7000-8000-000000000401","expected_revision":"1","value":{"mode":"off","background_loading":"forbid","query_loading":"ask","queue_paused":false,"retention":{"kind":"no_host_eviction"}}}}},
+  {"valid":false,"value":{"method":"processing.request","params":{"action":"policy","allow_model_load":true}}},
+  {"valid":false,"value":{"method":"processing.request","params":{"action":"control_job","id":"01900000-0000-7000-8000-000000000401","expected_revision":1,"control":"retry"}}},
+  {"valid":false,"value":{"method":"processing.request","params":{"action":"update_policy","operation_id":"01900000-0000-7000-8000-000000000401","expected_revision":"1","value":{"mode":"off","background_loading":"forbid","query_loading":"ask","queue_paused":false,"retention":{"kind":"no_host_eviction"},"endpoint":"ws://127.0.0.1:1"}}}}
+]

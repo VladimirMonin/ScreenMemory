@@ -64,6 +64,10 @@ export type KnownParams =
   | {
       method: 'library.export';
       params: ExportRequest;
+    }
+  | {
+      method: 'processing.request';
+      params: ProcessingRequest;
     };
 export type ConsentId = string;
 export type ProbeFixture = 'synthetic_menu_v1' | 'embedding_text_v1';
@@ -83,6 +87,93 @@ export type CanonicalProfile = 'webp_exact' | 'avif_sdr90';
 export type ImportControl = 'pause' | 'cancel_processing' | 'resume' | 'retry';
 export type ExportFormat = 'png' | 'jpeg' | 'webp' | 'avif';
 export type ExportMetadataPolicy = 'strip_private' | 'include_source_sidecar';
+export type ProcessingRequest =
+  | {
+      action: 'policy';
+    }
+  | {
+      action: 'overview';
+      before?: ProcessingJobId | null;
+    }
+  | {
+      action: 'inventory';
+    }
+  | {
+      action: 'update_policy';
+      expected_revision: Revision;
+      operation_id: OperationId;
+      value: ProcessingPolicy;
+    }
+  | {
+      action: 'save_profile';
+      expected_revision: Revision;
+      operation_id: OperationId;
+      value: ModelProfile;
+    }
+  | {
+      action: 'profile';
+      id: ModelProfileId;
+    }
+  | {
+      action: 'plan';
+      expected_policy_revision: Revision;
+      kind: WorkKind;
+      operation_id: OperationId;
+      profile_id?: ModelProfileId | null;
+      /**
+       * @minItems 1
+       * @maxItems 512
+       */
+      records: [RecordId, ...RecordId[]];
+    }
+  | {
+      action: 'batch';
+      id: ProcessingBatchId;
+    }
+  | {
+      action: 'control_batch';
+      control: BatchControl;
+      expected_revision: Revision;
+      id: ProcessingBatchId;
+    }
+  | {
+      action: 'control_job';
+      control: JobControl;
+      expected_revision: Revision;
+      id: ProcessingJobId;
+    }
+  | {
+      action: 'execution';
+      id: ProcessingJobId;
+    }
+  | {
+      action: 'reconcile';
+    };
+export type ProcessingJobId = string;
+export type LoadPermission = 'allow' | 'forbid';
+export type ProcessingMode = 'automatic' | 'manual' | 'off';
+export type QueryLoadPermission = 'ask' | 'allow' | 'forbid';
+export type HostRetention =
+  | {
+      kind: 'no_host_eviction';
+    }
+  | {
+      kind: 'idle';
+      seconds: number;
+    }
+  | {
+      kind: 'after_batch';
+    }
+  | {
+      kind: 'keep_loaded';
+    };
+export type ModelProfileId = string;
+export type CacheType = 'f16' | 'f32' | 'q8' | 'q4' | 'q5';
+export type ReasoningMode = 'backend_default' | 'off' | 'budget100';
+export type WorkKind = 'analyze' | 'technical_owner_self_test' | 'technical_owner_background_self_test';
+export type ProcessingBatchId = string;
+export type BatchControl = 'pause' | 'resume' | 'cancel';
+export type JobControl = 'cancel' | 'retry';
 
 export interface EmptyParams {}
 export interface DoctorRequest {
@@ -167,4 +258,25 @@ export interface ExportRequest {
   metadata_policy: ExportMetadataPolicy;
   operation_id: OperationId;
   record_id: RecordId;
+}
+export interface ProcessingPolicy {
+  background_loading: LoadPermission;
+  mode: ProcessingMode;
+  query_loading: QueryLoadPermission;
+  queue_paused: boolean;
+  retention: HostRetention;
+}
+export interface ModelProfile {
+  context_length: number;
+  eval_batch_size: number;
+  flash_attention: boolean;
+  id: ModelProfileId;
+  k_cache: CacheType;
+  max_generation_tokens: number;
+  model_key: string;
+  native_ttl_seconds?: number | null;
+  offload_kv_cache_to_gpu: boolean;
+  reasoning: ReasoningMode;
+  temperature: number;
+  v_cache: CacheType;
 }

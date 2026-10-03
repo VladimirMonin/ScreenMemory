@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+processing-test-seams = []
+
 [dependencies]
 sm-application = { path = "../application" }
 sm-codec = { path = "../codec" }

@@ -28,12 +28,15 @@ pub enum Profile {
     Owner,
     /// Reserved solely for S01 policy verification; no S07 provisioning implied.
     TestReadOnly,
+    /// Backend secret only; never an application-session principal.
+    RuntimeBackend,
 }
 impl Profile {
     fn label(self) -> &'static str {
         match self {
             Self::Owner => "owner",
             Self::TestReadOnly => "test-readonly",
+            Self::RuntimeBackend => "lm-studio",
         }
     }
     fn scopes(self) -> Vec<Scope> {
@@ -54,8 +57,11 @@ impl Profile {
                 Scope::ExportImages,
                 Scope::ExportSourceSidecar,
                 Scope::ReadSourceMetadata,
+                Scope::ReadProcessing,
+                Scope::ManageProcessing,
             ],
             Self::TestReadOnly => vec![Scope::ReadStatus, Scope::RunDoctor],
+            Self::RuntimeBackend => vec![],
         }
     }
 }
@@ -81,6 +87,13 @@ impl CredentialKey {
             environment: CredentialEnvironment::Test,
             library,
             profile: Profile::TestReadOnly,
+        }
+    }
+    pub fn runtime_backend(environment: CredentialEnvironment, library: LibraryId) -> Self {
+        Self {
+            environment,
+            library,
+            profile: Profile::RuntimeBackend,
         }
     }
     pub fn target(&self) -> String {

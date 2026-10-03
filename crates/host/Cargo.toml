@@ -9,6 +9,9 @@ license.workspace = true
 name = "shotd"
 path = "src/main.rs"
 
+[features]
+processing-test-seams = ["sm-storage/processing-test-seams"]
+
 [dependencies]
 sm-application = { path = "../application" }
 sm-capture = { path = "../capture" }
@@ -24,9 +27,14 @@ sm-pipe = { path = "../pipe" }
 sm-protocol = { path = "../protocol" }
 sm-session = { path = "../session" }
 sm-storage = { path = "../storage" }
+sm-runtime = { path = "../runtime" }
 async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { version = "=1.53.1", features = ["rt", "rt-multi-thread", "time", "io-util", "sync"] }
 tokio-util.workspace = true
 uuid = { workspace = true, features = ["v4"] }
+
+zeroize.workspace = true
+
+[dev-dependencies]

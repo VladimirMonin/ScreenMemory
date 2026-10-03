@@ -21,9 +21,29 @@ ENV worker path. Отсутствие sibling не рекламирует image 
 выбирает второй host.
 
 Bootstrap-порядок, exit codes (2/4/6/7/8) и shutdown (receipt=stopping; stop admission →
-bounded drain уже принятых соединений → listener → storage close с освобождением lease →
+bounded drain уже принятых соединений → listener → private execution drain → storage close с освобождением lease →
 bounded log flush в бюджете 5s) не упрощать: `lease` живёт, пока SQLite жив; ложный
 «все handles закрыты» запрещён. Обычный выход CLI host не останавливает.
+
+Production `shotd` вызывает `bootstrap_from_installation`: после root/lease/DB identity,
+до logger/capture/listener читает fixed `config/processing-runtime.json` (≤4096 bytes,
+strict schema1, exact library UUID, numeric port1…65535, authentication=`credential|guest`,
+ask_load_approved, image_side1024|2048, model_autostart=false). Отсутствие файла — runtime
+unconfigured/Off. Invalid/autostart=true/identity mismatch/unknown fields дают отказ,
+не fallback. Package — только fixed `sdk-runtime` рядом с trusted native image;
+worker — прежний sibling, package bytes pins до запуска SDK. Config не содержит package
+path/endpoint string/token/model key; ENV/PATH/CWD и application load booleans не authority.
+Изменять этот host-owned файл только при остановленном собственном host; configure не
+делает inventory/load. Exact backend vault key и bounded stdin — [SEC.credentials](SEC.credentials.instructions.md).
+
+S04 `bootstrap_with_processing` принимает только native `TrustedProcessingRuntime`:
+trusted absolute package, explicit numeric loopback endpoint, SecretAuthority и pinned
+TrustedWorker. Это не application DTO/ENV/PATH configuration, не implicit load consent.
+Recover writer ledger до listener, actor независим от session waiter. Default bootstrap
+без этой authority остаётся Off/runtime-unconfigured и не запускает модель. Technical
+result не S05 description; private ModelManager/fences — [RUNTIME.sdk](RUNTIME.sdk.instructions.md).
+При shutdown сначала bounded cancel/drain execution; timeout abort только own task/child,
+не ложный clean exit/backend settlement. Uncertain SQL holds переживают drop local handle.
 
 Порядок внутри шага 5 фиксирован: сначала explicit owner enrollment (и reopen) под удержанным
 `HostLease`, и только после успешного enrollment — bounded logger и minimal services; listener
@@ -54,11 +74,17 @@ retry/discovery 5s, без retry на credential/identity ошибке, и за�
 SDK/FTS5/package proofs S04/S06/S08; embeddings/vec исключены ADR-011.
 Preview и verify используют `.pi/staging-target-t09b`, не общий `.pi/preview-target`,
 который может удерживать чужой host. MSVC failure немедленно возвращает raw exit;
-Cargo всегда offline. `smoke-host-cli.ps1` проверяет текущую storage schema 5 (не
+Cargo всегда offline. `smoke-host-cli.ps1` проверяет текущую storage schema 6 (не
 JSON config schema 1). Error cleanup использует тот же guarded stop→absence→remove,
 а не удаляет root/credential после неподтверждённого stop.
 `scripts/test-foundation-smoke.ps1` — отдельный composed synthetic host/CLI/GUI
 regression; его запуск не превращает весь S01 в ACCEPTED.
+
+S04 `shot --config <absolute-config> processing status|jobs|inventory|policy|profile|save-profile|self-test|background-self-test|analyze|batch|pause|resume|cancel-batch|cancel|retry|execution|reconcile` всегда выдаёт один JSON; vocabulary/flags — [interfaces](../docs/progress/S04/interfaces.md).
+Policy/Profile mutations используют typed revisions и stable operation ID; self-test требует
+явный operation/policy revision/record/profile ID. `gui_processing` — тот же shared client,
+не второй runtime. Inventory — отдельная Owner action: допускает bridge start при Off,
+но никогда model load/adoption. Read status/doctor/overview не запускает SDK.
 
 S03 `shot --config <absolute-config> import --path <absolute-file-or-folder>`:
 `--profile webp_exact|avif_sdr90`, `--duplicates reuse_record|keep_both`, optional

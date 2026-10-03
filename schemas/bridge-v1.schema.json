@@ -167,6 +167,7 @@
             "MODEL_CONFIG_UNSUPPORTED",
             "BRIDGE_UNAVAILABLE",
             "WAIT_TIMEOUT",
+            "REVISION_CONFLICT",
             "CAPTURE_BACKPRESSURE",
             "CAPTURE_TARGET_LOST",
             "CAPTURE_TOPOLOGY_CHANGED",
