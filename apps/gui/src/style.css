@@ -11,7 +11,12 @@ dd { margin: 3px 0 14px; overflow-wrap: anywhere; }
 section { border-top: 1px solid #637080; margin-top: 18px; }
 section[aria-label="Недавние снимки"] h2 { margin: 12px 0; }
 [role="alert"] { color: #ffb7b7; }
-.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; list-style: none; padding: 0; margin: 10px 0; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; list-style: none; padding: 0; margin: 10px 0; max-height: 180px; overflow-y: auto; }
+label { display: block; margin: 10px 0; }
+input, textarea, select { display: block; box-sizing: border-box; width: 100%; padding: 8px; background: #29394d; color: #e5eaf2; border: 1px solid #9cb5d5; border-radius: 4px; }
+section button { margin: 4px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; }
+.import-panel ul { max-height: 240px; overflow: auto; }
 .gallery button { width: 100%; text-align: left; background: #29394d; color: #e5eaf2; }
 .gallery button[aria-pressed="true"] { border: 2px solid #9dd4ff; }
 .gallery small { display: block; margin-top: 6px; overflow-wrap: anywhere; }

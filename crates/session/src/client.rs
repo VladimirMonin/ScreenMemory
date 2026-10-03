@@ -376,6 +376,128 @@ impl ApplicationClient {
         }
     }
 
+    pub async fn preview_asset(
+        &self,
+        request: sm_protocol::application::LibraryAssetRequest,
+    ) -> Result<sm_protocol::application::LibraryAssetChunk, ClientError> {
+        match self
+            .call(
+                "library.asset.preview",
+                serde_json::to_value(request).expect("typed request"),
+                30_000,
+                None,
+            )
+            .await?
+        {
+            ApplicationResult::AssetChunk(chunk) => Ok(chunk),
+            _ => Err(SessionError::UnexpectedResponse.into()),
+        }
+    }
+    pub async fn record_metadata(
+        &self,
+        request: sm_protocol::images::RecordMetadataRequest,
+    ) -> Result<sm_protocol::images::RecordMetadata, ClientError> {
+        match self
+            .call(
+                "library.record.metadata",
+                serde_json::to_value(request).expect("typed request"),
+                10_000,
+                None,
+            )
+            .await?
+        {
+            ApplicationResult::RecordMetadata(value) => Ok(value),
+            _ => Err(SessionError::UnexpectedResponse.into()),
+        }
+    }
+    pub async fn import_paths(
+        &self,
+        request: sm_protocol::images::ImportRequest,
+    ) -> Result<sm_protocol::images::ImportReport, ClientError> {
+        match self
+            .call(
+                "library.import",
+                serde_json::to_value(request).expect("typed request"),
+                10_000,
+                None,
+            )
+            .await?
+        {
+            ApplicationResult::ImportReport(report) => Ok(report),
+            _ => Err(SessionError::UnexpectedResponse.into()),
+        }
+    }
+    pub async fn import_status(
+        &self,
+        request: sm_protocol::images::ImportBatchRequest,
+    ) -> Result<sm_protocol::images::ImportReport, ClientError> {
+        match self
+            .call(
+                "library.import.status",
+                serde_json::to_value(request).expect("typed request"),
+                10_000,
+                None,
+            )
+            .await?
+        {
+            ApplicationResult::ImportReport(report) => Ok(report),
+            _ => Err(SessionError::UnexpectedResponse.into()),
+        }
+    }
+    pub async fn import_report_page(
+        &self,
+        request: sm_protocol::images::ImportReportPageRequest,
+    ) -> Result<sm_protocol::images::ImportReport, ClientError> {
+        match self
+            .call(
+                "library.import.report",
+                serde_json::to_value(request).expect("typed request"),
+                10_000,
+                None,
+            )
+            .await?
+        {
+            ApplicationResult::ImportReport(report) => Ok(report),
+            _ => Err(SessionError::UnexpectedResponse.into()),
+        }
+    }
+    pub async fn import_control(
+        &self,
+        request: sm_protocol::images::ImportControlRequest,
+    ) -> Result<sm_protocol::images::ImportReport, ClientError> {
+        match self
+            .call(
+                "library.import.control",
+                serde_json::to_value(request).expect("typed request"),
+                10_000,
+                None,
+            )
+            .await?
+        {
+            ApplicationResult::ImportReport(report) => Ok(report),
+            _ => Err(SessionError::UnexpectedResponse.into()),
+        }
+    }
+    /// Cancelled wait does not cancel the admitted export. Replay uses the same operation ID.
+    pub async fn export_image(
+        &self,
+        request: sm_protocol::images::ExportRequest,
+        cancellation: Option<CancellationToken>,
+    ) -> Result<sm_protocol::images::ExportReceipt, ClientError> {
+        match self
+            .call(
+                "library.export",
+                serde_json::to_value(request).expect("typed request"),
+                30_000,
+                cancellation,
+            )
+            .await?
+        {
+            ApplicationResult::ExportReceipt(receipt) => Ok(*receipt),
+            _ => Err(SessionError::UnexpectedResponse.into()),
+        }
+    }
+
     /// Explicit best-effort cancellation, only for a request still pending on this client.
     pub async fn cancel(&self, id: RequestId) -> Result<(), SessionError> {
         if !self

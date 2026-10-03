@@ -14,7 +14,7 @@ use crate::{
 };
 use sm_protocol::application::CaptureMode;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindowBuilder};
 use tokio::sync::Mutex;
 
 /// One window owns one session; the mutex serializes the bounded attempts so two clicks
@@ -83,6 +83,58 @@ pub async fn gui_library_recent(app: AppHandle) -> GuiLibraryPage {
     let session = app.state::<ShellState>().session();
     let mut guard = session.lock().await;
     guard.list(24, None).await
+}
+
+#[tauri::command]
+pub async fn gui_library_page(app: AppHandle, cursor: Option<String>) -> GuiLibraryPage {
+    let session = app.state::<ShellState>().session();
+    let mut guard = session.lock().await;
+    guard.list(24, cursor).await
+}
+#[tauri::command]
+pub async fn gui_import(
+    app: AppHandle,
+    request: sm_protocol::images::ImportRequest,
+) -> Result<sm_protocol::images::ImportReport, String> {
+    let session = app.state::<ShellState>().session();
+    let mut guard = session.lock().await;
+    guard.import_paths(request).await
+}
+#[tauri::command]
+pub async fn gui_import_report(
+    app: AppHandle,
+    request: sm_protocol::images::ImportReportPageRequest,
+) -> Result<sm_protocol::images::ImportReport, String> {
+    let session = app.state::<ShellState>().session();
+    let mut guard = session.lock().await;
+    guard.import_report(request).await
+}
+#[tauri::command]
+pub async fn gui_import_control(
+    app: AppHandle,
+    request: sm_protocol::images::ImportControlRequest,
+) -> Result<sm_protocol::images::ImportReport, String> {
+    let session = app.state::<ShellState>().session();
+    let mut guard = session.lock().await;
+    guard.import_control(request).await
+}
+#[tauri::command]
+pub async fn gui_export(
+    app: AppHandle,
+    request: sm_protocol::images::ExportRequest,
+) -> Result<sm_protocol::images::ExportReceipt, String> {
+    let session = app.state::<ShellState>().session();
+    let mut guard = session.lock().await;
+    guard.export_image(request).await
+}
+#[tauri::command]
+pub async fn gui_metadata(
+    app: AppHandle,
+    request: sm_protocol::images::RecordMetadataRequest,
+) -> Result<sm_protocol::images::RecordMetadata, String> {
+    let session = app.state::<ShellState>().session();
+    let mut guard = session.lock().await;
+    guard.metadata(request).await
 }
 
 /// Only a canonical UUIDv4 asset identity crosses the WebView boundary. The host
@@ -159,9 +211,23 @@ pub fn run_window(state: ShellState, webview_directory: std::path::PathBuf) -> t
         .manage(state)
         .setup(move |app| {
             let config = &app.config().app.windows[0];
-            WebviewWindowBuilder::from_config(app, config)?
+            let window = WebviewWindowBuilder::from_config(app, config)?
                 .data_directory(webview_directory)
                 .build()?;
+            let event_window = window.clone();
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) =
+                    event
+                {
+                    let paths: Option<Vec<String>> = paths
+                        .iter()
+                        .map(|p| p.to_str().map(str::to_owned))
+                        .collect();
+                    if let Some(paths) = paths.filter(|p| !p.is_empty() && p.len() <= 128) {
+                        let _ = event_window.emit("gui-import-paths", paths);
+                    }
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -174,6 +240,12 @@ pub fn run_window(state: ShellState, webview_directory: std::path::PathBuf) -> t
             gui_capture_monitor,
             gui_capture_desktop,
             gui_library_recent,
+            gui_library_page,
+            gui_import,
+            gui_import_report,
+            gui_import_control,
+            gui_export,
+            gui_metadata,
             gui_asset_preview,
             gui_open_report
         ])

@@ -209,6 +209,14 @@ pub async fn run(argv: &[String], deps: &CliDeps, out: &mut dyn Write, err: &mut
         Err(failure) => return emit_failure(failure, args.json, out, err),
     };
     let exit = match args.command {
+        Command::Image(command) => {
+            let (exit, value) = crate::images::run(&client, command).await;
+            output::write_json(out, &value);
+            if exit != 0 {
+                let _ = writeln!(err, "Image operation incomplete or rejected.");
+            }
+            exit
+        }
         Command::Status { .. } => match client.status().await {
             Ok(status) => {
                 if args.json {

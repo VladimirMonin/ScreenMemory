@@ -11,7 +11,7 @@ use uuid::Uuid;
 /// capture-operation journal (`ingest_operations`); `0004` adds pending capture
 /// intents without changing the images contract. All are applied in a single
 /// transaction on a fresh file; interrupted upgrades roll back their migration rows.
-const SHIPPED: [(&str, &str); 4] = [
+const SHIPPED: [(&str, &str); 5] = [
     (
         "0001_foundation",
         include_str!("../migrations/0001_foundation.sql"),
@@ -24,6 +24,10 @@ const SHIPPED: [(&str, &str); 4] = [
     (
         "0004_capture_intents",
         include_str!("../migrations/0004_capture_intents.sql"),
+    ),
+    (
+        "0005_import_export",
+        include_str!("../migrations/0005_import_export.sql"),
     ),
 ];
 /// Applied images schema version, reported by `SchemaSnapshot::images`. The
@@ -69,46 +73,16 @@ fn objects(db: &Connection) -> Result<Vec<(String, String)>, StorageError> {
         .map_err(|_| StorageError::SchemaIncompatible)
 }
 
-/// Object name created by one shipped DDL statement.
-fn object_name(statement: &str) -> String {
-    let mut tokens = statement.split_whitespace();
-    while let Some(token) = tokens.next() {
-        if matches!(token, "TABLE" | "INDEX" | "TRIGGER" | "VIEW") {
-            if let Some(name) = tokens.next() {
-                return name.to_owned();
-            }
-        }
-    }
-    panic!("shipped migration syntax");
-}
-
-fn statements(migration: &str) -> Vec<String> {
-    // A shipped migration may carry a leading `--` documentation header, but
-    // `sqlite_master.sql` stores only the DDL: comment lines are removed before the
-    // `;` split so the expected object text equals the stored text. The recorded
-    // checksum still covers the exact shipped bytes, comments included.
-    let ddl: String = migration
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("--"))
-        .map(|line| format!("{line}\n"))
-        .collect();
-    ddl.split(";\n")
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_owned)
-        .collect()
-}
-
-/// Exact objects a library must contain after the first `version` migrations.
+/// Derive the exact schema by applying the shipped prefix to an empty memory DB.
+/// Unlike splitting DDL text, this also models ALTER/rename/rebuild migrations.
 fn expected_objects(version: usize) -> Vec<(String, String)> {
-    let mut names = vec![("schema_migrations".to_owned(), BOOTSTRAP.to_owned())];
+    let db = Connection::open_in_memory().expect("shipped schema model");
+    db.execute_batch(BOOTSTRAP).expect("shipped bootstrap");
     for (_, migration) in SHIPPED.iter().take(version) {
-        for statement in statements(migration) {
-            names.push((object_name(&statement), statement));
-        }
+        db.execute_batch(migration)
+            .expect("shipped migration syntax");
     }
-    names.sort();
-    names
+    objects(&db).expect("shipped schema objects")
 }
 
 fn table_only() -> Vec<(String, String)> {
@@ -286,6 +260,21 @@ pub(super) fn preflight(path: &Path, existed: bool) -> Result<bool, StorageError
         return Err(StorageError::SchemaIncompatible);
     }
     validate_applied(&db, applied)?;
+    // Populated pre-S03 libraries require a verified backup before the asset-table
+    // structural rebuild. S08 owns backup authorization; no production bypass flag.
+    // This read-only refusal precedes writer PRAGMAs and all destructive SQL.
+    if (2..5).contains(&applied) {
+        let populated: bool = db
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM records) OR EXISTS(SELECT 1 FROM assets)",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(|_| StorageError::SchemaIncompatible)?;
+        if populated {
+            return Err(StorageError::SchemaIncompatible);
+        }
+    }
     Ok(false)
 }
 

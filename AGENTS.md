@@ -48,6 +48,7 @@ preview); соизмеряй глубину инженерной проверк�
 | [SEC.pipe_endpoint](instructions/SEC.pipe_endpoint.instructions.md) | Windows named-pipe ACL, sealed pool, peer identity и trusted server image |
 | [CAPTURE.native](instructions/CAPTURE.native.instructions.md) | Win32 capture, region picker, overlay, hotkey, GDI/DIB |
 | [CODEC.webp](instructions/CODEC.webp.instructions.md) | WebP codec (bundled libwebp), exact lossless, bounds/отказы |
+| [IMAGE.pipeline](instructions/IMAGE.pipeline.instructions.md) | S03 ingest/source snapshots/decode/metadata/color/resize/export и private worker/packaging boundary |
 
 - **Каждую новую инструкцию обязательно добавляй сюда рабочей ссылкой с условием чтения.**
   При переименовании, разделении или удалении обновляй ссылки и маршруты.

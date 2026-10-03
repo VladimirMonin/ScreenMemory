@@ -217,6 +217,25 @@ function Get-VerificationEnvironment([string]$Root, [string]$LogRoot) {
         $pos = $line.IndexOf('='); if ($pos -gt 0) { $map[$line.Substring(0,$pos)] = $line.Substring($pos+1) }
     }
     $map['PATH'] = $rustBin + ';' + $nodeBin + ';' + (Join-Path $Root 'packages\protocol\node_modules\.bin') + ';' + $map['PATH']
+    # Native image sources were bootstrapped/reviewed separately. Resolve only
+    # already installed VS CMake and Git Perl in this child's environment.
+    $cmake = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
+    $git = Get-Command git.exe -ErrorAction Stop
+    $gitBin = Split-Path $git.Source -Parent
+    # Git may resolve from cmd/bin or mingw64/bin in an existing installation.
+    $perlCandidates = @((Join-Path (Split-Path $gitBin -Parent) 'usr\bin'), (Join-Path (Split-Path (Split-Path $gitBin -Parent) -Parent) 'usr\bin'))
+    $perlBin = @($perlCandidates | Where-Object { Test-Path -LiteralPath (Join-Path $_ 'perl.exe') -PathType Leaf } | Select-Object -First 1)
+    if ($perlBin.Count -ne 1) { throw 'Missing reviewed Git Perl build prerequisite' }
+    $perlBin = $perlBin[0]
+    foreach ($nativeTool in @($cmake, (Join-Path $perlBin 'perl.exe'))) {
+        if (-not (Test-Path -LiteralPath $nativeTool -PathType Leaf)) { throw 'Missing reviewed native-image build prerequisite' }
+    }
+    foreach ($override in @('LIB_AOM_STATIC_LIB_PATH','LIB_AOM_INCLUDE_PATH','LIB_AOM_PKG_CONFIG_PATH','LCMS2_LIB_DIR','LCMS2_INCLUDE_DIR','LIBAVIF_CROSS_WIN32')) {
+        if ($map.ContainsKey($override) -and $map[$override]) { throw 'Native-image external override is forbidden' }
+    }
+    $map['CMAKE'] = $cmake
+    # Append: Git's usr/bin/link.exe must never shadow the MSVC linker.
+    $map['PATH'] = $map['PATH'] + ';' + $perlBin
     $map['CARGO_HOME'] = Join-Path $Root '.pi\donor-build\.cargo-home'
     $map['CARGO_TARGET_DIR'] = Join-Path $Root '.pi\staging-target-t09b'
     # Offline is inherited by nested Cargo invocations (including pnpm contracts:check).

@@ -12,7 +12,11 @@ description: "Читай при изменении реальных shotd/shot �
 [ADR-008](../docs/adr/008-session-client.md). `sm-host` (bin `shotd`) — единственный
 composition root: explicit absolute root, `HostLease` до SQLite, один SQLite writer,
 credential policy, bounded logger, sealed listener, `host.ready` только после успешного
-bind; AI off и bridge не стартует. `sm-cli` (bin `shot`) — только клиент принятого
+bind; AI off и bridge не стартует. S03 optional ImageServices использует тот же StorageWorker
+и SessionHost::with_images. Fixed `shot-image-worker.exe` берётся только рядом с
+trusted host executable, проверяется/pins до lease/DB/native owners; нет wire/PATH/
+ENV worker path. Отсутствие sibling не рекламирует image methods; package trust
+пока основан на trusted native directory, не release/signed manifest acceptance. `sm-cli` (bin `shot`) — только клиент принятого
 `sm-session::ApplicationClient`: не открывает SQLite, не линкует storage owner, не
 выбирает второй host.
 
@@ -50,11 +54,22 @@ retry/discovery 5s, без retry на credential/identity ошибке, и за�
 SDK/FTS5/package proofs S04/S06/S08; embeddings/vec исключены ADR-011.
 Preview и verify используют `.pi/staging-target-t09b`, не общий `.pi/preview-target`,
 который может удерживать чужой host. MSVC failure немедленно возвращает raw exit;
-Cargo всегда offline. `smoke-host-cli.ps1` проверяет текущую storage schema 4 (не
+Cargo всегда offline. `smoke-host-cli.ps1` проверяет текущую storage schema 5 (не
 JSON config schema 1). Error cleanup использует тот же guarded stop→absence→remove,
 а не удаляет root/credential после неподтверждённого stop.
 `scripts/test-foundation-smoke.ps1` — отдельный composed synthetic host/CLI/GUI
 regression; его запуск не превращает весь S01 в ACCEPTED.
+
+S03 `shot --config <absolute-config> import --path <absolute-file-or-folder>`:
+`--profile webp_exact|avif_sdr90`, `--duplicates reuse_record|keep_both`, optional
+`--batch-id <uuidv4>`, `--wait-ms 0..180000`. `import status/report/pause/cancel/resume/retry`
+принимают `--batch-id`; report — `--after-ordinal`. `metadata --record-id <uuidv4>`;
+`export --record-id <uuidv4> --format png|jpeg|webp|avif`, optional `--operation-id`,
+`--output <absolute-path>`, `--max-side 320|1000|1024|2048`, `--jpeg-background R,G,B`.
+Image commands всегда выдают один JSON. Wait0 означает admission/status, не Saved;
+wait timeout — raw8 с batch ID/report, incomplete terminal/partial — raw7.
+Export error сохраняет operation ID; повтор требует того же request, не нового UUID.
+Это реализованный seam vocabulary, не все плановые aliases/flags S03/S07.
 
 Owned preview cleanup — только собственный root и только после проверок: канонический путь
 строго `<repo>/.pi/preview/<canonical-uuidv4>`, ownership-marker с тем же UUID (создаётся

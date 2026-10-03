@@ -20,3 +20,6 @@ tokio = { version = "=1.53.1", features = ["net", "rt", "sync", "time", "io-util
 [dev-dependencies]
 async-trait.workspace = true
 sm-isolation = { path = "../isolation" }
+sm-storage = { path = "../storage" }
+sm-image = { path = "../image" }
+sm-image-worker = { path = "../image-worker" }

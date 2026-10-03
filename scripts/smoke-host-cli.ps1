@@ -83,7 +83,7 @@ try {
     $preview.initialized_library_id = $libraryId # this own root's successful --init above
     [void](Write-TrustedPreviewConfig $preview $libraryId $binaries.shotd)
     # Current foundation plus S02 image/recovery/list migrations; config schema stays 1.
-    Assert-SmokeTrue ([int]$report.schema_version -eq 4) 'first-run storage schema version is not 4' 'SCHEMA-VERSION'
+    Assert-SmokeTrue ([int]$report.schema_version -eq 5) 'first-run storage schema version is not 5' 'SCHEMA-VERSION'
     Assert-SmokeTrue ([int]$report.format_major -eq 1) 'first-run format major is not 1' 'FORMAT-MAJOR'
     Assert-SmokeTrue (Test-Path -LiteralPath (Join-Path $preview.root 'data\library.sqlite3') -PathType Leaf) 'library database was not created in the owned root' 'DATABASE-CREATED'
 

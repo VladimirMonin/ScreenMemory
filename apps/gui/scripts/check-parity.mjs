@@ -65,7 +65,6 @@ assert(list, 'NOT_IMPLEMENTED must stay parseable in the gui owner');
 const capabilities = [...list[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
 assert.deepEqual(capabilities, [
   'search',
-  'drop_zone',
   'model_settings',
   'bridge_runtime',
 ]);

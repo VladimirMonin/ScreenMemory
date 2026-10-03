@@ -1,6 +1,7 @@
 //! Application seams only: host-created authority and ports; no concrete adapters.
 pub mod capture;
 pub mod credentials;
+pub mod images;
 pub mod observability;
 pub mod storage;
 
@@ -30,6 +31,11 @@ pub enum Scope {
     ReadImages,
     /// S02-T11: read a bounded page of committed library records.
     ListRecords,
+    ImportFiles,
+    ExportImages,
+    ExportSourceSidecar,
+    /// Private source observations (EXIF/GPS), independent of pixel access.
+    ReadSourceMetadata,
 }
 /// Constructed only by the authenticated host boundary; never decoded from request.params.
 #[derive(Clone, Debug)]

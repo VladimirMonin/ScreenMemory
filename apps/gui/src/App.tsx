@@ -12,6 +12,7 @@ import {
   notImplemented,
   canonicalAssetId,
   canAutoPreview,
+  mergeLibraryPage,
   previewBytes,
   stateText,
   statusFields,
@@ -24,6 +25,8 @@ import {
   type LibraryRecord,
   type AssetPreview,
 } from './model';
+import ImportPanel from './ImportPanel';
+import ExportPanel from './ExportPanel';
 import './style.css';
 
 /** The only commands this window may call; they are the same handlers `crates/gui` registers. */
@@ -77,14 +80,15 @@ export default function App() {
     setPreviewLoading(false);
   }
 
-  async function refreshRecent() {
+  async function refreshRecent(cursor: string | null = null, selectNewest = false) {
     const request = ++recentRequest.current;
+    const selectionGeneration = previewRequest.current;
     setRecentLoading(true);
     setRecentError('');
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const page = await Promise.race([
-        invoke<LibraryPage>('gui_library_recent'),
+        invoke<LibraryPage>('gui_library_page', { cursor }),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => reject(new Error('timeout')), ANSWER_TIMEOUT_MS);
         }),
@@ -95,11 +99,10 @@ export default function App() {
         setRecentError(page.safe_code ?? 'LIBRARY_UNAVAILABLE');
         return;
       }
-      setRecent(page);
-      if (!initialPreviewConsidered.current) {
-        initialPreviewConsidered.current = true;
-        const first = page.items[0];
-        if (first && canAutoPreview(first)) void selectRecord(first);
+      setRecent((previous) => mergeLibraryPage(previous, page, cursor !== null));
+      if ((!initialPreviewConsidered.current || selectNewest) && selectionGeneration === previewRequest.current) {
+        const first = page.items.find(canAutoPreview);
+        if (first) { initialPreviewConsidered.current = true; void selectRecord(first); }
       }
     } catch {
       if (request === recentRequest.current) {
@@ -258,15 +261,17 @@ export default function App() {
             </button>
           </li>)}
         </ul>}
-        {recent?.next_cursor && <p>Показаны первые 24; следующие страницы пока недоступны.</p>}
+        {recent?.next_cursor && <button disabled={recentLoading} onClick={() => void refreshRecent(recent.next_cursor)}>Следующая страница</button>}
         {selected && <div className="preview">
           <h3>Просмотр: {selected.title || 'Снимок'}</h3>
           {previewLoading && <p role="status">Загрузка изображения…</p>}
           {previewError && <p role="alert">Изображение недоступно: {previewError}</p>}
           {previewUrl && <img src={previewUrl} alt={selected.title || 'Сохранённый снимок'} />}
           <button onClick={() => { previewRequest.current += 1; releasePreview(); setSelected(null); setPreviewLoading(false); }}>Закрыть просмотр</button>
+          <ExportPanel key={selected.id} record={selected} />
         </div>}
       </section>
+      <ImportPanel onSaved={() => { void refreshRecent(null, true); }} />
       <section aria-live="polite" aria-busy={busy}>
         <h2>Соединение</h2>
         <p>{stateText[state]}</p>
@@ -345,7 +350,7 @@ export default function App() {
       )}
       <section>
         <h2>Вне текущего этапа</h2>
-        <p>Поиск, drop zone, настройки моделей и AI bridge — не реализовано на этом этапе. Галерея показывает только первую страницу без миниатюр; большие изображения не открываются.</p>
+        <p>Поиск, настройки моделей и AI bridge — не реализовано на этом этапе. Preview — проверенный WebP ≤8 MiB; AVIF и большие каноны показываются через bounded derivative без изменения оригинала.</p>
         {absentCapabilities.length > 0 && <p>Отсутствующие возможности по данным host: {absentCapabilities.join(', ')}.</p>}
       </section>
       <p>Закрытие окна не останавливает host. Вызовов моделей и загрузки весов нет.</p>

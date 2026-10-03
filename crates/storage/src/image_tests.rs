@@ -177,12 +177,98 @@ fn count(db: &Connection, table: &str) -> i64 {
     .unwrap()
 }
 
+fn write_v4_library(f: &Fixture) {
+    write_operations_v3_library(f);
+    let db = Connection::open(f.db()).unwrap();
+    let sql = include_str!("../migrations/0004_capture_intents.sql");
+    db.execute_batch(sql).unwrap();
+    db.execute("INSERT INTO schema_migrations VALUES (4,'0004_capture_intents',?1,'2026-09-28T09:00:00.000Z')",[format!("{:x}",Sha256::digest(sql.as_bytes()))]).unwrap();
+}
+#[test]
+fn s03_migration_populated_v4_refuses_without_backup_and_fixture_snapshot_preserves_capture_replay()
+{
+    let f = Fixture::new();
+    write_v4_library(&f);
+    let mut db = Connection::open(f.db()).unwrap();
+    super::migration::pragmas(&db).unwrap();
+    let bytes = canonical(320, 200, 91);
+    let command = draft(&record_uuid(900), &record_uuid(901), bytes.clone());
+    let operation = command.operation_id;
+    let principal = command.principal_id;
+    let receipt =
+        images::commit_image_capture(&mut db, &f.root().join("assets"), command, false).unwrap();
+    drop(db);
+    let before = fs::read(f.db()).unwrap();
+    assert!(matches!(
+        StorageWorker::start(f.lease()),
+        Err(StorageError::SchemaIncompatible)
+    ));
+    assert_eq!(
+        fs::read(f.db()).unwrap(),
+        before,
+        "refusal precedes writer mutation"
+    );
+    let mut db = Connection::open(f.db()).unwrap();
+    super::migration::pragmas(&db).unwrap();
+    // Own fixture-only SQLite snapshot, verified before the structural test upgrade.
+    let backup = f.root().join("fixture-backup.sqlite3");
+    db.execute("VACUUM INTO ?1", [backup.to_str().unwrap()])
+        .unwrap();
+    let snapshot = Connection::open_with_flags(&backup, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    assert_eq!(
+        snapshot
+            .query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0))
+            .unwrap(),
+        "ok"
+    );
+    for table in ["records", "assets", "ingest_operations"] {
+        assert_eq!(count(&snapshot, table), 1);
+    }
+    assert_eq!(
+        snapshot
+            .query_row("SELECT sha256 FROM assets", [], |r| r.get::<_, String>(0))
+            .unwrap(),
+        receipt.sha256
+    );
+    drop(snapshot);
+    assert!(matches!(
+        super::migration::initialize(&mut db, false, true),
+        Err(StorageError::MigrationFailed)
+    ));
+    assert_eq!(count(&db, "schema_migrations"), 4);
+    assert_eq!(count(&db, "assets"), 1);
+    assert_eq!(count(&db, "ingest_operations"), 1);
+    super::migration::initialize(&mut db, false, false).unwrap();
+    for table in ["records", "assets", "ingest_operations"] {
+        assert_eq!(count(&db, table), 1);
+    }
+    let violations = db
+        .prepare("PRAGMA foreign_key_check")
+        .unwrap()
+        .query_map([], |_| Ok(()))
+        .unwrap()
+        .count();
+    assert_eq!(violations, 0);
+    drop(db);
+    let worker = StorageWorker::start(f.lease()).unwrap();
+    assert_eq!(
+        f.rt(worker.lookup_operation(operation, principal, CaptureTarget::Region))
+            .unwrap(),
+        LookupOutcome::Saved(receipt.clone())
+    );
+    assert_eq!(
+        fs::read(f.root().join(receipt.relative_path)).unwrap(),
+        bytes
+    );
+    f.close(&worker);
+}
+
 #[test]
 fn s02_images_01_migration_applies_all_versions_and_stays_reopenable() {
     let f = Fixture::new();
     let worker = StorageWorker::start(f.lease()).unwrap();
     let snapshot = f.rt(worker.schema_snapshot()).unwrap();
-    assert_eq!(snapshot.schema_version, 4);
+    assert_eq!(snapshot.schema_version, 5);
     assert_eq!(
         snapshot.images.migration_version, 2,
         "0003 and 0004 add global journals without changing the images schema contract"
@@ -201,7 +287,7 @@ fn s02_images_01_migration_applies_all_versions_and_stays_reopenable() {
         .unwrap()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
-    assert_eq!(rows.len(), 4);
+    assert_eq!(rows.len(), 5);
     assert_eq!(rows[0].0, 1);
     assert_eq!(rows[0].1, "0001_foundation");
     assert_eq!(rows[1].0, 2);
@@ -245,11 +331,17 @@ fn s02_images_01_migration_applies_all_versions_and_stays_reopenable() {
     assert_eq!(
         tables,
         [
+            "asset_processing",
             "assets",
             "capture_intents",
+            "export_operations",
+            "import_batches",
+            "import_item_roots",
+            "import_items",
             "ingest_operations",
             "library_meta",
             "library_settings",
+            "origin_occurrences",
             "records",
             "schema_migrations",
             "sqlite_sequence"
@@ -711,12 +803,12 @@ fn s02_images_09_upgrade_from_foundation_is_atomic_and_adds_no_rows() {
     let library_id = write_foundation_library(&f);
     let worker = StorageWorker::start(f.lease()).unwrap();
     let snapshot = f.rt(worker.schema_snapshot()).unwrap();
-    assert_eq!(snapshot.schema_version, 4);
+    assert_eq!(snapshot.schema_version, 5);
     assert_eq!(snapshot.library_id, library_id);
     assert!(!f.rt(worker.read_ai_enabled()).unwrap());
     f.close(&worker);
     let db = direct(&f.db());
-    assert_eq!(count(&db, "schema_migrations"), 4);
+    assert_eq!(count(&db, "schema_migrations"), 5);
     assert_eq!(count(&db, "records"), 0);
     assert_eq!(count(&db, "assets"), 0);
     let stored: String = db
@@ -750,7 +842,7 @@ fn s02_images_09_upgrade_from_foundation_is_atomic_and_adds_no_rows() {
     assert!(broken.published_files().is_empty());
     // The retry completes the interrupted upgrade exactly once.
     let worker = StorageWorker::start(broken.lease()).unwrap();
-    assert_eq!(f.rt(worker.schema_snapshot()).unwrap().schema_version, 4);
+    assert_eq!(f.rt(worker.schema_snapshot()).unwrap().schema_version, 5);
     assert_eq!(
         broken
             .rt(worker.page_records(RecordPageQuery::first(None).unwrap()))
@@ -762,7 +854,7 @@ fn s02_images_09_upgrade_from_foundation_is_atomic_and_adds_no_rows() {
     );
     broken.close(&worker);
     let db = direct(&broken.db());
-    assert_eq!(count(&db, "schema_migrations"), 4);
+    assert_eq!(count(&db, "schema_migrations"), 5);
 }
 
 #[test]
@@ -1050,7 +1142,7 @@ fn s02_t09a_14_v2_upgrade_to_latest_is_atomic_reopenable_and_keeps_images_contra
     let library_id = write_images_v2_library(&f);
     let worker = StorageWorker::start(f.lease()).unwrap();
     let snapshot = f.rt(worker.schema_snapshot()).unwrap();
-    assert_eq!(snapshot.schema_version, 4);
+    assert_eq!(snapshot.schema_version, 5);
     assert_eq!(snapshot.library_id, library_id);
     assert_eq!(
         snapshot.images.migration_version, 2,
@@ -1059,7 +1151,7 @@ fn s02_t09a_14_v2_upgrade_to_latest_is_atomic_reopenable_and_keeps_images_contra
     f.close(&worker);
 
     let db = direct(&f.db());
-    assert_eq!(count(&db, "schema_migrations"), 4);
+    assert_eq!(count(&db, "schema_migrations"), 5);
     assert_eq!(count(&db, "ingest_operations"), 0);
     let checksum: String = db
         .query_row(
@@ -1111,11 +1203,11 @@ fn s02_t09a_14_v2_upgrade_to_latest_is_atomic_reopenable_and_keeps_images_contra
     let worker = StorageWorker::start(broken.lease()).unwrap();
     assert_eq!(
         broken.rt(worker.schema_snapshot()).unwrap().schema_version,
-        4
+        5
     );
     broken.close(&worker);
     let db = direct(&broken.db());
-    assert_eq!(count(&db, "schema_migrations"), 4);
+    assert_eq!(count(&db, "schema_migrations"), 5);
     assert_eq!(count(&db, "ingest_operations"), 0);
 }
 
@@ -1139,12 +1231,12 @@ fn s02_t09m1_01_v3_upgrade_rollback_checksum_and_reopen() {
     let library_id = write_operations_v3_library(&f);
     let worker = StorageWorker::start(f.lease()).unwrap();
     let snapshot = f.rt(worker.schema_snapshot()).unwrap();
-    assert_eq!(snapshot.schema_version, 4);
+    assert_eq!(snapshot.schema_version, 5);
     assert_eq!(snapshot.images.migration_version, 2);
     assert_eq!(snapshot.library_id, library_id);
     f.close(&worker);
     let db = direct(&f.db());
-    assert_eq!(count(&db, "schema_migrations"), 4);
+    assert_eq!(count(&db, "schema_migrations"), 5);
     assert_eq!(count(&db, "capture_intents"), 0);
     let checksums: Vec<String> = db
         .prepare("SELECT checksum FROM schema_migrations ORDER BY version")
@@ -1215,7 +1307,7 @@ fn s02_t09m1_01_v3_upgrade_rollback_checksum_and_reopen() {
             .rt(worker.schema_snapshot())
             .unwrap()
             .schema_version,
-        4
+        5
     );
     interrupted.close(&worker);
 }
@@ -2302,6 +2394,16 @@ fn s02_t09a_31_oversized_stored_size_or_file_is_refused_before_any_read() {
     // row can never drive an unbounded read into memory on a replay
     // (`commit_image_capture` or `lookup_operation`).
     let db = Connection::open(f.db()).unwrap();
+    // Migration 5 also bounds normal writes. This stopped, owned fault fixture
+    // deliberately corrupts the row to retain the runtime-before-IO oracle.
+    assert!(db
+        .execute(
+            "UPDATE assets SET size_bytes=?1",
+            [i64::try_from(MAX_CANONICAL_FILE_BYTES + 1).unwrap()]
+        )
+        .is_err());
+    db.execute_batch("PRAGMA ignore_check_constraints=ON")
+        .unwrap();
     db.execute(
         "UPDATE assets SET size_bytes = ?1",
         [i64::try_from(MAX_CANONICAL_FILE_BYTES + 1).unwrap()],

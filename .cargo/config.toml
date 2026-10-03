@@ -1,0 +1,3 @@
+[env]
+# Build-time only. CMAKE is resolved by the audited Windows runner, not installed.
+CMAKE_TOOLCHAIN_FILE = { value = "scripts/image-codecs.cmake", relative = true, force = true }

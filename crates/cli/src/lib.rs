@@ -4,6 +4,9 @@
 //! resolves a root or a host image from CWD, PATH or the environment: every input comes
 //! from the explicit trusted preview configuration named by `--config`.
 mod args;
+mod image_args;
+mod images;
+pub use image_args::ImageCommand;
 mod config;
 mod exec;
 mod launcher;

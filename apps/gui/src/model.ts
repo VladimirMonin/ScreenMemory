@@ -183,11 +183,14 @@ export const MAX_PREVIEW_BYTES = 8 * 1024 * 1024;
 export const canonicalAssetId = (id: string): boolean =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id);
 
-/** Auto-open only a small, canonical first asset; larger images require an explicit click. */
+/** The native host bounds the derivative separately from the retained canonical size. */
+export function mergeLibraryPage(previous: LibraryPage | null, page: LibraryPage, append: boolean): LibraryPage {
+  return append && previous ? { ...page, items: [...previous.items, ...page.items.filter((item) => !previous.items.some((old) => old.id === item.id))] } : page;
+}
 export function canAutoPreview(item: LibraryRecord): boolean {
   return item.preview_asset_id !== null && canonicalAssetId(item.preview_asset_id)
-    && /^[1-9][0-9]{0,7}$/.test(item.byte_size)
-    && Number(item.byte_size) <= MAX_PREVIEW_BYTES;
+    && /^[1-9][0-9]{0,8}$/.test(item.byte_size)
+    && Number(item.byte_size) <= 128 * 1024 * 1024;
 }
 
 /** Decode only the validated, size-capped WebP response; never feed raw hex to an URL. */

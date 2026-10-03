@@ -10,6 +10,8 @@ import type { KnownParams } from './generated/application-methods-v1.js';
 import type { BridgeFrame } from './generated/bridge-v1.js';
 
 export type { ApplicationFrame, RequestEnvelope, Response, KnownParams, BridgeFrame };
+export type { ImportReport, ImportReceipt, ExportReceipt, ExportExistence, ExportAppliedParameters, RecordMetadata } from './generated/application-v1.js';
+export type { ImportRequest, ImportBatchRequest, ImportReportPageRequest, ImportControlRequest, ExportRequest, RecordMetadataRequest } from './generated/application-methods-v1.js';
 export type Validation<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: 'invalid_application' | 'invalid_method' | 'invalid_bridge' | 'invalid_error_code' };
 
 // No coercion/defaults/removal, no remote refs or schema fetch; errors are never exposed.
@@ -18,7 +20,8 @@ const addFormats = formatsModule.default as unknown as FormatsPlugin;
 const ajv = new Ajv2020({ strict: true, validateFormats: true,
   allErrors: false, coerceTypes: false, removeAdditional: false, useDefaults: false });
 addFormats(ajv, { mode: 'full' });
-// Rust u16/u32 JSON Schema formats are not part of the ajv-formats registry.
+// Rust unsigned integer formats are not part of the ajv-formats registry.
+ajv.addFormat('uint8', { type: 'number', validate: (n: number) => Number.isInteger(n) && n >= 0 && n <= 255 });
 ajv.addFormat('uint16', { type: 'number', validate: (n: number) => Number.isInteger(n) && n >= 0 && n <= 65535 });
 ajv.addFormat('uint32', { type: 'number', validate: (n: number) => Number.isInteger(n) && n >= 0 && n <= 4294967295 });
 const appValidate = ajv.compile<ApplicationFrame>(application);

@@ -8,6 +8,9 @@ license.workspace = true
 [dependencies]
 sm-application = { path = "../application" }
 sm-codec = { path = "../codec" }
+sm-image = { path = "../image" }
+sm-image-worker = { path = "../image-worker" }
+sm-protocol = { path = "../protocol" }
 sm-domain = { path = "../domain" }
 sm-isolation = { path = "../isolation" }
 async-trait.workspace = true

@@ -71,6 +71,12 @@ extern "system" {
         offset: *mut Overlapped,
     ) -> i32;
     fn GetFileInformationByHandle(handle: Handle, info: *mut FileInfo) -> i32;
+    fn SetFileInformationByHandle(
+        handle: Handle,
+        info_class: u32,
+        buffer: *const c_void,
+        size: u32,
+    ) -> i32;
     fn GetFileInformationByHandleEx(
         handle: Handle,
         info_class: u32,
@@ -558,17 +564,181 @@ pub(super) fn open_fixed(
 
 /// Canonical original only: acquire the write-denying share while the old read
 /// and its ancestor pins remain live. Do not change staging's shared inspect.
-pub(super) fn seal_original(
+pub(super) fn delete_image_verified(
+    root: &Directory,
+    leaf: &str,
+    verify: impl FnOnce(&mut std::fs::File, u64) -> bool,
+) -> Result<(), StagingError> {
+    let name = wide(root.path.join(leaf).as_os_str());
+    let raw = unsafe {
+        CreateFileW(
+            name.as_ptr(),
+            READ_ONLY | 0x00010000,
+            SHARE_READ_ONLY,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            OPEN_REPARSE_POINT,
+            std::ptr::null_mut(),
+        )
+    };
+    if raw == INVALID {
+        return Err(staging_io(std::io::Error::last_os_error()));
+    }
+    let handle = OwnedHandle(raw);
+    let info = file_info(handle.0, root)?;
+    let len = (u64::from(info.nFileSizeHigh) << 32) | u64::from(info.nFileSizeLow);
+    let mut file = handle.into_file();
+    if !verify(&mut file, len) {
+        return Err(StagingError::UnsafeEntry);
+    }
+    let disposition: i32 = 1;
+    if unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            4,
+            (&disposition as *const i32).cast(),
+            4,
+        )
+    } == 0
+    {
+        return Err(staging_io(std::io::Error::last_os_error()));
+    }
+    drop(file);
+    Ok(())
+}
+
+pub(super) fn image_resolved_path(file: &std::fs::File) -> Result<PathBuf, StagingError> {
+    let mut buffer = vec![0u16; 32768];
+    let len = unsafe {
+        GetFinalPathNameByHandleW(
+            file.as_raw_handle(),
+            buffer.as_mut_ptr(),
+            buffer.len() as u32,
+            0,
+        )
+    } as usize;
+    if len == 0 || len >= buffer.len() {
+        return Err(StagingError::UnsafeEntry);
+    }
+    let text = String::from_utf16(&buffer[..len]).map_err(|_| StagingError::UnsafeEntry)?;
+    let text = text
+        .strip_prefix(r"\\?\")
+        .ok_or(StagingError::UnsafeEntry)?;
+    Ok(PathBuf::from(text))
+}
+
+fn image_source_info(handle: Handle, root: &Directory) -> Result<FileInfo, StagingError> {
+    let mut info = std::mem::MaybeUninit::<FileInfo>::uninit();
+    if unsafe { GetFileInformationByHandle(handle, info.as_mut_ptr()) } == 0 {
+        return Err(StagingError::UnsafeEntry);
+    }
+    let info = unsafe { info.assume_init() };
+    if info.dwFileAttributes & (REPARSE_POINT | DIRECTORY) != 0
+        || info.nNumberOfLinks == 0
+        || info.dwVolumeSerialNumber != root.volume
+    {
+        return Err(StagingError::UnsafeEntry);
+    }
+    Ok(info)
+}
+pub(super) fn image_entry_identity(
+    root: &Directory,
+    leaf: &str,
+) -> Result<(u32, u64), StagingError> {
+    let name = wide(root.path.join(leaf).as_os_str());
+    let raw = unsafe {
+        CreateFileW(
+            name.as_ptr(),
+            FILE_READ_ATTRIBUTES,
+            SHARE_PINNED,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            OPEN_REPARSE_POINT,
+            std::ptr::null_mut(),
+        )
+    };
+    if raw == INVALID {
+        return Err(staging_io(std::io::Error::last_os_error()));
+    }
+    let handle = OwnedHandle(raw);
+    Ok(identity(&image_source_info(handle.0, root)?))
+}
+pub(super) fn open_image_source(
+    root: &Directory,
+    leaf: &str,
+) -> Result<(std::fs::File, u64), StagingError> {
+    let name = wide(root.path.join(leaf).as_os_str());
+    let raw = unsafe {
+        CreateFileW(
+            name.as_ptr(),
+            READ_ONLY,
+            SHARE_READ_ONLY,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            OPEN_REPARSE_POINT,
+            std::ptr::null_mut(),
+        )
+    };
+    if raw == INVALID {
+        return Err(staging_io(std::io::Error::last_os_error()));
+    }
+    let handle = OwnedHandle(raw);
+    let info = image_source_info(handle.0, root)?;
+    let len = (u64::from(info.nFileSizeHigh) << 32) | u64::from(info.nFileSizeLow);
+    Ok((handle.into_file(), len))
+}
+
+pub(super) fn image_observation(
+    file: &std::fs::File,
+    root: &Directory,
+) -> Result<(u32, u64, u64, u64, u32), StagingError> {
+    let info = image_source_info(file.as_raw_handle(), root)?;
+    Ok((
+        identity(&info).0,
+        identity(&info).1,
+        (u64::from(info.ftCreationTime[1]) << 32) | u64::from(info.ftCreationTime[0]),
+        (u64::from(info.ftLastWriteTime[1]) << 32) | u64::from(info.ftLastWriteTime[0]),
+        info.nNumberOfLinks,
+    ))
+}
+
+pub(super) fn open_image_stable(
+    root: &Directory,
+    leaf: &str,
+) -> Result<(std::fs::File, u64), StagingError> {
+    let name = wide(root.path.join(leaf).as_os_str());
+    let raw = unsafe {
+        CreateFileW(
+            name.as_ptr(),
+            READ_ONLY,
+            SHARE_READ_ONLY,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            OPEN_REPARSE_POINT,
+            std::ptr::null_mut(),
+        )
+    };
+    if raw == INVALID {
+        return Err(staging_io(std::io::Error::last_os_error()));
+    }
+    let handle = OwnedHandle(raw);
+    let info = file_info(handle.0, root)?;
+    let len = (u64::from(info.nFileSizeHigh) << 32) | u64::from(info.nFileSizeLow);
+    Ok((handle.into_file(), len))
+}
+
+pub(super) fn seal_fixed(
     root: &Directory,
     previous: &std::fs::File,
     expected_len: u64,
+    leaf: &str,
 ) -> Result<(std::fs::File, u64), StagingError> {
     let old = file_info(previous.as_raw_handle(), root)?;
     let old_len = (u64::from(old.nFileSizeHigh) << 32) | u64::from(old.nFileSizeLow);
     if old_len != expected_len {
         return Err(StagingError::UnsafeEntry);
     }
-    let name = wide(root.path.join("original.webp").as_os_str());
+    let name = wide(root.path.join(leaf).as_os_str());
     let raw = unsafe {
         CreateFileW(
             name.as_ptr(),

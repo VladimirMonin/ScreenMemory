@@ -200,6 +200,36 @@ fn prepare(root: &Path) -> Result<Prepared, HostError> {
     })
 }
 
+fn package_worker() -> Result<Option<Arc<sm_image_worker::TrustedWorker>>, HostError> {
+    use sha2::Digest;
+    use std::io::Read;
+    // Same native package directory as the trusted host image; no caller/PATH/env role.
+    let executable = std::env::current_exe().map_err(|_| HostError::Compose)?;
+    let path = executable
+        .parent()
+        .ok_or(HostError::Compose)?
+        .join("shot-image-worker.exe");
+    let file = match std::fs::File::open(&path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(HostError::Compose),
+    };
+    let length = file.metadata().map_err(|_| HostError::Compose)?.len();
+    if length == 0 || length > 64 * 1024 * 1024 {
+        return Err(HostError::Compose);
+    }
+    let mut bytes = Vec::new();
+    file.take(64 * 1024 * 1024 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| HostError::Compose)?;
+    if bytes.len() as u64 != length {
+        return Err(HostError::Compose);
+    }
+    let worker =
+        sm_image_worker::TrustedWorker::from_manifest(&path, sha2::Sha256::digest(&bytes).into())
+            .map_err(|_| HostError::Compose)?;
+    Ok(Some(Arc::new(worker)))
+}
 fn emit_startup_failure(mut logger: BoundedLogger, error: HostError) -> HostError {
     let mut event = SafeEvent::new(
         Level::Error,
@@ -218,6 +248,10 @@ fn emit_startup_failure(mut logger: BoundedLogger, error: HostError) -> HostErro
 /// handshake runs on a dedicated blocking thread; the runtime thread only awaits typed
 /// storage responses.
 pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, HostError> {
+    // Validate optional fixed package authority before creating a lease, DB or native owner.
+    let image_worker = tokio::task::spawn_blocking(package_worker)
+        .await
+        .map_err(|_| HostError::Compose)??;
     let mode = options.mode;
     let root = options.root.clone();
     let store = options.store.clone();
@@ -314,7 +348,13 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
         capture.clone(),
     ));
     let hotkey_task = hotkey_task;
-    let session = Arc::new(SessionHost::new(
+    let images = image_worker.map(|worker| {
+        Arc::new(sm_storage::image_services::ImageServices::new(
+            prepared.storage.clone(),
+            worker,
+        ))
+    });
+    let mut session = SessionHost::new(
         library,
         host_instance,
         owner,
@@ -323,7 +363,12 @@ pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrappedHost, Ho
         services.clone(),
         capture.clone(),
         BufferBudget::new(),
-    ));
+    );
+    if let Some(images) = images {
+        services.enable_images();
+        session = session.with_images(images);
+    }
+    let session = Arc::new(session);
     // Step 6: the sealed listener exists before any readiness claim; connections are
     // only accepted once `serve` runs the bounded loop.
     let listener = match mode {

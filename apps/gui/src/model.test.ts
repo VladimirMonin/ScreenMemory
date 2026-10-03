@@ -9,6 +9,7 @@ import {
   captureStateText,
   canonicalAssetId,
   canAutoPreview,
+  mergeLibraryPage,
   previewBytes,
   MAX_PREVIEW_BYTES,
   doctorFailed,
@@ -186,7 +187,7 @@ describe('S02 bounded gallery preview decoder', () => {
     expect(canonicalAssetId('../file.webp')).toBe(false);
     expect(canonicalAssetId('01900000-0000-4000-8000-00000000000a'.toUpperCase())).toBe(false);
   });
-  it('auto-opens only a canonical first asset with bounded size metadata', () => {
+  it('auto-opens canonical assets including AVIF-sized inputs through bounded native derivatives', () => {
     const item: LibraryRecord = {
       id: '01900000-0000-4000-8000-000000000002', created_at: '2026-09-30T00:00:00.000Z',
       title: 'Synthetic', target: 'region', width: 360, height: 180,
@@ -194,11 +195,22 @@ describe('S02 bounded gallery preview decoder', () => {
     };
     expect(canAutoPreview(item)).toBe(true);
     expect(canAutoPreview({ ...item, byte_size: String(MAX_PREVIEW_BYTES) })).toBe(true);
-    for (const size of ['0', String(MAX_PREVIEW_BYTES + 1), '00064', '64x', '999999999999999999999']) {
+    expect(canAutoPreview({ ...item, byte_size: String(MAX_PREVIEW_BYTES + 1) })).toBe(true);
+    expect(canAutoPreview({ ...item, byte_size: String(128 * 1024 * 1024) })).toBe(true);
+    for (const size of ['0', String(128 * 1024 * 1024 + 1), '00064', '64x', '999999999999999999999']) {
       expect(canAutoPreview({ ...item, byte_size: size })).toBe(false);
     }
     expect(canAutoPreview({ ...item, preview_asset_id: null })).toBe(false);
     expect(canAutoPreview({ ...item, preview_asset_id: '01900000-0000-7000-8000-000000000001' })).toBe(false);
+  });
+  it('keeps pages beyond 24 accessible, deduplicates overlap, and replaces a stale snapshot on refresh', () => {
+    const item = (n: number): LibraryRecord => ({ id: String(n), created_at: '', title: '', target: 'imported_image', width: 1, height: 1, byte_size: '1', preview_asset_id: null });
+    const page = { schema_version: 1, safe_code: null, retryable: false, next_cursor: 'next', items: Array.from({ length: 24 }, (_, n) => item(n)) };
+    const next = { ...page, next_cursor: null, items: [item(23), item(24), item(25)] };
+    const merged = mergeLibraryPage(page, next, true);
+    expect(merged.items).toHaveLength(26); expect(merged.items[25].id).toBe('25');
+    expect(mergeLibraryPage(merged, next, false).items).toHaveLength(3);
+    expect(mergeLibraryPage(null, page, true).items).toHaveLength(24);
   });
   it('decodes only bounded WebP hex and rejects oversized/malformed/unavailable', () => {
     expect([...previewBytes(image)]).toEqual([82, 73, 70, 70]);

@@ -50,6 +50,10 @@ impl Profile {
                 Scope::CaptureScreen,
                 Scope::ReadImages,
                 Scope::ListRecords,
+                Scope::ImportFiles,
+                Scope::ExportImages,
+                Scope::ExportSourceSidecar,
+                Scope::ReadSourceMetadata,
             ],
             Self::TestReadOnly => vec![Scope::ReadStatus, Scope::RunDoctor],
         }

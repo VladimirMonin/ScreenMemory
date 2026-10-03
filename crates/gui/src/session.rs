@@ -25,6 +25,13 @@ use std::path::PathBuf;
 
 /// Longest wait of one interactive capture command; it is independent of the IPC handshake.
 pub const CAPTURE_WAIT_MS: u32 = 30_000;
+fn gui_code(failure: ClientFailure) -> String {
+    serde_json::to_value(failure.code)
+        .expect("code")
+        .as_str()
+        .expect("string")
+        .to_owned()
+}
 
 pub struct GuiSession {
     config: PreviewConfig,
@@ -218,7 +225,7 @@ impl GuiSession {
                 .client
                 .as_ref()
                 .expect("client is connected")
-                .read_asset(request)
+                .preview_asset(request)
                 .await
             {
                 Ok(chunk) => {
@@ -237,6 +244,71 @@ impl GuiSession {
         }
     }
 
+    pub async fn import_paths(
+        &mut self,
+        request: sm_protocol::images::ImportRequest,
+    ) -> Result<sm_protocol::images::ImportReport, String> {
+        self.ensure(true).await.map_err(gui_code)?;
+        let result = self
+            .client
+            .as_ref()
+            .expect("connected")
+            .import_paths(request)
+            .await;
+        self.finish(result).map_err(gui_code)
+    }
+    pub async fn import_report(
+        &mut self,
+        request: sm_protocol::images::ImportReportPageRequest,
+    ) -> Result<sm_protocol::images::ImportReport, String> {
+        self.ensure(true).await.map_err(gui_code)?;
+        let result = self
+            .client
+            .as_ref()
+            .expect("connected")
+            .import_report_page(request)
+            .await;
+        self.finish(result).map_err(gui_code)
+    }
+    pub async fn import_control(
+        &mut self,
+        request: sm_protocol::images::ImportControlRequest,
+    ) -> Result<sm_protocol::images::ImportReport, String> {
+        self.ensure(true).await.map_err(gui_code)?;
+        let result = self
+            .client
+            .as_ref()
+            .expect("connected")
+            .import_control(request)
+            .await;
+        self.finish(result).map_err(gui_code)
+    }
+    pub async fn export_image(
+        &mut self,
+        request: sm_protocol::images::ExportRequest,
+    ) -> Result<sm_protocol::images::ExportReceipt, String> {
+        self.ensure(true).await.map_err(gui_code)?;
+        let result = self
+            .client
+            .as_ref()
+            .expect("connected")
+            .export_image(request, None)
+            .await;
+        self.finish(result).map_err(gui_code)
+    }
+    pub async fn metadata(
+        &mut self,
+        request: sm_protocol::images::RecordMetadataRequest,
+    ) -> Result<sm_protocol::images::RecordMetadata, String> {
+        self.ensure(true).await.map_err(gui_code)?;
+        let result = self
+            .client
+            .as_ref()
+            .expect("connected")
+            .record_metadata(request)
+            .await;
+        self.finish(result).map_err(gui_code)
+    }
     /// Close this window's connection only; the host is never stopped from here.
     pub fn close(&mut self) {
         self.client = None;

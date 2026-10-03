@@ -37,7 +37,7 @@ test('S01-TS-DTO-01 shared Rust/schema/TS requests and two-pass method validatio
   for (const item of parity.invalid) {
     const req = { ...(item.base === 'status' ? status : control), ...item };
     delete req.base; delete req.id;
-    assertBad(validateApplicationRequest, req, ['unknown-method', 'unknown-param', 'revision-overflow', 'revision-leading-zero', 'revision-number', 'revision-negative'].includes(item.id) ? 'invalid_method' : 'invalid_application');
+    assertBad(validateApplicationRequest, req, ['preview-refuses-path-authority', 'metadata-refuses-principal-authority', 'unknown-method', 'unknown-param', 'revision-overflow', 'revision-leading-zero', 'revision-number', 'revision-negative', 'import-unknown-authority', 'import-unknown-profile', 'export-background-overflow', 'export-background-negative', 'export-background-wrong-length'].includes(item.id) ? 'invalid_method' : 'invalid_application');
     if (item.id === 'unknown-method' || item.id === 'unknown-param') assert.equal(validateApplication(req).ok, true);
   }
   const probe = { fixture: 'synthetic_menu_v1', profile_id: 'x'.repeat(128), allow_model_load: false, consent_id: requestId };
@@ -99,6 +99,7 @@ test('S01-TS-DTO-05 shared Rust/Ajv/schema response parity and calendar mutation
   delete mutated.$defs.UtcTime.format;
   const ajv = new Ajv2020({ strict: true });
   addFormats(ajv);
+  ajv.addFormat('uint8', { type: 'number', validate: n => Number.isInteger(n) && n >= 0 && n <= 255 });
   ajv.addFormat('uint16', { type: 'number', validate: n => Number.isInteger(n) && n >= 0 && n <= 65535 });
   ajv.addFormat('uint32', { type: 'number', validate: n => Number.isInteger(n) && n >= 0 && n <= 4294967295 });
   const withoutCalendar = ajv.compile(mutated);
@@ -162,6 +163,7 @@ test('S01-TS-MUT-01 in-memory removal of Rust SafeMessage guard fails shared neg
   delete mutated.$defs.SafeMessage.not;
   const ajv = new Ajv2020({ strict: true });
   addFormats(ajv);
+  ajv.addFormat('uint8', { type: 'number', validate: n => Number.isInteger(n) && n >= 0 && n <= 255 });
   ajv.addFormat('uint16', { type: 'number', validate: n => Number.isInteger(n) && n >= 0 && n <= 65535 });
   ajv.addFormat('uint32', { type: 'number', validate: n => Number.isInteger(n) && n >= 0 && n <= 4294967295 });
   const unguarded = ajv.compile(mutated);

@@ -50,6 +50,13 @@ typecheck/lint/test/contracts:check; Python boundary/schema fixtures и source b
 `scripts/test-foundation-smoke.ps1` проверяет owned host/CLI/GUI и error-finally cleanup,
 включая `test-preview-rejection.ps1` (12 actual two-root/config/binding/mutation cases).
 Это отдельный composed runtime gate, не скрытая часть offline verify.
+S03 image seam добавляет явные `TESTS-IMAGE` (sm-image), `TESTS-IMAGE-WORKER`
+(sm-image-worker) и `IMAGE-WORKER-FAULTS` (test-only worker-test-seams), после которых
+`IMAGE-WORKER-PRODUCTION` обязательно пересобирает private binary без fault feature.
+Это bundled-codec/owned-process gates, не import DB/UI/full S03 acceptance.
+Native prerequisites — уже установленные VS CMake/Git Perl, process-local only;
+source bootstrap/SHA/build-script review отдельно, не в runner. Подробности —
+[IMAGE.pipeline](IMAGE.pipeline.instructions.md).
 `CAPTURE-NATIVE` — только safe `--lib`; desktop-reading `live_capture` требует
 non-default `isolated-desktop-tests`. `OFFLINE-SAFETY` проверяет default denial
 compile-only (raw 101), live suite честно `CAPTURE-LIVE-DESKTOP=NOT_RUN`.

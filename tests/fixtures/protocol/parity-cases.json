@@ -1,10 +1,22 @@
 {
   "valid": [
+    {"id":"bounded-preview","base":"status","method":"library.asset.preview","params":{"asset_id":"01900000-0000-4000-8000-000000000001","offset":0}},
+    {"id":"source-metadata","base":"status","method":"library.record.metadata","params":{"record_id":"01900000-0000-4000-8000-000000000001"}},
+    {"id":"export-jpeg-uint8-background","base":"status","method":"library.export","params":{"operation_id":"01900000-0000-7000-8000-000000000001","record_id":"01900000-0000-7000-8000-000000000002","asset_id":null,"format":"jpeg","max_side":320,"jpeg_background":[0,127,255],"destination_path":null,"metadata_policy":"strip_private"}},
+    {"id":"import-webp-keep-both","base":"status","method":"library.import","params":{"batch_id":"01900000-0000-7000-8000-000000000001","source_paths":["C:\\synthetic\\image.png"],"profile":"webp_exact","duplicates":"keep_both"}},
+    {"id":"export-png","base":"status","method":"library.export","params":{"operation_id":"01900000-0000-7000-8000-000000000001","record_id":"01900000-0000-7000-8000-000000000002","asset_id":null,"format":"png","max_side":320,"jpeg_background":null,"destination_path":"C:\\synthetic\\export.png","metadata_policy":"strip_private"}},
     {"id":"revision-zero","base":"control","params":{"expected_revision":"0","enabled":true}},
     {"id":"revision-over-safe-integer","base":"control","params":{"expected_revision":"9007199254740993","enabled":false}},
     {"id":"revision-u64-max","base":"control","params":{"expected_revision":"18446744073709551615","enabled":false}}
   ],
   "invalid": [
+    {"id":"preview-refuses-path-authority","base":"status","method":"library.asset.preview","params":{"asset_id":"01900000-0000-4000-8000-000000000001","offset":0,"path":"C:\\synthetic\\file.avif"}},
+    {"id":"metadata-refuses-principal-authority","base":"status","method":"library.record.metadata","params":{"record_id":"01900000-0000-4000-8000-000000000001","principal_id":"01900000-0000-4000-8000-000000000002"}},
+    {"id":"export-background-overflow","base":"status","method":"library.export","params":{"operation_id":"01900000-0000-7000-8000-000000000001","record_id":"01900000-0000-7000-8000-000000000002","asset_id":null,"format":"jpeg","max_side":320,"jpeg_background":[0,0,256],"destination_path":null,"metadata_policy":"strip_private"}},
+    {"id":"export-background-negative","base":"status","method":"library.export","params":{"operation_id":"01900000-0000-7000-8000-000000000001","record_id":"01900000-0000-7000-8000-000000000002","asset_id":null,"format":"jpeg","max_side":320,"jpeg_background":[-1,0,0],"destination_path":null,"metadata_policy":"strip_private"}},
+    {"id":"export-background-wrong-length","base":"status","method":"library.export","params":{"operation_id":"01900000-0000-7000-8000-000000000001","record_id":"01900000-0000-7000-8000-000000000002","asset_id":null,"format":"jpeg","max_side":320,"jpeg_background":[0,0],"destination_path":null,"metadata_policy":"strip_private"}},
+    {"id":"import-unknown-authority","base":"status","method":"library.import","params":{"batch_id":"01900000-0000-7000-8000-000000000001","source_paths":["C:\\synthetic\\image.png"],"profile":"webp_exact","duplicates":"reuse_record","principal_id":"01900000-0000-7000-8000-000000000002"}},
+    {"id":"import-unknown-profile","base":"status","method":"library.import","params":{"batch_id":"01900000-0000-7000-8000-000000000001","source_paths":["C:\\synthetic\\image.png"],"profile":"raw","duplicates":"reuse_record"}},
     {"id":"revision-overflow","base":"control","params":{"expected_revision":"18446744073709551616","enabled":false}},
     {"id":"revision-leading-zero","base":"control","params":{"expected_revision":"01","enabled":false}},
     {"id":"revision-number","base":"control","params":{"expected_revision":9007199254740992,"enabled":false}},

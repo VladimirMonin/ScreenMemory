@@ -213,6 +213,12 @@ pub fn encode_exact_lossless(image: &RgbaImage) -> Result<CanonicalWebp, CodecEr
     })
 }
 
+/// Export-only lossy WebP quality90, lossless alpha, method4/thread0.
+/// Not a canonical capture/recovery profile; invisible RGB is not preserved.
+pub fn encode_lossy90_export(image: &RgbaImage) -> Result<Vec<u8>, CodecError> {
+    native::encode_lossy90(image.dimensions, &image.pixels)
+}
+
 /// Exact lossless encode followed by the mandatory bounded decode-check.
 pub fn encode_exact_lossless_verified(
     image: &RgbaImage,

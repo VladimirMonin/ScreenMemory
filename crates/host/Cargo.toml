@@ -17,6 +17,8 @@ sm-credentials = { path = "../credentials" }
 sm-domain = { path = "../domain" }
 sm-framing = { path = "../framing" }
 sm-isolation = { path = "../isolation" }
+sm-image-worker = { path = "../image-worker" }
+sha2.workspace = true
 sm-observability = { path = "../observability" }
 sm-pipe = { path = "../pipe" }
 sm-protocol = { path = "../protocol" }

@@ -3,12 +3,17 @@
 compile_error!("sm-storage requires the audited Windows x64 root adapter");
 #[cfg(test)]
 mod file_lane_tests;
+pub mod image_services;
 #[cfg(test)]
 mod image_tests;
 mod images;
+mod import_db;
+#[cfg(test)]
+mod import_tests;
 #[cfg(test)]
 mod intent_tests;
 mod intents;
+mod library_views;
 pub mod match_recovery;
 mod migration;
 pub mod recovery_candidate;
@@ -210,6 +215,44 @@ impl OwnedStageInput {
 
 type StageResponse = oneshot::Sender<Result<staging_files::Staged, StageOwnedError>>;
 enum FileRequest {
+    Preview(
+        oneshot::Sender<Result<Vec<u8>, StorageError>>,
+        Arc<sm_image_worker::TrustedWorker>,
+        import_db::AssetSnapshot,
+    ),
+    VerifyImportReport(
+        oneshot::Sender<Result<sm_application::images::ImportReport, StorageError>>,
+        sm_application::images::ImportReport,
+        SyncSender<Request>,
+    ),
+    StopSql(SyncSender<Request>),
+    ExportRead(
+        oneshot::Sender<Result<image_services::ExportReadLease, StorageError>>,
+        PrincipalId,
+        OperationId,
+        SyncSender<Request>,
+    ),
+    CleanupExports(
+        oneshot::Sender<Result<u32, StorageError>>,
+        PrincipalId,
+        SyncSender<Request>,
+    ),
+    ImportRun(
+        Arc<sm_image_worker::TrustedWorker>,
+        PrincipalId,
+        sm_domain::ImportBatchId,
+        Arc<image_services::JobControl>,
+        Arc<Mutex<std::collections::HashMap<Uuid, Arc<image_services::JobControl>>>>,
+        SyncSender<Request>,
+        u32,
+    ),
+    ImageExport(
+        oneshot::Sender<Result<sm_application::images::ExportReceipt, StorageError>>,
+        Arc<sm_image_worker::TrustedWorker>,
+        PrincipalId,
+        sm_application::images::ExportRequest,
+        SyncSender<Request>,
+    ),
     Stage(StageResponse, Box<OwnedStageInput>),
     StageV2(
         oneshot::Sender<Result<staging::ValidatedRecoveryEnvelope, StageOwnedError>>,
@@ -262,6 +305,7 @@ enum Fault {
 }
 
 enum Request {
+    Images(Response<import_db::Reply>, import_db::Command),
     Snapshot(Response<SchemaSnapshot>),
     AiEnabled(Response<bool>),
     SqliteVersion(Response<String>),
@@ -282,6 +326,10 @@ enum Request {
     ),
     CommitSealedRecovery(Response<CommittedImage>, SealedPublished),
     PageRecords(Response<Page<Record>>, RecordPageQuery),
+    LibraryPage(
+        Response<sm_protocol::application::LibraryRecordsPage>,
+        RecordPageQuery,
+    ),
     ReadAssetChunk(Response<AssetChunk>, String, u64, u32),
     #[cfg(test)]
     Pragmas(Response<(String, i64, i64, i64)>),
@@ -296,8 +344,15 @@ pub struct StorageWorker {
     sender: SyncSender<Request>,
     file_sender: SyncSender<FileRequest>,
     gate: Arc<Mutex<Admission>>,
+    image_active: Arc<Mutex<std::collections::HashMap<Uuid, Arc<image_services::JobControl>>>>,
 }
 impl StorageWorker {
+    pub async fn library_page(
+        &self,
+        query: RecordPageQuery,
+    ) -> Result<sm_protocol::application::LibraryRecordsPage, StorageError> {
+        self.ask(|tx| Request::LibraryPage(tx, query)).await
+    }
     /// Consumes a real acquired OS lease. No database filename/path input.
     pub fn start(lease: HostLease) -> Result<Self, StorageError> {
         Self::start_inner(
@@ -419,6 +474,7 @@ impl StorageWorker {
             sender,
             file_sender,
             gate,
+            image_active: Arc::new(Mutex::new(std::collections::HashMap::new())),
         })
     }
     /// Separate, single-slot file queue. Only accepted requests own file-lane memory;
@@ -680,7 +736,10 @@ impl StorageWorker {
                 {
                     let mut gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
                     if !gate.stop_sent {
-                        match self.sender.try_send(Request::Stop) {
+                        match self
+                            .file_sender
+                            .try_send(FileRequest::StopSql(self.sender.clone()))
+                        {
                             Ok(()) => gate.stop_sent = true,
                             Err(TrySendError::Disconnected(_)) => {
                                 return Err(StorageError::Unavailable)
@@ -748,6 +807,7 @@ fn open(entry: &sm_isolation::DatabaseEntry, fail: bool) -> Result<Connection, S
     }
     migration::pragmas(&db)?;
     migration::initialize(&mut db, fresh, fail)?;
+    import_db::reconcile_startup(&mut db)?;
     Ok(db)
 }
 fn run(
@@ -760,6 +820,9 @@ fn run(
     let mut db = db;
     for request in receiver {
         match request {
+            Request::Images(tx, command) => {
+                let _ = tx.send(import_db::execute(&mut db, command));
+            }
             Request::Snapshot(tx) => {
                 let _ = tx.send(migration::validate(&db));
             }
@@ -810,6 +873,9 @@ fn run(
                 };
                 let _ = tx.send(result);
             }
+            Request::LibraryPage(tx, query) => {
+                let _ = tx.send(library_views::page(&db, query));
+            }
             Request::PageRecords(tx, query) => {
                 let _ = tx.send(images::page_records(&db, query));
             }
@@ -855,9 +921,111 @@ fn file_loop(
     #[cfg(test)] pause: Option<FilePause>,
     #[cfg(test)] crash_gate: Option<std::sync::Arc<recovery_process_tests::CrashGate>>,
 ) {
-    for request in receiver {
+    let mut imports = std::collections::VecDeque::new();
+    loop {
+        // The original single-slot lane wins between image steps. In particular,
+        // an admitted capture stage cannot wait behind a whole recursive batch.
+        let request = match receiver.try_recv() {
+            Ok(request) => request,
+            Err(mpsc::TryRecvError::Empty) => match imports.pop_front() {
+                Some(request) => request,
+                None => match receiver.recv() {
+                    Ok(request) => request,
+                    Err(_) => break,
+                },
+            },
+            Err(mpsc::TryRecvError::Disconnected) => match imports.pop_front() {
+                Some(request) => request,
+                None => break,
+            },
+        };
         match request {
             FileRequest::Stop => break,
+            FileRequest::Preview(tx, worker, asset) => {
+                let _ = tx.send(image_services::make_preview(lease, &worker, &asset));
+            }
+            FileRequest::VerifyImportReport(tx, report, sender) => {
+                let _ = tx.send(image_services::verify_report(lease, &sender, report));
+            }
+            FileRequest::StopSql(sender) => {
+                // Shutdown drains the current file step, then retains the rest as
+                // an explicit paused batch before SQLite close/lease release.
+                for request in imports.drain(..) {
+                    if let FileRequest::ImportRun(_, p, b, job, active, sql, _) = request {
+                        job.stopped
+                            .store(true, std::sync::atomic::Ordering::Release);
+                        job.cancel.cancel();
+                        let _ = image_services::sql(
+                            &sql,
+                            import_db::Command::Control(
+                                p,
+                                sm_application::images::ImportControlRequest {
+                                    batch_id: b,
+                                    control: sm_application::images::ImportControl::Pause,
+                                },
+                            ),
+                        );
+                        if let Ok(mut active) = active.lock() {
+                            active.remove(&b.as_uuid());
+                        }
+                    }
+                }
+                let _ = sender.send(Request::Stop);
+            }
+            FileRequest::ExportRead(tx, p, id, image_sql_sender) => {
+                let _ = tx.send(image_services::begin_export_read(
+                    lease,
+                    &image_sql_sender,
+                    p,
+                    id,
+                ));
+            }
+            FileRequest::CleanupExports(tx, p, image_sql_sender) => {
+                let _ = tx.send(image_services::cleanup_exports(lease, &image_sql_sender, p));
+            }
+            FileRequest::ImportRun(
+                worker,
+                principal,
+                batch,
+                cancel,
+                active,
+                image_sql_sender,
+                after,
+            ) => {
+                match image_services::run_import(
+                    lease,
+                    &image_sql_sender,
+                    &worker,
+                    principal,
+                    batch,
+                    &cancel,
+                    after,
+                ) {
+                    Ok(Some(next)) => imports.push_back(FileRequest::ImportRun(
+                        worker,
+                        principal,
+                        batch,
+                        cancel,
+                        active,
+                        image_sql_sender,
+                        next,
+                    )),
+                    _ => {
+                        if let Ok(mut active) = active.lock() {
+                            active.remove(&batch.as_uuid());
+                        }
+                    }
+                }
+            }
+            FileRequest::ImageExport(tx, worker, principal, request, image_sql_sender) => {
+                let _ = tx.send(image_services::run_export(
+                    lease,
+                    &image_sql_sender,
+                    &worker,
+                    principal,
+                    request,
+                ));
+            }
             FileRequest::EnumerateCandidates(tx) => {
                 let result = lease
                     .staging_root()

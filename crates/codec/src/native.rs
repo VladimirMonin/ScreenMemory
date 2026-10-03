@@ -95,6 +95,28 @@ pub(crate) fn encode_lossless_exact(
     dimensions: Dimensions,
     data: &[u8],
 ) -> Result<Vec<u8>, CodecError> {
+    encode_with_config(layout, dimensions, data, lossless_exact_config()?)
+}
+
+/// S03 export-only profile. Never used by capture/recovery canonical callers.
+pub(crate) fn encode_lossy90(dimensions: Dimensions, data: &[u8]) -> Result<Vec<u8>, CodecError> {
+    let mut config = lossless_exact_config()?;
+    config.lossless = 0;
+    config.quality = 90.0;
+    config.exact = 0;
+    config.alpha_quality = 100;
+    if unsafe { WebPValidateConfig(&config) } == 0 {
+        return Err(CodecError::EncodeFailed { native_code: 0 });
+    }
+    encode_with_config(PixelLayout::Rgba8, dimensions, data, config)
+}
+
+fn encode_with_config(
+    layout: PixelLayout,
+    dimensions: Dimensions,
+    data: &[u8],
+    config: WebPConfig,
+) -> Result<Vec<u8>, CodecError> {
     let expected = dimensions.byte_len(layout.bytes_per_pixel())?;
     if data.len() != expected {
         return Err(CodecError::BufferLengthMismatch {
@@ -106,8 +128,6 @@ pub(crate) fn encode_lossless_exact(
     let height = i32::try_from(dimensions.height).map_err(|_| unsupported(dimensions))?;
     let stride = i32::try_from(expected / dimensions.height as usize)
         .map_err(|_| unsupported(dimensions))?;
-    let config = lossless_exact_config()?;
-
     let mut picture = MaybeUninit::<WebPPicture>::uninit();
     // SAFETY: writable uninitialized storage plus the bundled encoder ABI version.
     let initialized =

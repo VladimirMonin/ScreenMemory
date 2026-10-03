@@ -46,6 +46,13 @@
       ],
       "type": "object"
     },
+    "CanonicalProfile": {
+      "enum": [
+        "webp_exact",
+        "avif_sdr90"
+      ],
+      "type": "string"
+    },
     "CaptureCommandParams": {
       "additionalProperties": false,
       "description": "S02 §5.2: parameters of `capture.command`.\n\nThe initiator is deliberately absent: a client cannot declare itself a native hotkey.\nThe trusted host adapter records the trigger out of band.",
@@ -96,8 +103,183 @@
       ],
       "type": "object"
     },
+    "DuplicatePolicy": {
+      "enum": [
+        "reuse_record",
+        "keep_both"
+      ],
+      "type": "string"
+    },
     "EmptyParams": {
       "additionalProperties": false,
+      "type": "object"
+    },
+    "ExportFormat": {
+      "enum": [
+        "png",
+        "jpeg",
+        "webp",
+        "avif"
+      ],
+      "type": "string"
+    },
+    "ExportMetadataPolicy": {
+      "enum": [
+        "strip_private",
+        "include_source_sidecar"
+      ],
+      "type": "string"
+    },
+    "ExportRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssetId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "None resolves Current exactly once. Replay never resolves again."
+        },
+        "destination_path": {
+          "description": "None selects the host-managed export registry (TTL 24h), never a wire cache path.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "format": {
+          "$ref": "#/$defs/ExportFormat"
+        },
+        "jpeg_background": {
+          "items": {
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "max_side": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "metadata_policy": {
+          "$ref": "#/$defs/ExportMetadataPolicy"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "record_id": {
+          "$ref": "#/$defs/RecordId"
+        }
+      },
+      "required": [
+        "operation_id",
+        "record_id",
+        "format",
+        "metadata_policy"
+      ],
+      "type": "object"
+    },
+    "ImportBatchId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "ImportBatchRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "batch_id": {
+          "$ref": "#/$defs/ImportBatchId"
+        }
+      },
+      "required": [
+        "batch_id"
+      ],
+      "type": "object"
+    },
+    "ImportControl": {
+      "enum": [
+        "pause",
+        "cancel_processing",
+        "resume",
+        "retry"
+      ],
+      "type": "string"
+    },
+    "ImportControlRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "batch_id": {
+          "$ref": "#/$defs/ImportBatchId"
+        },
+        "control": {
+          "$ref": "#/$defs/ImportControl"
+        }
+      },
+      "required": [
+        "batch_id",
+        "control"
+      ],
+      "type": "object"
+    },
+    "ImportReportPageRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "after_ordinal": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "batch_id": {
+          "$ref": "#/$defs/ImportBatchId"
+        }
+      },
+      "required": [
+        "batch_id",
+        "after_ordinal"
+      ],
+      "type": "object"
+    },
+    "ImportRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "batch_id": {
+          "$ref": "#/$defs/ImportBatchId"
+        },
+        "duplicates": {
+          "$ref": "#/$defs/DuplicatePolicy"
+        },
+        "profile": {
+          "$ref": "#/$defs/CanonicalProfile"
+        },
+        "source_paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "batch_id",
+        "source_paths",
+        "profile",
+        "duplicates"
+      ],
       "type": "object"
     },
     "LibraryAssetRequest": {
@@ -159,6 +341,24 @@
       "minLength": 1,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
       "type": "string"
+    },
+    "RecordId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "RecordMetadataRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "record_id": {
+          "$ref": "#/$defs/RecordId"
+        }
+      },
+      "required": [
+        "record_id"
+      ],
+      "type": "object"
     },
     "Revision": {
       "maxLength": 20,
@@ -333,11 +533,130 @@
       "additionalProperties": false,
       "properties": {
         "method": {
+          "const": "library.asset.preview",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/LibraryAssetRequest"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "const": "library.record.metadata",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/RecordMetadataRequest"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
           "const": "library.list_records",
           "type": "string"
         },
         "params": {
           "$ref": "#/$defs/LibraryRecordsRequest"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "const": "library.import",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/ImportRequest"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "const": "library.import.status",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/ImportBatchRequest"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "const": "library.import.report",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/ImportReportPageRequest"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "const": "library.import.control",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/ImportControlRequest"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "const": "library.export",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/ExportRequest"
         }
       },
       "required": [

@@ -18,7 +18,7 @@ pub const GUI_ENVELOPE_VERSION: u32 = 1;
 
 /// Capabilities still absent; the window marks them as not implemented. `capture` is no
 /// longer listed: S02 wires a real button through the same host command as `shot`.
-pub const NOT_IMPLEMENTED: [&str; 4] = ["search", "drop_zone", "model_settings", "bridge_runtime"];
+pub const NOT_IMPLEMENTED: [&str; 3] = ["search", "model_settings", "bridge_runtime"];
 
 /// Capture modes the window may request; the vocabulary is the wire one.
 pub const CAPTURE_MODES: [&str; 4] = ["region", "window", "monitor", "desktop"];

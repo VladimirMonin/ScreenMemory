@@ -121,6 +121,7 @@ pub struct FoundationServices {
     logger: Logger,
     /// S02 capture port; `None` means this composition serves no capture handler at all.
     capture: Option<Arc<dyn CaptureApi>>,
+    images_enabled: std::sync::atomic::AtomicBool,
 }
 
 impl FoundationServices {
@@ -149,6 +150,7 @@ impl FoundationServices {
             log_root,
             logger,
             capture,
+            images_enabled: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -159,7 +161,21 @@ impl FoundationServices {
         if self.capture.is_some() {
             methods.extend(CAPTURE_METHODS);
         }
+        if self.images_enabled.load(Ordering::SeqCst) {
+            methods.extend([
+                "library.import",
+                "library.import.status",
+                "library.import.report",
+                "library.import.control",
+                "library.export",
+                "library.asset.preview",
+                "library.record.metadata",
+            ]);
+        }
         methods
+    }
+    pub fn enable_images(&self) {
+        self.images_enabled.store(true, Ordering::SeqCst);
     }
     pub fn new_phase() -> Arc<AtomicU8> {
         Arc::new(AtomicU8::new(PHASE_STARTING))
@@ -430,40 +446,10 @@ impl FoundationApi for FoundationServices {
         }
         let query = RecordPageQuery::new(Some(request.limit), request.cursor.clone())
             .map_err(|_| app_error(ErrorCode::InvalidRequest, "Invalid page query."))?;
-        let page = self
-            .storage
-            .page_records(query)
+        self.storage
+            .library_page(query)
             .await
-            .map_err(storage_error)?;
-        let items = page
-            .items
-            .into_iter()
-            .map(|record| {
-                let (preview_asset_id, byte_size) = match record
-                    .assets
-                    .iter()
-                    .find(|a| a.asset_type.as_str() == "preview")
-                    .or_else(|| record.assets.first())
-                {
-                    Some(asset) => (Some(asset.id), asset.size_bytes.to_string()),
-                    None => (None, "0".to_string()),
-                };
-                sm_protocol::application::LibraryRecordEntry {
-                    id: record.id,
-                    created_at: record.created_at,
-                    title: record.title,
-                    target: record.target.as_str().to_string(),
-                    width: record.bounds.width,
-                    height: record.bounds.height,
-                    byte_size,
-                    preview_asset_id,
-                }
-            })
-            .collect();
-        Ok(LibraryRecordsPage {
-            items,
-            next_cursor: page.next_cursor,
-        })
+            .map_err(storage_error)
     }
 }
 

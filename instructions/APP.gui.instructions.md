@@ -12,7 +12,10 @@ description: "Читай при работе с окном Tauri+React, его �
 каждый handler — тонкий typed adapter над одним `GuiSession`, который использует **тот же**
 `sm_session::ApplicationClient`, что `shot` (shared primitives `sm-cli`
 `connect_session`/`ClientFailure`/`config_message`/`target_failure`). Handler не принимает
-path, host image, frame, credential или method и не может остановить host.
+library root, host image, frame, credential или method и не может остановить host.
+S03 handlers принимают только typed source/destination roles: ImportRequest,
+ImportControlRequest/ReportPageRequest, ExportRequest и RecordMetadataRequest.
+Root/worker authority остаётся у host; renderer paths не используются для IO в GUI.
 
 Конфиг окна — только явный абсолютный локальный `--config <file>` со схемой dev-preview
 CLI: `schema_version = 1`, `environment = test`, абсолютный `root`, canonical UUID
@@ -30,22 +33,32 @@ count/path/model полей: незавершённые возможности �
 Закрытие окна закрывает только это соединение: host продолжает работать, повторное окно
 подключается к тому же `host_instance_id`.
 
-S02: `gui_library_recent` получает от authenticated `GuiSession::list` только первую
-фиксированную страницу из 24 committed records. `gui_asset_preview` принимает **только**
+S03: `gui_library_page` получает source-aware committed records, по 24 с opaque cursor;
+legacy `gui_library_recent` остаётся первой страницей. Imported rows не превращаются
+в CaptureContext. Empty list не расходует первый auto-preview; новые Saved обновляют
+список, а generation guards не дают старому ответу сменить позднюю selection. `gui_asset_preview` принимает **только**
 канонический lowercase UUIDv4 `assetId`, без path/URL/transport; host проверяет наличие
-asset в этой библиотеке. Legacy `read_asset_full` для этого окна отказывает по
-`PREVIEW_TOO_LARGE` при объявленном размере >8 MiB **до** накопления hex, сверяет
+asset в этой библиотеке. `read_asset_full` вызывает `library.asset.preview`: native file lane выдаёт WebP
+из сохранного канона (AVIF/large canonical → contained derivative max-side2048),
+не требует исходного файла. ≤8 MiB transfer отказывает по `PREVIEW_TOO_LARGE`
+при превышении объявленного размера **до** накопления hex, сверяет
 asset_id, offset, next_offset, total_size, WebP MIME, SHA256 по всем чанкам и EOF;
 прочие ошибки дают `PREVIEW_UNAVAILABLE` или безопасный host code. Канон при отказе
 не изменяется. React превращает только проверенный bounded hex в Blob URL `image/webp`,
 отзывает URL при смене/закрытии/unmount, не использует `file://` или сеть. Список
 обновляется на ready, после Saved и по кнопке. При первом успешном списке первый
 asset с canonical UUIDv4 и объявленным размером от 1 байта до 8 MiB открывается
-автоматически один раз; обновление списка не переоткрывает preview. Pagination,
-thumbnails, pin/editor, clipboard и пользовательское окно остаются отдельными задачами,
-а не обещанием этой галереи. Legacy host read реализует полную проверку canonical
-за один вызов и может аллоцировать полный файл до отказа GUI по размеру: это
-остаточный риск host-owner.
+автоматически один раз; обновление списка не переоткрывает preview. Pagination доступна кнопкой, gallery имеет bounded scroll. Thumbnails, pin/editor,
+clipboard и полная S07 остаются отдельными задачами. Preview host cache: ≤4 immutable
+buffers ×8 MiB, 120s; eviction/expiry дают отказ offset, не подмену transfer. Legacy
+canonical read сохраняет свой checksum, но использует fixed scratch и chunk buffer,
+не full-file allocation на каждый chunk.
+Native Drop передаёт только Unicode local paths через fixed `gui-import-paths` event;
+React listener освобождается даже при async registration после StrictMode cleanup.
+Импорт начинается явным подтверждением, не mount effect; batch UUID сохраняется
+до invoke и между reopen. Pause/cancel/resume/retry используют тот же batch, export
+retry — тот же сохранённый request/operation UUID. Metadata требует отдельный
+ReadSourceMetadata scope. Genuine drag/input acceptance — отдельная live проверка.
 
 Frontend (`apps/gui`, Vite+React+TS) импортирует только React, `@tauri-apps/api/core`,
 локальные модули и **типы** сгенерированного контракта; SDK LM Studio, SQLite, native

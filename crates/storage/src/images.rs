@@ -165,17 +165,17 @@ impl Drop for PublishedFile {
 
 /// Opaque page cursor: snapshot upper bound, last delivered key and library identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Cursor {
-    snapshot_upper: i64,
-    before: i64,
+pub(crate) struct Cursor {
+    pub(crate) snapshot_upper: i64,
+    pub(crate) before: i64,
 }
 
 impl Cursor {
-    fn encode(self, library_id: &str) -> String {
+    pub(crate) fn encode(self, library_id: &str) -> String {
         format!("v1:{library_id}:{}:{}", self.snapshot_upper, self.before)
     }
 
-    fn parse(raw: &str, library_id: &str) -> Result<Self, StorageError> {
+    pub(crate) fn parse(raw: &str, library_id: &str) -> Result<Self, StorageError> {
         let parts: Vec<&str> = raw.split(':').collect();
         if parts.len() != 4 || parts[0] != "v1" || parts[1] != library_id {
             return Err(StorageError::InvalidQuery);
@@ -617,14 +617,22 @@ fn stored_asset(
     row: &(String, String, String, String, String, i64, String, String),
 ) -> Result<Asset, StorageError> {
     let (asset_id, record_id, asset_type, format, path, size_bytes, sha256, created_at) = row;
-    if format != CANONICAL_FORMAT_WEBP_LOSSLESS || *size_bytes <= 0 {
+    if !matches!(
+        format.as_str(),
+        CANONICAL_FORMAT_WEBP_LOSSLESS | "avif_sdr90"
+    ) || *size_bytes <= 0
+    {
         return Err(StorageError::IntegrityFailed);
     }
     Ok(Asset {
         id: AssetId::new(identity(asset_id)?),
         record_id: RecordId::new(identity(record_id)?),
         asset_type: AssetType::parse(asset_type)?,
-        format: CANONICAL_FORMAT_WEBP_LOSSLESS,
+        format: if format == "avif_sdr90" {
+            "avif_sdr90"
+        } else {
+            CANONICAL_FORMAT_WEBP_LOSSLESS
+        },
         relative_path: path.clone(),
         size_bytes: *size_bytes as u64,
         sha256: sha256.clone(),
@@ -650,7 +658,10 @@ fn asset_path(assets: &Path, relative: &str) -> Result<PathBuf, StorageError> {
         }
         path.push(component);
     }
-    if path.extension().and_then(|value| value.to_str()) != Some("webp") {
+    if !matches!(
+        path.extension().and_then(|value| value.to_str()),
+        Some("webp" | "avif")
+    ) {
         return Err(StorageError::IntegrityFailed);
     }
     Ok(path)
@@ -728,17 +739,57 @@ pub(super) fn read_asset_chunk(
             other => sql_error(other),
         })?;
     let (relative, size_bytes, sha256, format) = row;
-    if format != CANONICAL_FORMAT_WEBP_LOSSLESS || size_bytes <= 0 {
+    if !matches!(
+        format.as_str(),
+        CANONICAL_FORMAT_WEBP_LOSSLESS | "avif_sdr90"
+    ) || size_bytes <= 0
+    {
         return Err(StorageError::IntegrityFailed);
     }
     let total = size_bytes as u64;
     if total > MAX_CANONICAL_FILE_BYTES || offset > total {
         return Err(StorageError::InvalidQuery);
     }
-    let bytes = read_verified_canonical(assets, &relative, total, &sha256)?;
+    // Stream verification in a fixed scratch buffer, retaining only this range.
+    use sha2::Digest;
+    use std::io::Read;
+    let mut file = std::fs::File::open(asset_path(assets, &relative)?)
+        .map_err(|_| StorageError::AssetNotFound)?;
+    if file
+        .metadata()
+        .map_err(|_| StorageError::AssetIntegrityFailed)?
+        .len()
+        != total
+    {
+        return Err(StorageError::AssetIntegrityFailed);
+    }
     let chunk_len = u64::from(length.min(ASSET_CHUNK_BYTES)).min(total - offset);
-    let start = offset as usize;
-    let end = start + chunk_len as usize;
+    let mut bytes = Vec::with_capacity(chunk_len as usize);
+    let mut digest = sha2::Sha256::new();
+    let mut scratch = [0u8; 64 * 1024];
+    let mut position = 0u64;
+    loop {
+        let n = file
+            .read(&mut scratch)
+            .map_err(|_| StorageError::AssetIntegrityFailed)?;
+        if n == 0 {
+            break;
+        }
+        let end = position + n as u64;
+        if end > total {
+            return Err(StorageError::AssetIntegrityFailed);
+        }
+        digest.update(&scratch[..n]);
+        let lo = position.max(offset);
+        let hi = end.min(offset + chunk_len);
+        if hi > lo {
+            bytes.extend_from_slice(&scratch[(lo - position) as usize..(hi - position) as usize]);
+        }
+        position = end;
+    }
+    if position != total || format!("{:x}", digest.finalize()) != sha256 {
+        return Err(StorageError::AssetIntegrityFailed);
+    }
     Ok(AssetChunk {
         asset_id: AssetId::new(id),
         offset,
@@ -746,8 +797,12 @@ pub(super) fn read_asset_chunk(
         eof: offset + chunk_len >= total,
         total_size: total,
         sha256,
-        format: CANONICAL_FORMAT_WEBP_LOSSLESS,
-        bytes: bytes[start..end].to_vec(),
+        format: if format == "avif_sdr90" {
+            "avif_sdr90"
+        } else {
+            CANONICAL_FORMAT_WEBP_LOSSLESS
+        },
+        bytes,
     })
 }
 
@@ -783,7 +838,7 @@ pub(super) fn page_records(
 
     let mut statement = db
         .prepare(
-            "SELECT record_pk, id, created_at, capture_context FROM records WHERE record_pk <= ?1 AND record_pk < ?2 ORDER BY record_pk DESC LIMIT ?3",
+            "SELECT record_pk, id, created_at, capture_context FROM records WHERE source_kind='capture' AND record_pk <= ?1 AND record_pk < ?2 ORDER BY record_pk DESC LIMIT ?3",
         )
         .map_err(sql_error)?;
     let rows = statement
@@ -806,7 +861,7 @@ pub(super) fn page_records(
     let mut assets_statement = db
         .prepare(
             "SELECT a.id, a.record_id, a.asset_type, a.format, a.path, a.size_bytes, a.sha256, a.created_at \
-             FROM assets a WHERE a.record_id IN (SELECT id FROM records WHERE record_pk <= ?1 AND record_pk < ?2 ORDER BY record_pk DESC LIMIT ?3) \
+             FROM assets a WHERE a.record_id IN (SELECT id FROM records WHERE source_kind='capture' AND record_pk <= ?1 AND record_pk < ?2 ORDER BY record_pk DESC LIMIT ?3) \
              ORDER BY a.record_id, a.asset_type",
         )
         .map_err(sql_error)?;

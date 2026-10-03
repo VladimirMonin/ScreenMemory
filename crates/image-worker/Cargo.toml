@@ -1,0 +1,22 @@
+[package]
+name = "sm-image-worker"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+# Fault scheduling only; never enabled by product/offline default build.
+worker-test-seams = []
+
+[dependencies]
+sm-image = { path = "../image" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+uuid = { workspace = true, features = ["v4"] }
+windows-sys = { workspace = true, features = ["Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security", "Win32_Storage_FileSystem"] }
+
+[[bin]]
+name = "shot-image-worker"
+path = "src/main.rs"

@@ -235,12 +235,19 @@ impl Fixture {
 }
 /// The negotiated list of this build: the three foundation handlers plus the two S02
 /// capture handlers. A peer that does not speak exactly this list is refused.
-const CAPS: [&str; 5] = [
+const CAPS: [&str; 12] = [
     "system.status",
     "system.doctor",
     "system.request_shutdown",
     "capture.command",
     "library.asset.read",
+    "library.import",
+    "library.import.status",
+    "library.import.report",
+    "library.import.control",
+    "library.export",
+    "library.asset.preview",
+    "library.record.metadata",
 ];
 fn request(
     f: &Fixture,

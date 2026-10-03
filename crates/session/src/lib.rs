@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use sm_application::{
     capture::CaptureApi,
     credentials::{Authenticator, CredentialKey, Secret, SecretStore},
+    images::ImageLibraryApi,
     FoundationApi, FoundationControlApi, RequestContext, Scope,
 };
 use sm_domain::{CorrelationId, HostInstanceId, LibraryId, RequestId};
@@ -37,12 +38,19 @@ use uuid::Uuid;
 /// Capability list negotiated by exactly one build of this workspace. S02 adds the two
 /// capture handlers; a peer that does not speak the same list is refused instead of being
 /// served a method it cannot decode.
-pub const CAPABILITIES: [&str; 5] = [
+pub const CAPABILITIES: [&str; 12] = [
     "system.status",
     "system.doctor",
     "system.request_shutdown",
     "capture.command",
     "library.asset.read",
+    "library.import",
+    "library.import.status",
+    "library.import.report",
+    "library.import.control",
+    "library.export",
+    "library.asset.preview",
+    "library.record.metadata",
 ];
 const HANDSHAKE_TIME: Duration = Duration::from_secs(3);
 const MAX_ACTIVE: usize = 8;
@@ -119,6 +127,7 @@ pub struct SessionHost {
     foundation: Arc<dyn FoundationApi>,
     control: Arc<dyn FoundationControlApi>,
     capture: Option<Arc<dyn CaptureApi>>,
+    images: Option<Arc<dyn ImageLibraryApi>>,
     budget: BufferBudget,
 }
 impl SessionHost {
@@ -141,8 +150,13 @@ impl SessionHost {
             foundation,
             control,
             capture,
+            images: None,
             budget,
         }
+    }
+    pub fn with_images(mut self, images: Arc<dyn ImageLibraryApi>) -> Self {
+        self.images = Some(images);
+        self
     }
     /// Listener.accept has already checked OS peer identity before this privileged flow.
     /// The entire handshake, including writer/admission waits, shares one absolute deadline.
@@ -273,13 +287,14 @@ impl SessionHost {
                             let foundation = self.foundation.clone();
                             let control = self.control.clone();
                             let capture = self.capture.clone();
+                            let images = self.images.clone();
                             let context = context.for_request(id, CorrelationId::new(Uuid::new_v4()));
                             let library = self.library;
                             tasks.spawn(async move {
                                 let response = tokio::select! {
                                     biased;
                                     _ = token.cancelled() => response_error(id, ErrorCode::WaitTimeout),
-                                    result = dispatch(request, library, context, foundation, control, capture.clone(), token.clone()) => result,
+                                    result = dispatch(request, library, context, foundation, control, capture.clone(), images, token.clone()) => result,
                                 };
                                 // Keep the active ID/slot until a terminal response is actually sent.
                                 writer.send(Phase::Application, &response).await.map_err(|_| ())?;
@@ -376,6 +391,7 @@ async fn dispatch(
     foundation: Arc<dyn FoundationApi>,
     control: Arc<dyn FoundationControlApi>,
     capture: Option<Arc<dyn CaptureApi>>,
+    images: Option<Arc<dyn ImageLibraryApi>>,
     cancel: CancellationToken,
 ) -> Response {
     let id = request.request_id;
@@ -397,7 +413,14 @@ async fn dispatch(
             | "system.authorize_probe"
             | "capture.command"
             | "library.asset.read"
+            | "library.asset.preview"
+            | "library.record.metadata"
             | "library.list_records"
+            | "library.import"
+            | "library.import.status"
+            | "library.import.report"
+            | "library.import.control"
+            | "library.export"
     ) {
         return Response::Error {
             request_id: id,
@@ -420,9 +443,15 @@ async fn dispatch(
         KnownParams::ProbeRuntime(_) => Scope::RunAiProbe,
         // S02: a new capture and a bounded read of an owned canonical asset.
         KnownParams::CaptureCommand(_) => Scope::CaptureScreen,
-        KnownParams::ReadAsset(_) => Scope::ReadImages,
+        KnownParams::ReadAsset(_) | KnownParams::PreviewAsset(_) => Scope::ReadImages,
+        KnownParams::RecordMetadata(_) => Scope::ReadSourceMetadata,
         // S02-T11: list committed records with their assets.
         KnownParams::ListRecords(_) => Scope::ListRecords,
+        KnownParams::Import(_)
+        | KnownParams::ImportStatus(_)
+        | KnownParams::ImportReportPage(_)
+        | KnownParams::ImportControl(_) => Scope::ImportFiles,
+        KnownParams::Export(_) => Scope::ExportImages,
     };
     if !ctx.allows(scope) {
         return fail(ErrorCode::PermissionDenied);
@@ -445,10 +474,59 @@ async fn dispatch(
                 capture_command(capture, ctx, params, cancel.clone()).await
             }
             KnownParams::ReadAsset(request) => read_asset(capture, ctx, request).await,
+            KnownParams::PreviewAsset(request) => match images {
+                Some(api) => api
+                    .preview_asset(ctx, request)
+                    .await
+                    .map(ApplicationResult::AssetChunk),
+                None => Err(AppError::method_not_supported()),
+            },
+            KnownParams::RecordMetadata(request) => match images {
+                Some(api) => api
+                    .record_metadata(ctx, request)
+                    .await
+                    .map(ApplicationResult::RecordMetadata),
+                None => Err(AppError::method_not_supported()),
+            },
             KnownParams::ListRecords(request) => foundation
                 .list_records(ctx, request)
                 .await
                 .map(ApplicationResult::RecordsPage),
+            KnownParams::Import(request) => match images {
+                Some(api) => api
+                    .import_paths(ctx, request)
+                    .await
+                    .map(ApplicationResult::ImportReport),
+                None => Err(AppError::method_not_supported()),
+            },
+            KnownParams::ImportStatus(request) => match images {
+                Some(api) => api
+                    .import_status(ctx, request)
+                    .await
+                    .map(ApplicationResult::ImportReport),
+                None => Err(AppError::method_not_supported()),
+            },
+            KnownParams::ImportReportPage(request) => match images {
+                Some(api) => api
+                    .import_report_page(ctx, request)
+                    .await
+                    .map(ApplicationResult::ImportReport),
+                None => Err(AppError::method_not_supported()),
+            },
+            KnownParams::ImportControl(request) => match images {
+                Some(api) => api
+                    .import_control(ctx, request)
+                    .await
+                    .map(ApplicationResult::ImportReport),
+                None => Err(AppError::method_not_supported()),
+            },
+            KnownParams::Export(request) => match images {
+                Some(api) => api
+                    .export_image(ctx, request)
+                    .await
+                    .map(|receipt| ApplicationResult::ExportReceipt(Box::new(receipt))),
+                None => Err(AppError::method_not_supported()),
+            },
             _ => Err(AppError::method_not_supported()),
         }
     };

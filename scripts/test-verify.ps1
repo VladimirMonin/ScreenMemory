@@ -56,6 +56,10 @@ try {
         'RUST-TEST' = @('cargo',@('test','--workspace','--locked'))
         'HOST-LEASE' = @('cargo',@('test','--locked','-p','sm-isolation','--test','host_lease'))
         'TESTS-CODEC' = @('cargo',@('test','--locked','-p','sm-codec'))
+        'TESTS-IMAGE' = @('cargo',@('test','--locked','-p','sm-image'))
+        'TESTS-IMAGE-WORKER' = @('cargo',@('test','--locked','-p','sm-image-worker','--','--test-threads=1'))
+        'IMAGE-WORKER-FAULTS' = @('cargo',@('test','--locked','-p','sm-image-worker','--features','worker-test-seams','--test','worker','--','--test-threads=1'))
+        'IMAGE-WORKER-PRODUCTION' = @('cargo',@('build','--locked','-p','sm-image-worker','--bin','shot-image-worker','--no-default-features'))
         'TESTS-STORAGE-IMAGES' = @('cargo',@('test','--locked','-p','sm-storage','image_tests'))
         'FRAMING' = @('cargo',@('test','--locked','-p','sm-framing'))
         'PIPE-NATIVE' = @('cargo',@('test','--locked','-p','sm-pipe'))
@@ -100,7 +104,7 @@ try {
         }
         $ids = @($positive.steps | ForEach-Object { $_.check_id })
         foreach ($id in $expected.Keys) {
-            if ($id -in @('PREREQ-pnpm') -or ($suite -eq 'verify' -and $id -in @('OFFLINE-SAFETY','CAPTURE-NATIVE','GUI-FRONTEND-BUILD','RUST-FMT','RUST-CLIPPY','RUST-TEST','HOST-LEASE','TESTS-CODEC','TESTS-STORAGE-IMAGES','FRAMING','PIPE-NATIVE','SESSION-NATIVE','HOST-COMPOSITION','CLI-SURFACE','GUI-RUST-TEST','GUI-FRONTEND-TYPECHECK','GUI-FRONTEND-LINT','GUI-FRONTEND-TEST','PNPM-TYPECHECK','PNPM-LINT','PNPM-TEST','CONTRACTS')) -or
+            if ($id -in @('PREREQ-pnpm') -or ($suite -eq 'verify' -and $id -in @('OFFLINE-SAFETY','CAPTURE-NATIVE','GUI-FRONTEND-BUILD','RUST-FMT','RUST-CLIPPY','RUST-TEST','HOST-LEASE','TESTS-CODEC','TESTS-IMAGE','TESTS-IMAGE-WORKER','IMAGE-WORKER-FAULTS','IMAGE-WORKER-PRODUCTION','TESTS-STORAGE-IMAGES','FRAMING','PIPE-NATIVE','SESSION-NATIVE','HOST-COMPOSITION','CLI-SURFACE','GUI-RUST-TEST','GUI-FRONTEND-TYPECHECK','GUI-FRONTEND-LINT','GUI-FRONTEND-TEST','PNPM-TYPECHECK','PNPM-LINT','PNPM-TEST','CONTRACTS')) -or
                 ($suite -eq 'verify-contracts' -and $id -in @('SCHEMA-GENERATE','SCHEMA-CHECK','TS-GENERATE','PNPM-CONTRACTS','BOUNDARIES','SCHEMA-FIXTURES'))) {
                 if ($id -notin $ids) { throw "Missing fixed check evidence: $id" }
             }

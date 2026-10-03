@@ -42,7 +42,7 @@ impl Roots {
         fs::create_dir_all(&parent).unwrap();
         let parent = fs::canonicalize(parent).unwrap();
         let parent = PathBuf::from(parent.to_string_lossy().trim_start_matches(r"\\?\"));
-        let root = parent.join(format!("t06c-{}", Uuid::new_v4()));
+        let root = parent.join(Uuid::new_v4().to_string());
         fs::create_dir(&root).unwrap();
         for child in ["data", "config", "cache", "webview"] {
             fs::create_dir(root.join(child)).unwrap();
@@ -60,6 +60,9 @@ impl Roots {
 }
 impl Drop for Roots {
     fn drop(&mut self) {
+        if std::thread::panicking() {
+            return;
+        }
         fs::remove_dir_all(&self.0).unwrap();
     }
 }
@@ -208,12 +211,24 @@ impl Fixture {
     /// `Some(drain)` exercises the integration hook: on stop the accept loop gives already
     /// admitted connections a bounded window to deliver an in-flight response.
     fn new_with_drain(drain: Option<Duration>) -> Self {
-        let roots = Roots::new();
+        Self::configured(drain, None)
+    }
+    fn configured(
+        drain: Option<Duration>,
+        images: Option<(
+            Roots,
+            LibraryId,
+            Arc<dyn sm_application::images::ImageLibraryApi>,
+        )>,
+    ) -> Self {
+        let (roots, library, images) = match images {
+            Some((roots, library, images)) => (roots, library, Some(images)),
+            None => (Roots::new(), LibraryId::new(Uuid::new_v4()), None),
+        };
         let endpoint = roots.endpoint();
         let listener = Listener::bind(roots.endpoint()).unwrap();
         let image =
             TrustedServerImage::from_configuration(&std::env::current_exe().unwrap()).unwrap();
-        let library = LibraryId::new(Uuid::new_v4());
         let host = HostInstanceId::new(Uuid::new_v4());
         let store = Arc::new(MemoryStore::default());
         let owner = CredentialKey::owner(CredentialEnvironment::Test, library);
@@ -232,7 +247,7 @@ impl Fixture {
             fail_status: AtomicUsize::new(0),
         });
         let budget = BufferBudget::new();
-        let session = Arc::new(SessionHost::new(
+        let session = SessionHost::new(
             library,
             host,
             owner_auth,
@@ -243,7 +258,11 @@ impl Fixture {
             // the advertised capture methods with a real injected adapter.
             None,
             budget,
-        ));
+        );
+        let session = Arc::new(match images {
+            Some(images) => session.with_images(images),
+            None => session,
+        });
         let stop = CancellationToken::new();
         let token = stop.clone();
         let task = tokio::spawn(async move {
@@ -320,6 +339,199 @@ async fn s01_ipc_03_authenticated_native_owner_readonly_and_reconnect() {
     drop(again);
     f.close().await;
 }
+#[tokio::test]
+async fn s03_native_rpc_real_import_survives_client_close_and_exports() {
+    use sm_application::storage::FoundationRepository;
+    use sm_domain::{ImportBatchId, OperationId};
+    use sm_protocol::images::*;
+    let roots = Roots::new();
+    let external = Roots::new();
+    let storage = sm_storage::StorageWorker::start(
+        sm_isolation::HostLease::acquire(
+            LibraryRootResolver::resolve(RootSource::Test {
+                root: &roots.0,
+                forbidden_donor_roots: &[],
+            })
+            .unwrap(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let library = LibraryId::new(storage.schema_snapshot().await.unwrap().library_id);
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../.pi/staging-target-t09b/debug/shot-image-worker.exe");
+    let worker = Arc::new(
+        sm_image_worker::TrustedWorker::from_manifest(
+            &path,
+            sm_image::sha256(&fs::read(&path).unwrap()),
+        )
+        .unwrap(),
+    );
+    let images = Arc::new(sm_storage::image_services::ImageServices::new(
+        storage.clone(),
+        worker,
+    ));
+    let source = external.0.join("source.png");
+    fs::write(
+        &source,
+        include_bytes!("../../../tests/fixtures/images/odd-alpha.png"),
+    )
+    .unwrap();
+    let req = ImportRequest {
+        batch_id: ImportBatchId::new(Uuid::new_v4()),
+        source_paths: vec![source.to_string_lossy().into_owned()],
+        profile: CanonicalProfile::WebpExact,
+        duplicates: DuplicatePolicy::KeepBoth,
+    };
+    let batch = req.batch_id;
+    let f = Fixture::configured(None, Some((roots, library, images)));
+    let owner = f
+        .client(CredentialKey::owner(CredentialEnvironment::Test, library))
+        .await;
+    let readonly = f.client(CredentialKey::test_read_only(library)).await;
+    assert!(matches!(
+        readonly.import_paths(req.clone()).await,
+        Err(ClientError::Application(AppError {
+            code: ErrorCode::PermissionDenied,
+            ..
+        }))
+    ));
+    owner.import_paths(req).await.unwrap();
+    drop(owner);
+    let owner = f
+        .client(CredentialKey::owner(CredentialEnvironment::Test, library))
+        .await;
+    let end = tokio::time::Instant::now() + Duration::from_secs(30);
+    let report = loop {
+        let report = owner
+            .import_status(ImportBatchRequest { batch_id: batch })
+            .await
+            .unwrap();
+        if report.saved_new == 1 && !report.active_work {
+            break report;
+        }
+        assert!(tokio::time::Instant::now() < end);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    };
+    fs::remove_file(source).unwrap();
+    let imported = report.items[0].receipt.as_ref().unwrap();
+    let preview = owner
+        .preview_asset(sm_protocol::application::LibraryAssetRequest {
+            asset_id: imported.original_asset_id,
+            offset: 0,
+        })
+        .await
+        .unwrap();
+    assert_eq!(preview.mime, "image/webp");
+    assert!(preview.eof);
+    assert_eq!(preview.sha256, imported.canonical_sha256);
+    assert!(matches!(
+        readonly
+            .record_metadata(RecordMetadataRequest {
+                record_id: imported.record_id
+            })
+            .await,
+        Err(ClientError::Application(AppError {
+            code: ErrorCode::PermissionDenied,
+            ..
+        }))
+    ));
+    let metadata = owner
+        .record_metadata(RecordMetadataRequest {
+            record_id: imported.record_id,
+        })
+        .await
+        .unwrap();
+    assert_eq!(metadata.source_kind, "imported_image");
+    assert_eq!(metadata.source_reports.len(), 1);
+    let export = ExportRequest {
+        operation_id: OperationId::new(Uuid::new_v4()),
+        record_id: imported.record_id,
+        asset_id: None,
+        format: ExportFormat::Png,
+        max_side: Some(2),
+        jpeg_background: None,
+        destination_path: None,
+        metadata_policy: ExportMetadataPolicy::StripPrivate,
+    };
+    assert!(matches!(
+        readonly.export_image(export.clone(), None).await,
+        Err(ClientError::Application(AppError {
+            code: ErrorCode::PermissionDenied,
+            ..
+        }))
+    ));
+    let receipt = owner.export_image(export, None).await.unwrap();
+    assert!(fs::read(receipt.export_path)
+        .unwrap()
+        .starts_with(b"\x89PNG\r\n\x1a\n"));
+    assert_eq!(receipt.source_asset_id, imported.original_asset_id);
+    drop(owner);
+    drop(readonly);
+    storage.shutdown(Duration::from_secs(20)).await.unwrap();
+    f.close().await;
+}
+
+#[tokio::test]
+async fn s03_native_import_export_owner_scope_and_readonly_denial() {
+    use sm_domain::{ImportBatchId, OperationId, RecordId};
+    use sm_protocol::images::*;
+    let f = Fixture::new();
+    let owner = f
+        .client(CredentialKey::owner(CredentialEnvironment::Test, f.library))
+        .await;
+    let ro = f.client(CredentialKey::test_read_only(f.library)).await;
+    let import = ImportRequest {
+        batch_id: ImportBatchId::new(Uuid::new_v4()),
+        source_paths: vec![r"C:\synthetic\image.png".into()],
+        profile: CanonicalProfile::WebpExact,
+        duplicates: DuplicatePolicy::ReuseRecord,
+    };
+    assert!(matches!(
+        ro.import_paths(import.clone()).await,
+        Err(ClientError::Application(AppError {
+            code: ErrorCode::PermissionDenied,
+            ..
+        }))
+    ));
+    // The optional service has not been composed in this existing session fixture.
+    // Owner reaches the typed capability boundary; no mock Saved result is supplied.
+    assert!(matches!(
+        owner.import_paths(import).await,
+        Err(ClientError::Application(AppError {
+            code: ErrorCode::MethodNotSupported,
+            ..
+        }))
+    ));
+    let export = ExportRequest {
+        operation_id: OperationId::new(Uuid::new_v4()),
+        record_id: RecordId::new(Uuid::new_v4()),
+        asset_id: None,
+        format: ExportFormat::Png,
+        max_side: None,
+        jpeg_background: None,
+        destination_path: None,
+        metadata_policy: ExportMetadataPolicy::StripPrivate,
+    };
+    assert!(matches!(
+        ro.export_image(export.clone(), None).await,
+        Err(ClientError::Application(AppError {
+            code: ErrorCode::PermissionDenied,
+            ..
+        }))
+    ));
+    assert!(matches!(
+        owner.export_image(export, None).await,
+        Err(ClientError::Application(AppError {
+            code: ErrorCode::MethodNotSupported,
+            ..
+        }))
+    ));
+    drop(owner);
+    drop(ro);
+    f.close().await;
+}
+
 #[tokio::test]
 async fn s01_ipc_03_rejects_bad_identity_and_secret_before_handlers() {
     let f = Fixture::new();

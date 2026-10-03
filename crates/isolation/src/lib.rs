@@ -11,11 +11,13 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::{Component as PathComponent, Path};
 use std::sync::Mutex;
 mod canonical;
+mod image_files;
 mod windows;
 pub use canonical::{
     CanonicalError, CanonicalPlan, CanonicalRead, CanonicalRoot, CanonicalSeal, CanonicalTemp,
     MAX_CANONICAL_BYTES,
 };
+pub use image_files::{ImageDirectory, StableImageFile};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Environment {

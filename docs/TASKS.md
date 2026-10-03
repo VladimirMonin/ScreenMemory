@@ -16,7 +16,7 @@ Scope: [ADR-011 / CN-20261002-01](adr/011-private-release-scope.md).
 | Scope и доска | DONE | Parent: ADR-011, маршруты, ссылки/frontmatter/9 plan SHA и 10 локальных workflow checks прошли; это не продуктовая приёмка. |
 | S01 — рабочая основа | IN_PROGRESS, не принята целиком | Sol6.1 writer → fresh Sol6.1 reviewer → parent: актуальный handoff, один host/root/DB/IPC/client, реальные gates и запуск. |
 | S02 — capture/library | IN_PROGRESS, не принята целиком | Sol6.1: сквозной capture→Saved→видимый preview, режимы/hotkeys, recovery, transfer/clipboard, pin/editor, CLI. |
-| S03 — импорт/изображения/экспорт | IN_PROGRESS, запуск независимого milestone | Sol6.1: codec/metadata owner → ingest owner → interface integration → fresh reviewer; files/folders→own WebP/AVIF→preview/export. Live S02 blocker документирован, не принят вместо проверки. |
+| S03 — импорт/изображения/экспорт | ACCEPT_CODE_SCOPED; этап IN_PROGRESS | Own files/tree→verified WebP/AVIF→actual Tauri preview→export: [приёмка/evidence](progress/S03/result.md), fresh review+P2 closure PASS. Whole S03, genuine input, production upgrade и package/performance не приняты. |
 | S04 — SDK/очередь/LM Studio | PENDING | Sol6.1: bundled SDK/runtime, реальный vision API, профили, Automatic/Manual/Off, pause/cancel/retry, load/unload/TTL. |
 | S05 — OCR/карточки/правки | PENDING | Sol6.1: рабочий OCR/vision, категории, schema validation, manual overrides и revision guards. |
 | S06 — FTS5 и качество поиска | PENDING | Sol6.1 + оценка parent: lexical/exact/filters, обновление после правок/удалений, размеченный RU/EN corpus, ranking и latency. |
@@ -70,7 +70,8 @@ Foundation boot/verify/helper seam принят scoped (`99df8f3`, handoff `de41
 на Astra decision `blocked`: без разрешённого собственного guest writer не запускался.
 [Live-stand blocker](progress/S02/isolated-live-stand.md) остаётся у capture/input;
 Windows Sandbox preflight raw0 выявил disabled feature, не runtime PASS.
-**Сейчас:** независимый S03 files/folders→own WebP/AVIF→preview/export на синтетике.
+**Сейчас:** S03 files/folders→own WebP/AVIF→preview/export принят scoped на синтетике;
+следующий полезный milestone — S04 private SDK/runtime и durable processing.
 Импорт не заменяет capture proof. Не возвращаться к микросрезам recovery вместо
 работающего пользовательского результата.
 
@@ -79,10 +80,10 @@ Windows Sandbox preflight raw0 выявил disabled feature, не runtime PASS.
 | Foundation writer/reviewer → parent | DONE scoped: boot/verify/handoff и P1/P2 cleanup | Source released; `99df8f3`, report `de41adb` | Verify36, composed6, review accept; полная S01 IN_PROGRESS |
 | S02 isolation oracle | DONE consultation, live BLOCKED: personal WinSta0 race не разрешён | Read-only, source released, writers не запускались | Astra decision + OS metadata preflight; actual guest availability ещё не доказана |
 | S02 support/integration/review | DEFERRED до собственного чистого guest/session, capture требования сохранены | Без source writers и без live pixel-read/input | Same-frame four modes/IDs/hash/real input/restart остаются NOT_RUN |
-| S03 image owner | NEXT: decoding/inspection/metadata/normalization, WebP+AVIF, transform/export codec, private worker boundary | Один Sol6.1 writer, exclusive codec/image seam | Native synthetic corpus, pinned dependencies/provenance, runnable typed handoff |
-| S03 ingest owner | AFTER image handoff: existing storage/journal + import/origins/derived/export services/DTO | Последовательно, один writer, не второй host/asset store | Source snapshot→verified canonical→commit; duplicate/failure/cancel/protected-target tests |
-| S03 interface integration | AFTER ingest handoff: common client/CLI + GUI import/report/preview/export | Один writer после source release | Реальный own file/tree→saved→list/get→Tauri preview/export, canonical unchanged |
-| S03 reviewer → parent | AFTER integration: fresh scoped read-only review | Без source writes во время integrity gates | Actual diff/evidence/negative checks, parent physical preview и итоговый commit |
+| S03 image owner | READY handoff: decoding/metadata/normalization, WebP+AVIF, contained worker | Source сохранён, sequential owner | Synthetic codec/worker checks; package/stage acceptance отдельно |
+| S03 ingest owner | READY handoff: retained source→verified canonical→no-replace→commit/Saved, durable control/export | Source сохранён, один прежний SQLite/file owner | Duplicate/failure/cancel/protected-target/TTL-lease tests; production populated upgrade guarded |
+| S03 interface integration | ACCEPT_CODE_SCOPED: common RPC/client/JSON CLI + typed/native-path GUI, source-aware pagination, bounded AVIF derivative | Source released; [факты/остатки](progress/S03/interfaces.md) | Actual own Tauri DPI144 RGB preview/source deletion/export/reopen/cleanup1168; final Rust/frontend raw0, comments-only schema drift исправлен, contracts raw0 |
+| S03 reviewer → parent | DONE scoped: fresh review и retained P2 follow-up PASS/findings0 | Все writers завершены; parent принимает/коммитит | Оба report defects исправлены, public-progress invariant/empty CLI raw7 независимо проверены; whole stage не объявлен DONE |
 
 Завершённый foundation был single-seam. S03 image, ingest и interface integration
 имеют последовательных owners и durable handoff, без пересекающихся source writes.
@@ -101,7 +102,7 @@ Pi: `openai-codex/gpt-6.1-sol` для реализации/review;
 | Условная pending→Saved, hostile prior writable mappings | [Условная модель](progress/S02/t09n3b2-conditional-saved.md). Нельзя объявить unconditional proof или переписать guard ради PASS. |
 | Power loss/NTFS и глобальный RSS ≤1 GiB | NOT_RUN/NOT_PROVEN; process-kill не равен отключению питания. Отдельный риск, не остановка независимого development. |
 | Временный recovery codec cap 1 MP | Не production 96 MP acceptance; решить вместе с реальными memory/recovery bounds. |
-| Legacy host asset read | Полный canonical аллоцируется до GUI cap, может повторяться на чанках; будущий bounded transfer owner устраняет риск. |
+| Legacy host asset read | Full-file-per-chunk allocation устранена fixed scratch/range buffer; повторное checksum scanning остаётся. S03 preview — отдельный bounded cached derivative; full transfer/performance позже. |
 | Pin/editor/clipboard/transfer, полный CLI/MCP | Не приняты; реализовать соответствующие milestones, не назвать ранний bounded preview полным T10/T11/S07. |
 | Global fmt drift и прежний default-thread codec overflow | Исторические baseline проблемы, не текущий foundation blocker: verify36 и runner regression raw0. Desktop-reading target default-off; live matrix остаётся NOT_RUN. |
 | Общий preview target занят чужим host | Не останавливать чужой процесс. Использовать отдельный owned target/root; exact UUID, финализация только собственных handles. |

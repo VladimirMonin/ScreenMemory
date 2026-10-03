@@ -635,7 +635,7 @@ fn t06d_gui_03_real_host_states_and_instance_reuse_on_reopen() {
         assert_eq!(host.protocol, APPLICATION_VERSION);
         // Images (0002), saved operations (0003), and pending intents (0004) are applied, so
         // the real host reports global schema 4 (images contract remains 2).
-        assert_eq!(host.schema_version, 4);
+        assert_eq!(host.schema_version, 5);
         assert!(!host.ai_enabled);
         assert!(matches!(host.bridge_state, BridgeState::Stopped));
         assert!(!runtime_available(host));
@@ -980,7 +980,7 @@ fn t06d_gui_07_state_mapping_is_total_and_shows_no_invented_counts() {
         .not_implemented
         .iter()
         .any(|name| name == "gallery"));
-    for capability in ["search", "drop_zone", "model_settings", "bridge_runtime"] {
+    for capability in ["search", "model_settings", "bridge_runtime"] {
         assert!(diagnostics
             .not_implemented
             .iter()

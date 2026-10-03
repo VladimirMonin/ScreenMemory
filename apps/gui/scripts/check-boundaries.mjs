@@ -12,6 +12,10 @@ const applicationImports = new Set([
   'react',
   'react-dom/client',
   '@tauri-apps/api/core',
+  '@tauri-apps/api/event',
+  './ImportPanel',
+  './ExportPanel',
+  '../../../packages/protocol/src/generated/application-methods-v1',
   './App',
   './model',
   './style.css',
@@ -31,7 +35,7 @@ for (const name of readdirSync(new URL('../src/', import.meta.url))) {
   const text = readFileSync(new URL(`../src/${name}`, import.meta.url), 'utf8');
   const isTest = /\.test\.tsx?$/.test(name);
   const allowed = isTest ? testImports : applicationImports;
-  for (const match of text.matchAll(/(?:from\s*|import\s*)['"]([^'"]+)['"]/g)) {
+  for (const match of text.matchAll(/\b(?:from\s+|import\s*)['"]([^'"]+)['"]/g)) {
     assert(allowed.has(match[1]), `Forbidden import ${match[1]} in ${name}`);
     assert(!forbiddenModules.test(match[1]), `Forbidden dependency ${match[1]} in ${name}`);
     if (isTest) {
@@ -55,6 +59,12 @@ for (const name of readdirSync(new URL('../src/', import.meta.url))) {
   for (const command of calls) invoked.add(command);
   for (const call of withoutPreview.matchAll(/invoke(?:<[^>]*>)?\(([^)]*)\)/g)) {
     const argument = call[1].trim();
+    const typed = /^'(gui_library_page|gui_import|gui_import_report|gui_import_control|gui_export|gui_metadata)',\s*\{\s*(cursor|request)\b/.exec(argument);
+    if (typed) {
+      assert.equal(typed[2], typed[1] === 'gui_library_page' ? 'cursor' : 'request', 'closed typed argument role');
+      invoked.add(typed[1]);
+      continue;
+    }
     assert(!argument.includes(','), `invoke in ${name} must take exactly one bare command name`);
     // The only accepted dynamic form is the closed capture table of model.ts.
     assert(

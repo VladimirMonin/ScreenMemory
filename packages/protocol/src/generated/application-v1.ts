@@ -49,8 +49,20 @@ export type ApplicationResult =
       value: LibraryAssetChunk;
     }
   | {
+      type: 'record_metadata';
+      value: RecordMetadata;
+    }
+  | {
       type: 'records_page';
       value: LibraryRecordsPage;
+    }
+  | {
+      type: 'import_report';
+      value: ImportReport;
+    }
+  | {
+      type: 'export_receipt';
+      value: ExportReceipt;
     };
 export type BridgeState = 'stopped' | 'starting' | 'ready' | 'degraded' | 'unavailable';
 export type BuildId = string;
@@ -121,6 +133,29 @@ export type RecordId = string;
  * S02 §5.2: why a capture ended without an accepted frame.
  */
 export type CancelReason = 'escape' | 'empty_selection' | 'explicit_request' | 'client_disconnected';
+export type ImportBatchId = string;
+export type ImportItemId = string;
+export type OriginId = string;
+export type ImportState =
+  | 'discovered'
+  | 'processing'
+  | 'held'
+  | 'recoverable'
+  | 'saved_new'
+  | 'linked_existing'
+  | 'skipped'
+  | 'cancelled_unaccepted';
+export type ImportBatchState =
+  | 'running'
+  | 'pausing'
+  | 'paused'
+  | 'cancelling'
+  | 'cancelled'
+  | 'needs_attention'
+  | 'completed'
+  | 'completed_with_errors';
+export type ExportFormat = 'png' | 'jpeg' | 'webp' | 'avif';
+export type ExportExistence = 'verified' | 'not_checked';
 export type SafeMessage = string;
 
 /**
@@ -201,9 +236,10 @@ export interface CaptureReceipt {
   width: number;
 }
 /**
- * S02 §10.1: one bounded chunk of a canonical asset. `data_hex` keeps the frame a
- * printable JSON document without a base64 dependency, and `sha256` is the whole-file
- * digest so a truncated or substituted file is refused instead of exported.
+ * One bounded image transfer chunk. `library.asset.read` carries canonical bytes;
+ * `library.asset.preview` carries a bounded immutable WebP derivative (which may
+ * differ from the canonical). Digest/MIME/size describe that transfer, never a URL.
+ * `data_hex` keeps the frame printable without a base64 dependency.
  */
 export interface LibraryAssetChunk {
   asset_id: AssetId;
@@ -214,9 +250,14 @@ export interface LibraryAssetChunk {
   offset: number;
   sha256: string;
   /**
-   * Decimal string of the whole canonical file size.
+   * Decimal string of the complete transfer payload size.
    */
   total_size: string;
+}
+export interface RecordMetadata {
+  record_id: RecordId;
+  source_kind: string;
+  source_reports: string[];
 }
 /**
  * S02 §10.3: one bounded page of committed records; `next_cursor` is opaque.
@@ -237,6 +278,83 @@ export interface LibraryRecordEntry {
   target: string;
   title: string;
   width: number;
+}
+export interface ImportReport {
+  active_work: boolean;
+  batch_id: ImportBatchId;
+  cancelled_unaccepted: number;
+  control: string;
+  directory_issues: number;
+  discovered: number;
+  discovery_abandoned: boolean;
+  discovery_complete: boolean;
+  discovery_limit: number;
+  discovery_limit_hit: boolean;
+  failed: number;
+  held: number;
+  in_flight: number;
+  items: ImportItemReport[];
+  linked_existing: number;
+  next_ordinal?: number | null;
+  retained_input: number;
+  revision: Revision;
+  saved_new: number;
+  skipped: number;
+  state: ImportBatchState;
+}
+export interface ImportItemReport {
+  durable_input: boolean;
+  item_id: ImportItemId;
+  ordinal: number;
+  receipt?: ImportReceipt | null;
+  safe_code?: string | null;
+  state: ImportState;
+}
+export interface ImportReceipt {
+  canonical_mime: string;
+  canonical_sha256: string;
+  current_asset_id: AssetId;
+  height: number;
+  operation_id: OperationId;
+  origin_id: OriginId;
+  original_asset_id: AssetId;
+  record_id: RecordId;
+  relative_path: string;
+  requested_profile_used: boolean;
+  width: number;
+}
+export interface ExportReceipt {
+  applied_parameters: ExportAppliedParameters;
+  byte_size: string;
+  encoding_profile_fingerprint: string;
+  existence: ExportExistence;
+  expires_at_epoch_seconds?: string | null;
+  export_path: string;
+  height: number;
+  mime: string;
+  operation_id: OperationId;
+  partial: boolean;
+  sha256: string;
+  sidecar?: ExportSidecar | null;
+  source_asset_id: AssetId;
+  width: number;
+}
+export interface ExportAppliedParameters {
+  format: ExportFormat;
+  /**
+   * @minItems 3
+   * @maxItems 3
+   */
+  jpeg_background?: [number, number, number] | null;
+  max_side?: number | null;
+  private_metadata_stripped: boolean;
+  quality?: number | null;
+  resize_applied: boolean;
+}
+export interface ExportSidecar {
+  byte_size: string;
+  export_path: string;
+  sha256: string;
 }
 export interface AppError {
   code: ErrorCode;

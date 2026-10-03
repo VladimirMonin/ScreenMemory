@@ -248,9 +248,10 @@ pub struct LibraryAssetRequest {
     pub offset: u32,
 }
 
-/// S02 §10.1: one bounded chunk of a canonical asset. `data_hex` keeps the frame a
-/// printable JSON document without a base64 dependency, and `sha256` is the whole-file
-/// digest so a truncated or substituted file is refused instead of exported.
+/// One bounded image transfer chunk. `library.asset.read` carries canonical bytes;
+/// `library.asset.preview` carries a bounded immutable WebP derivative (which may
+/// differ from the canonical). Digest/MIME/size describe that transfer, never a URL.
+/// `data_hex` keeps the frame printable without a base64 dependency.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LibraryAssetChunk {
@@ -258,7 +259,7 @@ pub struct LibraryAssetChunk {
     pub offset: u32,
     pub next_offset: u32,
     pub eof: bool,
-    /// Decimal string of the whole canonical file size.
+    /// Decimal string of the complete transfer payload size.
     pub total_size: String,
     pub sha256: String,
     pub mime: String,
@@ -336,8 +337,22 @@ pub enum KnownParams {
     CaptureCommand(CaptureCommandParams),
     #[serde(rename = "library.asset.read")]
     ReadAsset(LibraryAssetRequest),
+    #[serde(rename = "library.asset.preview")]
+    PreviewAsset(LibraryAssetRequest),
+    #[serde(rename = "library.record.metadata")]
+    RecordMetadata(crate::images::RecordMetadataRequest),
     #[serde(rename = "library.list_records")]
     ListRecords(LibraryRecordsRequest),
+    #[serde(rename = "library.import")]
+    Import(crate::images::ImportRequest),
+    #[serde(rename = "library.import.status")]
+    ImportStatus(crate::images::ImportBatchRequest),
+    #[serde(rename = "library.import.report")]
+    ImportReportPage(crate::images::ImportReportPageRequest),
+    #[serde(rename = "library.import.control")]
+    ImportControl(crate::images::ImportControlRequest),
+    #[serde(rename = "library.export")]
+    Export(crate::images::ExportRequest),
 }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -359,7 +374,10 @@ pub enum ApplicationResult {
     Shutdown(ShutdownReceipt),
     Capture(CaptureOutcome),
     AssetChunk(LibraryAssetChunk),
+    RecordMetadata(crate::images::RecordMetadata),
     RecordsPage(LibraryRecordsPage),
+    ImportReport(crate::images::ImportReport),
+    ExportReceipt(Box<crate::images::ExportReceipt>),
 }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -406,7 +424,14 @@ where
             | "system.request_shutdown"
             | "capture.command"
             | "library.asset.read"
+            | "library.asset.preview"
+            | "library.record.metadata"
             | "library.list_records"
+            | "library.import"
+            | "library.import.status"
+            | "library.import.report"
+            | "library.import.control"
+            | "library.export"
     ) {
         return Response::Error {
             request_id: request.request_id,

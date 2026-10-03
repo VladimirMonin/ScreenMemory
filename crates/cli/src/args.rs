@@ -5,6 +5,7 @@ use std::path::PathBuf;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
     Version,
+    Image(crate::image_args::ImageCommand),
     Status {
         no_start: bool,
     },
@@ -55,6 +56,12 @@ pub fn parse_capture_mode(raw: &str) -> Result<CaptureMode, ArgError> {
 /// `host stop [--json]`; `capture --mode region|window|monitor|all [--operation-id <uuid>]
 /// [--output <absolute local path>] [--json]`; optional `--config <absolute local path>`.
 pub fn parse_args(argv: &[String]) -> Result<CliArgs, ArgError> {
+    if argv
+        .iter()
+        .any(|v| matches!(v.as_str(), "import" | "export" | "metadata"))
+    {
+        return crate::image_args::parse(argv);
+    }
     let mut config: Option<PathBuf> = None;
     let mut json = false;
     let mut no_start = false;
@@ -156,6 +163,7 @@ pub fn parse_args(argv: &[String]) -> Result<CliArgs, ArgError> {
             }
             Command::Status { no_start }
         }
+        Command::Image(_) => unreachable!("image parser owns these forms"),
         Command::Version => {
             if json || no_start || config.is_some() {
                 return Err(ArgError::UnsupportedCombination);
@@ -200,7 +208,7 @@ pub fn parse_args(argv: &[String]) -> Result<CliArgs, ArgError> {
 }
 
 /// Absolute `X:\...` form only; the resolver re-validates volume, reparse and layout.
-fn absolute_local(path: &std::path::Path) -> bool {
+pub(crate) fn absolute_local(path: &std::path::Path) -> bool {
     if !path.is_absolute() {
         return false;
     }

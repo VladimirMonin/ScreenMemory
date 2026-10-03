@@ -36,6 +36,7 @@ impl From<StagingError> for CanonicalError {
 pub struct CanonicalPlan {
     month: String,
     record: String,
+    leaf: &'static str,
 }
 impl CanonicalPlan {
     pub fn new(record: RecordId, planned_created_at_utc: &str) -> Result<Self, CanonicalError> {
@@ -78,7 +79,18 @@ impl CanonicalPlan {
         Ok(Self {
             month: month.to_owned(),
             record: uuid.to_string(),
+            leaf: "original.webp",
         })
+    }
+    /// Metadata spelling of the already validated fixed original plan; not a
+    /// caller-controlled filesystem capability.
+    pub fn relative_asset_path(&self) -> String {
+        format!("assets/{}/{}/{}", self.month, self.record, self.leaf)
+    }
+    pub fn avif(record: RecordId, time: &str) -> Result<Self, CanonicalError> {
+        let mut plan = Self::new(record, time)?;
+        plan.leaf = "original.avif";
+        Ok(plan)
     }
 }
 
@@ -92,7 +104,7 @@ impl<'lease> CanonicalRoot<'lease> {
     pub fn begin(&self, plan: &CanonicalPlan) -> Result<CanonicalTemp<'_, 'lease>, CanonicalError> {
         let month = windows::ensure_child_directory(&self.native, &plan.month)?;
         let record = windows::ensure_child_directory(&month, &plan.record)?;
-        match windows::open_fixed(&record, "original.webp") {
+        match windows::open_fixed(&record, plan.leaf) {
             Ok(_) => return Err(CanonicalError::Existing),
             Err(StagingError::Missing) => {}
             Err(error) => return Err(error.into()),
@@ -103,6 +115,7 @@ impl<'lease> CanonicalRoot<'lease> {
             _root: self,
             record,
             temp_name,
+            leaf: plan.leaf,
             file,
             written: 0,
             synced: false,
@@ -114,7 +127,7 @@ impl<'lease> CanonicalRoot<'lease> {
     pub fn open_final(&self, plan: &CanonicalPlan) -> Result<CanonicalRead, CanonicalError> {
         let month = windows::open_operation_directory(&self.native, &plan.month)?;
         let record = windows::open_operation_directory(&month, &plan.record)?;
-        let (file, len) = windows::open_fixed(&record, "original.webp")?;
+        let (file, len) = windows::open_fixed(&record, plan.leaf)?;
         if len > MAX_CANONICAL_BYTES {
             return Err(CanonicalError::TooLarge);
         }
@@ -122,6 +135,7 @@ impl<'lease> CanonicalRoot<'lease> {
             file,
             len,
             _record: record,
+            leaf: plan.leaf,
         })
     }
 }
@@ -130,6 +144,7 @@ pub struct CanonicalTemp<'root, 'lease> {
     _root: &'root CanonicalRoot<'lease>,
     record: windows::Directory,
     temp_name: String,
+    leaf: &'static str,
     file: std::fs::File,
     written: u64,
     synced: bool,
@@ -161,7 +176,7 @@ impl CanonicalTemp<'_, '_> {
         if len > MAX_CANONICAL_BYTES {
             return Err(CanonicalError::TooLarge);
         }
-        windows::publish_temp(&self.record, &self.temp_name, "original.webp", self.file)
+        windows::publish_temp(&self.record, &self.temp_name, self.leaf, self.file)
             .map_err(Into::into)
     }
 }
@@ -184,6 +199,7 @@ impl Write for CanonicalTemp<'_, '_> {
 }
 
 pub struct CanonicalRead {
+    leaf: &'static str,
     file: std::fs::File,
     len: u64,
     // Directory::open owns no-delete pins for the entire ancestor chain,
@@ -227,7 +243,7 @@ impl CanonicalRead {
     /// Consume the pinned old read while opening fixed original.webp with a
     /// write-denying share. Failure releases both; no stale proof can be reused.
     pub fn seal(self) -> Result<CanonicalSeal, CanonicalError> {
-        let (file, len) = windows::seal_original(&self._record, &self.file, self.len)?;
+        let (file, len) = windows::seal_fixed(&self._record, &self.file, self.len, self.leaf)?;
         if len > MAX_CANONICAL_BYTES {
             return Err(CanonicalError::TooLarge);
         }

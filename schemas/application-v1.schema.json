@@ -178,11 +178,62 @@
           "additionalProperties": false,
           "properties": {
             "type": {
+              "const": "record_metadata",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/RecordMetadata"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
               "const": "records_page",
               "type": "string"
             },
             "value": {
               "$ref": "#/$defs/LibraryRecordsPage"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "import_report",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/ImportReport"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "export_receipt",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/ExportReceipt"
             }
           },
           "required": [
@@ -454,6 +505,169 @@
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
       "type": "string"
     },
+    "ExportAppliedParameters": {
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "$ref": "#/$defs/ExportFormat"
+        },
+        "jpeg_background": {
+          "items": {
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "max_side": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "private_metadata_stripped": {
+          "type": "boolean"
+        },
+        "quality": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "resize_applied": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "format",
+        "resize_applied",
+        "private_metadata_stripped"
+      ],
+      "type": "object"
+    },
+    "ExportExistence": {
+      "enum": [
+        "verified",
+        "not_checked"
+      ],
+      "type": "string"
+    },
+    "ExportFormat": {
+      "enum": [
+        "png",
+        "jpeg",
+        "webp",
+        "avif"
+      ],
+      "type": "string"
+    },
+    "ExportReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "applied_parameters": {
+          "$ref": "#/$defs/ExportAppliedParameters"
+        },
+        "byte_size": {
+          "type": "string"
+        },
+        "encoding_profile_fingerprint": {
+          "type": "string"
+        },
+        "existence": {
+          "$ref": "#/$defs/ExportExistence"
+        },
+        "expires_at_epoch_seconds": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "export_path": {
+          "type": "string"
+        },
+        "height": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mime": {
+          "type": "string"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "partial": {
+          "type": "boolean"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "sidecar": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExportSidecar"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_asset_id": {
+          "$ref": "#/$defs/AssetId"
+        },
+        "width": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "operation_id",
+        "source_asset_id",
+        "export_path",
+        "mime",
+        "width",
+        "height",
+        "byte_size",
+        "sha256",
+        "partial",
+        "existence",
+        "encoding_profile_fingerprint",
+        "applied_parameters"
+      ],
+      "type": "object"
+    },
+    "ExportSidecar": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_size": {
+          "type": "string"
+        },
+        "export_path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "export_path",
+        "sha256",
+        "byte_size"
+      ],
+      "type": "object"
+    },
     "HostInstanceId": {
       "maxLength": 36,
       "minLength": 36,
@@ -518,9 +732,266 @@
       ],
       "type": "object"
     },
+    "ImportBatchId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "ImportBatchState": {
+      "enum": [
+        "running",
+        "pausing",
+        "paused",
+        "cancelling",
+        "cancelled",
+        "needs_attention",
+        "completed",
+        "completed_with_errors"
+      ],
+      "type": "string"
+    },
+    "ImportItemId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "ImportItemReport": {
+      "additionalProperties": false,
+      "properties": {
+        "durable_input": {
+          "type": "boolean"
+        },
+        "item_id": {
+          "$ref": "#/$defs/ImportItemId"
+        },
+        "ordinal": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "receipt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportReceipt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "safe_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/ImportState"
+        }
+      },
+      "required": [
+        "item_id",
+        "ordinal",
+        "state",
+        "durable_input"
+      ],
+      "type": "object"
+    },
+    "ImportReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical_mime": {
+          "type": "string"
+        },
+        "canonical_sha256": {
+          "type": "string"
+        },
+        "current_asset_id": {
+          "$ref": "#/$defs/AssetId"
+        },
+        "height": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "origin_id": {
+          "$ref": "#/$defs/OriginId"
+        },
+        "original_asset_id": {
+          "$ref": "#/$defs/AssetId"
+        },
+        "record_id": {
+          "$ref": "#/$defs/RecordId"
+        },
+        "relative_path": {
+          "type": "string"
+        },
+        "requested_profile_used": {
+          "type": "boolean"
+        },
+        "width": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "operation_id",
+        "record_id",
+        "original_asset_id",
+        "current_asset_id",
+        "origin_id",
+        "canonical_mime",
+        "canonical_sha256",
+        "relative_path",
+        "width",
+        "height",
+        "requested_profile_used"
+      ],
+      "type": "object"
+    },
+    "ImportReport": {
+      "additionalProperties": false,
+      "properties": {
+        "active_work": {
+          "type": "boolean"
+        },
+        "batch_id": {
+          "$ref": "#/$defs/ImportBatchId"
+        },
+        "cancelled_unaccepted": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "control": {
+          "type": "string"
+        },
+        "directory_issues": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "discovered": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "discovery_abandoned": {
+          "type": "boolean"
+        },
+        "discovery_complete": {
+          "type": "boolean"
+        },
+        "discovery_limit": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "discovery_limit_hit": {
+          "type": "boolean"
+        },
+        "failed": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "held": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "in_flight": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ImportItemReport"
+          },
+          "type": "array"
+        },
+        "linked_existing": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "next_ordinal": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "retained_input": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "saved_new": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "skipped": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/ImportBatchState"
+        }
+      },
+      "required": [
+        "batch_id",
+        "revision",
+        "control",
+        "state",
+        "active_work",
+        "discovery_complete",
+        "discovery_abandoned",
+        "discovery_limit",
+        "discovery_limit_hit",
+        "directory_issues",
+        "discovered",
+        "saved_new",
+        "linked_existing",
+        "skipped",
+        "failed",
+        "held",
+        "cancelled_unaccepted",
+        "in_flight",
+        "retained_input",
+        "items"
+      ],
+      "type": "object"
+    },
+    "ImportState": {
+      "enum": [
+        "discovered",
+        "processing",
+        "held",
+        "recoverable",
+        "saved_new",
+        "linked_existing",
+        "skipped",
+        "cancelled_unaccepted"
+      ],
+      "type": "string"
+    },
     "LibraryAssetChunk": {
       "additionalProperties": false,
-      "description": "S02 §10.1: one bounded chunk of a canonical asset. `data_hex` keeps the frame a\nprintable JSON document without a base64 dependency, and `sha256` is the whole-file\ndigest so a truncated or substituted file is refused instead of exported.",
+      "description": "One bounded image transfer chunk. `library.asset.read` carries canonical bytes;\n`library.asset.preview` carries a bounded immutable WebP derivative (which may\ndiffer from the canonical). Digest/MIME/size describe that transfer, never a URL.\n`data_hex` keeps the frame printable without a base64 dependency.",
       "properties": {
         "asset_id": {
           "$ref": "#/$defs/AssetId"
@@ -549,7 +1020,7 @@
           "type": "string"
         },
         "total_size": {
-          "description": "Decimal string of the whole canonical file size.",
+          "description": "Decimal string of the complete transfer payload size.",
           "type": "string"
         }
       },
@@ -656,6 +1127,12 @@
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
       "type": "string"
     },
+    "OriginId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
     "ProbeConsentReceipt": {
       "additionalProperties": false,
       "properties": {
@@ -703,6 +1180,29 @@
       "minLength": 36,
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
       "type": "string"
+    },
+    "RecordMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "record_id": {
+          "$ref": "#/$defs/RecordId"
+        },
+        "source_kind": {
+          "type": "string"
+        },
+        "source_reports": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "record_id",
+        "source_kind",
+        "source_reports"
+      ],
+      "type": "object"
     },
     "ReportId": {
       "maxLength": 36,

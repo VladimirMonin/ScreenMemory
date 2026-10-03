@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "fixtures": [
+    {
+      "id": "odd-alpha",
+      "path": "odd-alpha.png",
+      "origin": "project-owned synthetic, Python stdlib PNG recipe",
+      "license": "MIT",
+      "file_sha256": "1e07840e7ca472fdc31ecaa25715aaa345a9fcde6ee4e2ad6d10ecbca88e3813",
+      "rgba_sha256": "4bc511ba28e4e0b855574e40523c4baf702888c1ee4c6afdb0f5db7754819c2a",
+      "width": 7,
+      "height": 3,
+      "expected": "static RGBA8 assumed sRGB; exact WebP or lossy RGB AVIF with exact alpha"
+    },
+    {
+      "id": "portrait-alpha",
+      "path": "portrait-alpha.png",
+      "origin": "project-owned synthetic, Python stdlib PNG recipe",
+      "license": "MIT",
+      "file_sha256": "f2689ad55648fdf9332d962b53bb101ed93edcea7d023c9df42a37b5b03af395",
+      "rgba_sha256": "21fefb7e5588677fb89f5a69ccb22571d94b0901a3d93e32da6f93579b8808e2",
+      "width": 3,
+      "height": 17,
+      "expected": "static RGBA8 assumed sRGB; exact WebP or lossy RGB AVIF with exact alpha"
+    },
+    {
+      "id": "numbered-grid",
+      "path": "numbered-grid.png",
+      "origin": "project-owned synthetic, Python stdlib PNG recipe",
+      "license": "MIT",
+      "file_sha256": "dcc17f779718ce8db2f50f472d6d3c0466ced71662f668c1fd56a13217cb7d2b",
+      "rgba_sha256": "23d226292491b08bbf24b4fe90c915a8812eaae5a967f0f7ce4d5e15538ef562",
+      "width": 3,
+      "height": 2,
+      "expected": "static RGBA8 assumed sRGB; exact WebP or lossy RGB AVIF with exact alpha"
+    }
+  ]
+}
