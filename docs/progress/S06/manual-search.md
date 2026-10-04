@@ -1,7 +1,9 @@
 # S06 — manual FTS5: проверенный код / runtime BLOCKED
 
-2026-10-04. **CODE_CHECKPOINT_SCOPED; S06 IN_PROGRESS, не принят.** Parent фиксирует
-проверенный manual3-field код после независимых scoped reviews, но не принимает
+2026-10-04. **CODE_CHECKPOINT_SCOPED; S06 IN_PROGRESS, не принят.** Code commit
+`0a5c9f9e20cadd74773a3c3e55646ca32bb5bab1` создан Parent локально:88 намеренных paths,
+10426 additions/100 deletions, post-commit worktree чистый, push не выполнялся.
+Parent фиксирует проверенный manual3-field код после независимых scoped reviews, но не принимает
 required nonblank render/runtime gate или полный S06. Goal остаётся 3/9.
 Original full assignment и retained closure завершились timeout; NOT_EVALUATED,
 partial/not-satisfied и исходные FAIL сохранены. Последний bounded sensor pass дал
