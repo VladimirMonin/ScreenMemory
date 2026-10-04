@@ -11,7 +11,7 @@ use uuid::Uuid;
 /// capture-operation journal (`ingest_operations`); `0004` adds pending capture
 /// intents without changing the images contract. All are applied in a single
 /// transaction on a fresh file; interrupted upgrades roll back their migration rows.
-const SHIPPED: [(&str, &str); 7] = [
+const SHIPPED: [(&str, &str); 8] = [
     (
         "0001_foundation",
         include_str!("../migrations/0001_foundation.sql"),
@@ -37,6 +37,7 @@ const SHIPPED: [(&str, &str); 7] = [
         "0007_knowledge",
         include_str!("../migrations/0007_knowledge.sql"),
     ),
+    ("0008_search", include_str!("../migrations/0008_search.sql")),
 ];
 /// Applied images schema version, reported by `SchemaSnapshot::images`. The
 /// `0003_operations` and `0004_capture_intents` are global journal migrations;

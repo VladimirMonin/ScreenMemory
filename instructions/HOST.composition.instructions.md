@@ -74,7 +74,7 @@ retry/discovery 5s, без retry на credential/identity ошибке, и за�
 SDK/FTS5/package proofs S04/S06/S08; embeddings/vec исключены ADR-011.
 Preview и verify используют `.pi/staging-target-t09b`, не общий `.pi/preview-target`,
 который может удерживать чужой host. MSVC failure немедленно возвращает raw exit;
-Cargo всегда offline. `smoke-host-cli.ps1` проверяет текущую storage schema 7 (не
+Cargo всегда offline. `smoke-host-cli.ps1` проверяет текущую storage schema 8 (не
 JSON config schema 1). Error cleanup использует тот же guarded stop→absence→remove,
 а не удаляет root/credential после неподтверждённого stop.
 `scripts/test-foundation-smoke.ps1` — отдельный composed synthetic host/CLI/GUI
@@ -90,6 +90,12 @@ S05 `shot knowledge read|edit|categories|category` и `gui_knowledge` испол
 StorageWorker/KnowledgeApi и ApplicationClient; JSON vocabulary, bounded refusals,
 revisions/replay/sensitivity — [DATA.knowledge](DATA.knowledge.instructions.md).
 Это manual-only карточка при Off, не Analyze/OCR publisher. Config schema1 unchanged.
+S06 `search.request`/`gui_search`/`shot search` — тот же StorageWorker/SearchApi;
+лексический запрос не запускает SDK. Контракт — [DATA.search](DATA.search.instructions.md).
+CLI dispatch выбирает первый top-level command token, не зарезервированное слово
+в любом argv: `knowledge edit --title search` остаётся ручной правкой. Значения flags
+не меняются; выбранный parser по-прежнему отказывает unknown/missing/duplicate flags.
+Regression — `knowledge_args`/`search_args`, strict host schema oracle — `cli_surface`.
 
 S03 `shot --config <absolute-config> import --path <absolute-file-or-folder>`:
 `--profile webp_exact|avif_sdr90`, `--duplicates reuse_record|keep_both`, optional

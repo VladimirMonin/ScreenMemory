@@ -235,7 +235,7 @@ impl Fixture {
 }
 /// The negotiated list of this build: the three foundation handlers plus the two S02
 /// capture handlers. A peer that does not speak exactly this list is refused.
-const CAPS: [&str; 14] = [
+const CAPS: [&str; 15] = [
     "system.status",
     "system.doctor",
     "system.request_shutdown",
@@ -250,6 +250,7 @@ const CAPS: [&str; 14] = [
     "library.record.metadata",
     "processing.request",
     "knowledge.request",
+    "search.request",
 ];
 fn request(
     f: &Fixture,

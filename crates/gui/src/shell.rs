@@ -23,6 +23,7 @@ pub struct ShellState {
     session: Arc<Mutex<GuiSession>>,
     opener: Arc<dyn ReportOpener>,
     allow_start: bool,
+    search: crate::search_lane::SearchLane,
 }
 
 impl ShellState {
@@ -31,6 +32,7 @@ impl ShellState {
             session: Arc::new(Mutex::new(session)),
             opener,
             allow_start,
+            search: crate::search_lane::SearchLane::default(),
         }
     }
 
@@ -137,6 +139,17 @@ pub async fn gui_metadata(
     guard.metadata(request).await
 }
 
+#[tauri::command]
+pub async fn gui_search(
+    app: AppHandle,
+    request: sm_protocol::search::SearchRequest,
+) -> Result<sm_protocol::search::SearchReply, String> {
+    let session = app.state::<ShellState>().session();
+    app.state::<ShellState>()
+        .search
+        .search(&session, request)
+        .await
+}
 #[tauri::command]
 pub async fn gui_knowledge(
     app: AppHandle,
@@ -255,6 +268,7 @@ pub fn run_window(state: ShellState, webview_directory: std::path::PathBuf) -> t
             gui_limits,
             gui_processing,
             gui_knowledge,
+            gui_search,
             gui_probe,
             gui_connect,
             gui_doctor,

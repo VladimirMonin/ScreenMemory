@@ -1,0 +1,30 @@
+{
+  "version":"s06-graded-supplement-v1",
+  "declaration":"Frozen before first evaluation of these cases. Source facts/grades explicit; published OR/exact/BM25 weights unchanged. No fitting. Ordinary literal words, not morphology/translation/semantic quality. All records same ingested timestamp, admitted metadata scope1, no category. Core rare-category125/scope fixtures remain separate proof.",
+  "records":[
+    {"id":"10000000-0000-4000-8000-000000000001","title":"amber lumen","description":"reference neutral"},
+    {"id":"10000000-0000-4000-8000-000000000002","title":"reference neutral","description":"amber lumen"},
+    {"id":"10000000-0000-4000-8000-000000000003","title":"amber","description":"reference lumen"},
+    {"id":"10000000-0000-4000-8000-000000000004","title":"cobalt nebula","description":"plain signal"},
+    {"id":"10000000-0000-4000-8000-000000000005","title":"cobalt","description":"plain signal"},
+    {"id":"10000000-0000-4000-8000-000000000006","title":"nebula","description":"plain signal"},
+    {"id":"10000000-0000-4000-8000-000000000007","title":"Q8_0","description":"technical profile"},
+    {"id":"10000000-0000-4000-8000-000000000008","title":"Q8 0","description":"technical profile"},
+    {"id":"10000000-0000-4000-8000-000000000009","title":"Q8_01","description":"technical profile"},
+    {"id":"10000000-0000-4000-8000-000000000010","title":"service.cxx v2.7.4","description":"plain signal"},
+    {"id":"10000000-0000-4000-8000-000000000011","title":"service cxx v2 7 4","description":"plain signal"},
+    {"id":"10000000-0000-4000-8000-000000000012","title":"service.cxxX v2.7.40","description":"plain signal"}
+  ],
+  "queries":[
+    {"id":"title-vs-description","text":"amber lumen","grades":{"1":3,"2":2,"3":2},"top1":"1","forbidden":["4","5","6","7","8","9","10","11","12"]},
+    {"id":"single-title-weight","text":"lumen","grades":{"1":3,"2":1,"3":1},"top1":"1","forbidden":["4","5","6","7","8","9","10","11","12"]},
+    {"id":"or-full-vs-one-word","text":"cobalt nebula","grades":{"4":3,"5":1,"6":1},"top1":"4","forbidden":["1","2","3","7","8","9","10","11","12"]},
+    {"id":"bm25-short-title","text":"cobalt","grades":{"4":3,"5":3},"top1":"5","forbidden":["1","2","3","6","7","8","9","10","11","12"]},
+    {"id":"technical-exact-vs-lexical","text":"Q8_0","grades":{"7":3,"8":1},"top1":"7","forbidden":["1","2","3","4","5","6","9","10","11","12"]},
+    {"id":"longer-code-boundary","text":"Q8_01","grades":{"9":3},"top1":"9","forbidden":["1","2","3","4","5","6","7","8","10","11","12"]},
+    {"id":"truly-absent-near-code","text":"Q8_0x","grades":{},"top1":null,"forbidden":["1","2","3","4","5","6","7","8","9","10","11","12"]},
+    {"id":"dot-code-boundary","text":"service.cxx","grades":{"10":3,"11":1},"top1":"10","forbidden":["1","2","3","4","5","6","7","8","9","12"]},
+    {"id":"multi-technical-all-keys","text":"service.cxx v2.7.4","grades":{"10":3,"11":1},"top1":"10","forbidden":["1","2","3","4","5","6","7","8","9","12"]},
+    {"id":"version-final-digit-boundary","text":"v2.7.40","grades":{"12":3},"top1":"12","forbidden":["1","2","3","4","5","6","7","8","9","10","11"]}
+  ]
+}

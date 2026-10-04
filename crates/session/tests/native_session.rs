@@ -97,6 +97,8 @@ struct Services {
     release: Notify,
     delay: AtomicUsize,
     fail_status: AtomicUsize,
+    search_started: AtomicUsize,
+    search_dropped: AtomicUsize,
 }
 impl Services {
     fn status_value(&self) -> HostStatus {
@@ -221,6 +223,17 @@ impl Fixture {
             Arc<dyn sm_application::images::ImageLibraryApi>,
         )>,
     ) -> Self {
+        Self::configured_search(drain, images, false)
+    }
+    fn configured_search(
+        drain: Option<Duration>,
+        images: Option<(
+            Roots,
+            LibraryId,
+            Arc<dyn sm_application::images::ImageLibraryApi>,
+        )>,
+        search: bool,
+    ) -> Self {
         let (roots, library, images) = match images {
             Some((roots, library, images)) => (roots, library, Some(images)),
             None => (Roots::new(), LibraryId::new(Uuid::new_v4()), None),
@@ -245,6 +258,8 @@ impl Fixture {
             release: Notify::new(),
             delay: AtomicUsize::new(0),
             fail_status: AtomicUsize::new(0),
+            search_started: AtomicUsize::new(0),
+            search_dropped: AtomicUsize::new(0),
         });
         let budget = BufferBudget::new();
         let session = SessionHost::new(
@@ -259,6 +274,11 @@ impl Fixture {
             None,
             budget,
         );
+        let session = if search {
+            session.with_search(services.clone())
+        } else {
+            session
+        };
         let session = Arc::new(match images {
             Some(images) => session.with_images(images),
             None => session,
@@ -308,6 +328,98 @@ impl Fixture {
             .unwrap()
             .unwrap();
     }
+}
+#[async_trait]
+impl sm_application::search::SearchApi for Services {
+    async fn search(
+        &self,
+        _ctx: RequestContext,
+        request: sm_protocol::search::SearchRequest,
+        _cancel: CancellationToken,
+    ) -> Result<sm_protocol::search::SearchReply, AppError> {
+        struct Finished<'a>(&'a AtomicUsize);
+        impl Drop for Finished<'_> {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        let _finished = Finished(&self.search_dropped);
+        self.search_started.fetch_add(1, Ordering::SeqCst);
+        if self.delay.load(Ordering::SeqCst) > 0 {
+            self.release.notified().await;
+        }
+        let sm_protocol::search::SearchRequest::Start(r) = request else {
+            panic!("test start")
+        };
+        Ok(sm_protocol::search::SearchReply::Page(
+            sm_protocol::search::SearchPage {
+                search_id: r.search_id,
+                projection_epoch: sm_protocol::knowledge::SqlRevision(1),
+                candidate_depth: r.candidate_depth,
+                window_truncated: false,
+                next_cursor: None,
+                items: Vec::new(),
+            },
+        ))
+    }
+}
+#[tokio::test]
+async fn s06_native_search_cancel_terminal_drain_scoped_and_next_rpc() {
+    let f = Fixture::configured_search(None, None, true);
+    f.services.delay.store(1, Ordering::SeqCst);
+    let owner = Arc::new(
+        f.client(CredentialKey::owner(CredentialEnvironment::Test, f.library))
+            .await,
+    );
+    let other = Arc::new(
+        f.client(CredentialKey::owner(CredentialEnvironment::Test, f.library))
+            .await,
+    );
+    let request = || {
+        sm_protocol::search::SearchRequest::Start(sm_protocol::search::SearchStart {
+            search_id: sm_protocol::knowledge::KnowledgeId(Uuid::new_v4()),
+            text: "synthetic".into(),
+            filters: Default::default(),
+            limit: 30,
+            candidate_depth: 100,
+        })
+    };
+    let token = CancellationToken::new();
+    let signal = token.clone();
+    let c = owner.clone();
+    let r = request();
+    let a = tokio::spawn(async move { c.search_cancellable(r, token).await });
+    let c = other.clone();
+    let r = request();
+    let b = tokio::spawn(async move { c.search(r).await });
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while f.services.search_started.load(Ordering::SeqCst) < 2 {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+    signal.cancel();
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(2), a)
+            .await
+            .unwrap()
+            .unwrap(),
+        Err(ClientError::Application(AppError {
+            code: ErrorCode::WaitTimeout,
+            ..
+        }))
+    ));
+    assert!(!b.is_finished());
+    assert_eq!(f.services.search_dropped.load(Ordering::SeqCst), 1);
+    owner.status().await.unwrap();
+    f.services.delay.store(0, Ordering::SeqCst);
+    f.services.release.notify_waiters();
+    b.await.unwrap().unwrap();
+    owner.search(request()).await.unwrap();
+    drop(owner);
+    drop(other);
+    f.close().await;
 }
 #[tokio::test]
 async fn s01_ipc_03_authenticated_native_owner_readonly_and_reconnect() {
@@ -570,6 +682,32 @@ async fn s05_native_knowledge_closed_scope_and_truthful_uncomposed_port() {
         ));
         assert!(matches!(
             owner.knowledge(req).await,
+            Err(ClientError::Application(AppError {
+                code: ErrorCode::MethodNotSupported,
+                ..
+            }))
+        ));
+    }
+    for req in [
+        sm_protocol::search::SearchRequest::Start(sm_protocol::search::SearchStart {
+            search_id: id,
+            text: "literal".into(),
+            filters: Default::default(),
+            limit: 30,
+            candidate_depth: 100,
+        }),
+        sm_protocol::search::SearchRequest::Page { cursor: id },
+        sm_protocol::search::SearchRequest::Cancel { search_id: id },
+    ] {
+        assert!(matches!(
+            ro.search(req.clone()).await,
+            Err(ClientError::Application(AppError {
+                code: ErrorCode::PermissionDenied,
+                ..
+            }))
+        ));
+        assert!(matches!(
+            owner.search(req).await,
             Err(ClientError::Application(AppError {
                 code: ErrorCode::MethodNotSupported,
                 ..

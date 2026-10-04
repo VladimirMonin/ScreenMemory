@@ -51,7 +51,11 @@ pub fn exit_for_code(code: ErrorCode) -> u8 {
         ErrorCode::PermissionDenied
         | ErrorCode::CredentialStoreUnavailable
         | ErrorCode::AiDisabled => crate::EXIT_POLICY,
-        ErrorCode::WaitTimeout => crate::EXIT_WAIT,
+        ErrorCode::WaitTimeout | ErrorCode::SearchBusy | ErrorCode::SearchCancelled => {
+            crate::EXIT_WAIT
+        }
+        ErrorCode::SearchExpired | ErrorCode::SearchSnapshotChanged => crate::EXIT_CONFLICT,
+        ErrorCode::NoLexicalTerms | ErrorCode::SearchFilterUnsupported => crate::EXIT_USAGE,
         ErrorCode::RevisionConflict
         | ErrorCode::IdempotencyConflict
         | ErrorCode::CategoryNameConflict => crate::EXIT_CONFLICT,
@@ -213,6 +217,13 @@ pub async fn run(argv: &[String], deps: &CliDeps, out: &mut dyn Write, err: &mut
         Err(failure) => return emit_failure(failure, args.json, out, err),
     };
     let exit = match args.command {
+        Command::Search(command) => match crate::search::run(&client, command).await {
+            Ok(reply) => {
+                output::write_json(out, &reply);
+                crate::EXIT_OK
+            }
+            Err(failure) => return emit_failure(failure, true, out, err),
+        },
         Command::Knowledge(command) => match crate::knowledge::run(&client, command).await {
             Ok(reply) => {
                 output::write_json(out, &reply);

@@ -532,6 +532,11 @@ pub(super) fn commit_image_capture(
     )
     .map_err(sql_error)?;
 
+    crate::knowledge::initial(
+        &tx,
+        sm_protocol::knowledge::KnowledgeId(command.record_id.as_uuid()),
+    )
+    .map_err(|_| StorageError::IntegrityFailed)?;
     let mut published = PublishedFile::create(assets, &file_relative, &command.canonical)?;
 
     if fail_before_commit {

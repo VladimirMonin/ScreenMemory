@@ -1,0 +1,10 @@
+[
+ {"id":"ordinary-or-literal","valid":true,"value":{"method":"search.request","params":{"action":"start","search_id":"00000000-0000-4000-8000-000000000001","text":"Q8_0 OR NEAR settings.json","limit":30,"candidate_depth":100,"filters":{"category":{"kind":"any"},"application":{"kind":"any"},"date":{"kind":"any"},"source_kind":null,"has_ocr":null,"has_applied_ai":null}}}},
+ {"id":"fixed-page","valid":true,"value":{"method":"search.request","params":{"action":"page","cursor":"00000000-0000-4000-8000-000000000002"}}},
+ {"id":"scoped-cancel","valid":true,"value":{"method":"search.request","params":{"action":"cancel","search_id":"00000000-0000-4000-8000-000000000001"}}},
+ {"id":"foreign-authority","valid":false,"value":{"method":"search.request","params":{"action":"page","cursor":"00000000-0000-4000-8000-000000000002","principal_id":"00000000-0000-4000-8000-000000000001"}}},
+ {"id":"no-semantic-mode","valid":false,"value":{"method":"search.request","params":{"action":"start","search_id":"00000000-0000-4000-8000-000000000001","text":"hello","mode":"semantic"}}},
+ {"id":"no-wire-model-authority","valid":false,"value":{"method":"search.request","params":{"action":"start","search_id":"00000000-0000-4000-8000-000000000001","text":"hello","allow_model_load":true}}},
+ {"id":"unknown-category-filter","valid":false,"value":{"method":"search.request","params":{"action":"start","search_id":"00000000-0000-4000-8000-000000000001","text":"hello","filters":{"category":{"kind":"unknown"},"source_kind":null,"has_ocr":null,"has_applied_ai":null}}}},
+ {"id":"page-extra-field","valid":false,"value":{"method":"search.request","params":{"action":"page","cursor":"00000000-0000-4000-8000-000000000002","text":"hidden"}}}
+]

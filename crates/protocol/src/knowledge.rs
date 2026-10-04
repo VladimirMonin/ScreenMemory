@@ -232,6 +232,7 @@ pub struct CardView {
 #[serde(rename_all = "snake_case")]
 pub enum ProjectionState {
     HandlerUnavailable,
+    Current,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

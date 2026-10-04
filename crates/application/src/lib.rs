@@ -5,6 +5,7 @@ pub mod images;
 pub mod knowledge;
 pub mod observability;
 pub mod processing;
+pub mod search;
 pub mod storage;
 
 use async_trait::async_trait;

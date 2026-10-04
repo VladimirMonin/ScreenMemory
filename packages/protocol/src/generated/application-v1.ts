@@ -71,6 +71,10 @@ export type ApplicationResult =
   | {
       type: 'knowledge';
       value: KnowledgeReply;
+    }
+  | {
+      type: 'search';
+      value: SearchReply;
     };
 export type BridgeState = 'stopped' | 'starting' | 'ready' | 'degraded' | 'unavailable';
 export type BuildId = string;
@@ -105,6 +109,12 @@ export type ErrorCode =
       | 'CATEGORY_NOT_AVAILABLE'
       | 'CATEGORY_NAME_CONFLICT'
       | 'CATEGORY_CATALOG_TOO_LARGE'
+      | 'NO_LEXICAL_TERMS'
+      | 'SEARCH_FILTER_UNSUPPORTED'
+      | 'SEARCH_BUSY'
+      | 'SEARCH_EXPIRED'
+      | 'SEARCH_SNAPSHOT_CHANGED'
+      | 'SEARCH_CANCELLED'
       | 'CAPTURE_BACKPRESSURE'
       | 'CAPTURE_TARGET_LOST'
       | 'CAPTURE_TOPOLOGY_CHANGED'
@@ -264,9 +274,20 @@ export type CategoryName = string;
 export type FieldSource = 'user' | 'ai' | 'fallback' | 'none';
 export type CardDescription = string;
 export type CardTitle = string;
-export type ProjectionState = 'handler_unavailable';
+export type ProjectionState = 'handler_unavailable' | 'current';
 export type CategoryDescription = string;
 export type CategoryState = 'active' | 'archived' | 'deleted';
+export type SearchReply =
+  | {
+      kind: 'page';
+      value: SearchPage;
+    }
+  | {
+      kind: 'cancelled';
+      value: {
+        search_id: KnowledgeId;
+      };
+    };
 export type SafeMessage = string;
 
 /**
@@ -708,6 +729,27 @@ export interface CategoryReceipt {
   category: CategoryView;
   operation_id: KnowledgeId;
   projection_state: ProjectionState;
+}
+export interface SearchPage {
+  candidate_depth: number;
+  items: SearchHit[];
+  next_cursor?: KnowledgeId | null;
+  projection_epoch: SqlRevision;
+  search_id: KnowledgeId;
+  window_truncated: boolean;
+}
+export interface SearchHit {
+  asset_id: KnowledgeId;
+  category_id?: KnowledgeId | null;
+  category_label?: string | null;
+  content_revision: SqlRevision;
+  exact_match: boolean;
+  exact_terms_truncated: boolean;
+  excerpt: string;
+  lexical_match: boolean;
+  position: number;
+  record_id: KnowledgeId;
+  title: string;
 }
 export interface AppError {
   code: ErrorCode;

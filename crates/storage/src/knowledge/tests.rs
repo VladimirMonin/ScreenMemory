@@ -136,7 +136,7 @@ fn manual_saved_replay_conflict_keep_inherit_empty_unicode_reopen_and_canonical_
         let r = saved(&w, p).await;
         let before = card(&w, p, r).await;
         assert!(!encode(&before).unwrap().contains("private"));
-        assert_eq!(before.projection_state, ProjectionState::HandlerUnavailable);
+        assert_eq!(before.projection_state, ProjectionState::Current);
         let context = ctx(p, vec![Scope::ReadMetadata, Scope::WriteMetadata]);
         let mut req = edit_req(r, 1, 1);
         req.patch.title = FieldPatch::Set {
@@ -387,12 +387,12 @@ fn additive_v6_saved_upgrade_rollback_reopen_preserves_metadata_and_canonical() 
         let mut db = Connection::open(f.0.join("data/library.sqlite3")).unwrap();
         let preserved: (String,String,String) = db.query_row("SELECT r.capture_context,r.provenances,a.sha256 FROM records r JOIN assets a ON a.record_id=r.id WHERE r.id=?1", [r.0.to_string()], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).unwrap();
         // Stopped newly created OWN synthetic fixture, remove only unaccepted empty v7 layer.
-        db.execute_batch("BEGIN IMMEDIATE; DROP TABLE knowledge_projection_debts; DROP TABLE knowledge_source_documents; DROP TABLE knowledge_cards; DROP TABLE knowledge_write_receipts; DROP TABLE knowledge_category_versions; DROP TABLE knowledge_categories; DROP TABLE category_catalog_meta; DELETE FROM schema_migrations WHERE version=7; COMMIT;").unwrap();
+        db.execute_batch("BEGIN IMMEDIATE; DROP TABLE image_fts; DROP TABLE search_exact_terms; DROP TABLE search_documents; DROP TABLE search_projection_meta; DELETE FROM schema_migrations WHERE version=8; DROP TABLE knowledge_projection_debts; DROP TABLE knowledge_source_documents; DROP TABLE knowledge_cards; DROP TABLE knowledge_write_receipts; DROP TABLE knowledge_category_versions; DROP TABLE knowledge_categories; DROP TABLE category_catalog_meta; DELETE FROM schema_migrations WHERE version=7; COMMIT;").unwrap();
         assert_eq!(crate::migration::initialize(&mut db,false,true).unwrap_err(),StorageError::MigrationFailed);
         assert_eq!(db.query_row("SELECT MAX(version) FROM schema_migrations",[],|r|r.get::<_,u32>(0)).unwrap(),6);
         assert_eq!(db.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name='knowledge_cards'",[],|r|r.get::<_,u32>(0)).unwrap(),0);
         let after: (String,String,String)=db.query_row("SELECT r.capture_context,r.provenances,a.sha256 FROM records r JOIN assets a ON a.record_id=r.id WHERE r.id=?1",[r.0.to_string()],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).unwrap();assert_eq!(after,preserved);drop(db);
-        let w=StorageWorker::start(f.lease()).unwrap();assert_eq!(w.schema_snapshot().await.unwrap().schema_version,7);let c=card(&w,p,r).await;assert_eq!(c.record_revision,SqlRevision(1));w.shutdown(Duration::from_secs(5)).await.unwrap();
+        let w=StorageWorker::start(f.lease()).unwrap();assert_eq!(w.schema_snapshot().await.unwrap().schema_version,8);let c=card(&w,p,r).await;assert_eq!(c.record_revision,SqlRevision(1));w.shutdown(Duration::from_secs(5)).await.unwrap();
         let w=StorageWorker::start(f.lease()).unwrap();assert_eq!(card(&w,p,r).await.source_sha256,c.source_sha256);w.shutdown(Duration::from_secs(5)).await.unwrap();
     });
 }

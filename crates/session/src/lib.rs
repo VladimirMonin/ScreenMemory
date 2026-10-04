@@ -38,7 +38,7 @@ use uuid::Uuid;
 /// Capability list negotiated by exactly one build of this workspace. S02 adds the two
 /// capture handlers; a peer that does not speak the same list is refused instead of being
 /// served a method it cannot decode.
-pub const CAPABILITIES: [&str; 14] = [
+pub const CAPABILITIES: [&str; 15] = [
     "system.status",
     "system.doctor",
     "system.request_shutdown",
@@ -53,6 +53,7 @@ pub const CAPABILITIES: [&str; 14] = [
     "library.record.metadata",
     "processing.request",
     "knowledge.request",
+    "search.request",
 ];
 const HANDSHAKE_TIME: Duration = Duration::from_secs(3);
 const MAX_ACTIVE: usize = 8;
@@ -132,6 +133,7 @@ pub struct SessionHost {
     images: Option<Arc<dyn ImageLibraryApi>>,
     processing: Option<Arc<dyn sm_application::processing::ProcessingApi>>,
     knowledge: Option<Arc<dyn sm_application::knowledge::KnowledgeApi>>,
+    search: Option<Arc<dyn sm_application::search::SearchApi>>,
     budget: BufferBudget,
 }
 impl SessionHost {
@@ -157,8 +159,13 @@ impl SessionHost {
             images: None,
             processing: None,
             knowledge: None,
+            search: None,
             budget,
         }
+    }
+    pub fn with_search(mut self, search: Arc<dyn sm_application::search::SearchApi>) -> Self {
+        self.search = Some(search);
+        self
     }
     pub fn with_knowledge(
         mut self,
@@ -310,13 +317,14 @@ impl SessionHost {
                             let images = self.images.clone();
                             let processing = self.processing.clone();
                             let knowledge = self.knowledge.clone();
+                            let search=self.search.clone();
                             let context = context.for_request(id, CorrelationId::new(Uuid::new_v4()));
                             let library = self.library;
                             tasks.spawn(async move {
                                 let response = tokio::select! {
                                     biased;
                                     _ = token.cancelled() => response_error(id, ErrorCode::WaitTimeout),
-                                    result = dispatch(request, library, context, foundation, control, capture.clone(), images, processing, knowledge, token.clone()) => result,
+                                    result = dispatch(request, library, context, foundation, control, capture.clone(), images, processing, knowledge, search, token.clone()) => result,
                                 };
                                 // Keep the active ID/slot until a terminal response is actually sent.
                                 writer.send(Phase::Application, &response).await.map_err(|_| ())?;
@@ -416,6 +424,7 @@ async fn dispatch(
     images: Option<Arc<dyn ImageLibraryApi>>,
     processing: Option<Arc<dyn sm_application::processing::ProcessingApi>>,
     knowledge: Option<Arc<dyn sm_application::knowledge::KnowledgeApi>>,
+    search: Option<Arc<dyn sm_application::search::SearchApi>>,
     cancel: CancellationToken,
 ) -> Response {
     let id = request.request_id;
@@ -447,6 +456,7 @@ async fn dispatch(
             | "library.export"
             | "processing.request"
             | "knowledge.request"
+            | "search.request"
     ) {
         return Response::Error {
             request_id: id,
@@ -496,6 +506,7 @@ async fn dispatch(
             Scope::WriteMetadata
         }
         KnownParams::Knowledge(_) => Scope::ManageCategories,
+        KnownParams::Search(_) => Scope::ReadMetadata,
     };
     if !ctx.allows(scope) {
         return fail(ErrorCode::PermissionDenied);
@@ -505,6 +516,13 @@ async fn dispatch(
     }
     let operation = async {
         match params {
+            KnownParams::Search(request) => match search {
+                Some(api) => api
+                    .search(ctx, request, cancel.clone())
+                    .await
+                    .map(|r| ApplicationResult::Search(Box::new(r))),
+                None => Err(AppError::method_not_supported()),
+            },
             KnownParams::Knowledge(request) => match knowledge {
                 Some(api) => api
                     .knowledge(ctx, request)

@@ -53,6 +53,27 @@ impl GuiSession {
         })
     }
 
+    pub async fn search(
+        &mut self,
+        request: sm_protocol::search::SearchRequest,
+    ) -> Result<sm_protocol::search::SearchReply, String> {
+        self.search_cancellable(request, tokio_util::sync::CancellationToken::new())
+            .await
+    }
+    pub async fn search_cancellable(
+        &mut self,
+        request: sm_protocol::search::SearchRequest,
+        cancellation: tokio_util::sync::CancellationToken,
+    ) -> Result<sm_protocol::search::SearchReply, String> {
+        self.ensure(true).await.map_err(gui_code)?;
+        let result = self
+            .client
+            .as_ref()
+            .expect("connected")
+            .search_cancellable(request, cancellation)
+            .await;
+        self.finish(result).map_err(gui_code)
+    }
     pub async fn knowledge(
         &mut self,
         request: sm_protocol::knowledge::KnowledgeRequest,

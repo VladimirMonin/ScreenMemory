@@ -241,6 +241,13 @@ pub(super) fn commit(
     }
     // If COMMIT returns an ambiguous error, only a confirmed persisted row can
     // produce Saved; otherwise return the error. Do not retry the INSERT blindly.
+    crate::knowledge::initial(
+        &tx,
+        sm_protocol::knowledge::KnowledgeId(
+            uuid::Uuid::parse_str(&record).map_err(|_| StorageError::IntegrityFailed)?,
+        ),
+    )
+    .map_err(|_| StorageError::IntegrityFailed)?;
     let result = tx.commit();
     match saved_replay(db, &expected, &library, &fingerprint, &context, &provenance) {
         Ok(Some(saved)) => Ok(saved),

@@ -10,6 +10,7 @@
 mod config;
 mod model;
 mod open;
+mod search_lane;
 mod selfcheck;
 mod session;
 mod shell;
@@ -21,6 +22,7 @@ pub use model::{
     PreviewAssembler, CAPTURE_MODES, GUI_ENVELOPE_VERSION, MAX_PREVIEW_BYTES, NOT_IMPLEMENTED,
 };
 pub use open::{validated_report_directory, OpenReportError, ReportOpener, SystemReportOpener};
+pub use search_lane::SearchLane;
 pub use selfcheck::{run_self_check, SELF_CHECK_MODE};
 pub use session::GuiSession;
 pub use shell::{

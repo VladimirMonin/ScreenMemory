@@ -28,6 +28,12 @@ pub enum ErrorCode {
     CategoryNotAvailable,
     CategoryNameConflict,
     CategoryCatalogTooLarge,
+    NoLexicalTerms,
+    SearchFilterUnsupported,
+    SearchBusy,
+    SearchExpired,
+    SearchSnapshotChanged,
+    SearchCancelled,
     /// S02 §5.6: capture vocabulary. Every value is produced by the real capture/library
     /// path; none of them is a placeholder for an unimplemented capability.
     CaptureBusy,

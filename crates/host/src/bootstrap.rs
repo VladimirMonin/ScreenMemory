@@ -411,7 +411,8 @@ async fn bootstrap_inner(
     services.bind_runtime_status(processing.runtime_status());
     session = session
         .with_processing(processing.clone())
-        .with_knowledge(Arc::new(prepared.storage.clone()));
+        .with_knowledge(Arc::new(prepared.storage.clone()))
+        .with_search(Arc::new(prepared.storage.clone()));
     let session = Arc::new(session);
     // Step 6: the sealed listener exists before any readiness claim; connections are
     // only accepted once `serve` runs the bounded loop.

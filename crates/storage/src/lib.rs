@@ -27,6 +27,8 @@ mod recovery_commit;
 mod recovery_commit_tests;
 #[cfg(test)]
 mod recovery_process_tests;
+pub mod search;
+mod search_projection;
 pub mod staging;
 pub mod staging_files;
 #[cfg(test)]
@@ -368,6 +370,7 @@ pub struct StorageWorker {
     gate: Arc<Mutex<Admission>>,
     image_active: Arc<Mutex<std::collections::HashMap<Uuid, Arc<image_services::JobControl>>>>,
     execution_wake: Arc<tokio::sync::Notify>,
+    search_endpoint: search::Endpoint,
 }
 impl StorageWorker {
     #[cfg(test)]
@@ -493,6 +496,8 @@ impl StorageWorker {
     ) -> Result<Self, StorageError> {
         let (sender, receiver) = mpsc::sync_channel(32);
         let (file_sender, file_receiver) = mpsc::sync_channel(1);
+        let (search_endpoint, search_receiver, search_cache) = search::channel();
+        let search_stop = search_endpoint.clone();
         let (stopped, _) = watch::channel(false);
         let gate = Arc::new(Mutex::new(Admission {
             closing: false,
@@ -528,7 +533,26 @@ impl StorageWorker {
                 let result = open(&entry, fault == Fault::MigrationCommit);
                 match result {
                     Ok(db) => {
+                        let readers = (|| {
+                            Ok::<_, StorageError>((
+                                search::open_reader(entry.path())?,
+                                search::open_reader(entry.path())?,
+                            ))
+                        })();
+                        let (reader1, reader2) = match readers {
+                            Ok(r) => r,
+                            Err(e) => {
+                                let _ = ready_tx.send(Err(e));
+                                return;
+                            }
+                        };
                         let completed = std::thread::scope(|scope| {
+                            let rx = search_receiver.clone();
+                            let cache = search_cache.clone();
+                            let read1 = scope.spawn(move || search::reader(reader1, rx, cache));
+                            let read2 = scope.spawn(move || {
+                                search::reader(reader2, search_receiver, search_cache)
+                            });
                             let (started_tx, started_rx) = mpsc::sync_channel(1);
                             let lease_ref = &lease;
                             let file_thread = std::thread::Builder::new()
@@ -547,12 +571,16 @@ impl StorageWorker {
                             let Ok(file_thread) = file_thread else {
                                 let _ = ready_tx.send(Err(StorageError::Unavailable));
                                 drop(db);
+                                let _ = search_stop.sender.send(search::ReadCommand::Stop);
+                                let _ = search_stop.sender.send(search::ReadCommand::Stop);
                                 return false;
                             };
                             if started_rx.recv().is_err() || ready_tx.send(Ok(())).is_err() {
                                 drop(db);
                                 let _ = file_stop_sender.send(FileRequest::Stop);
                                 let _ = file_thread.join();
+                                let _ = search_stop.sender.send(search::ReadCommand::Stop);
+                                let _ = search_stop.sender.send(search::ReadCommand::Stop);
                                 return false;
                             }
                             // A panicking DB loop still sends the file stop and joins before
@@ -570,7 +598,17 @@ impl StorageWorker {
                                 }));
                             let file_stop = file_stop_sender.send(FileRequest::Stop).is_ok();
                             let file_joined = file_thread.join().is_ok();
-                            matches!(sqlite_result, Ok(true)) && file_stop && file_joined
+                            let read_stop1 =
+                                search_stop.sender.send(search::ReadCommand::Stop).is_ok();
+                            let read_stop2 =
+                                search_stop.sender.send(search::ReadCommand::Stop).is_ok();
+                            let read_joined = read1.join().is_ok() && read2.join().is_ok();
+                            matches!(sqlite_result, Ok(true))
+                                && file_stop
+                                && file_joined
+                                && read_stop1
+                                && read_stop2
+                                && read_joined
                         });
                         drop(entry);
                         drop(lease);
@@ -597,6 +635,7 @@ impl StorageWorker {
             gate,
             image_active: Arc::new(Mutex::new(std::collections::HashMap::new())),
             execution_wake: Arc::new(tokio::sync::Notify::new()),
+            search_endpoint,
         })
     }
     /// Separate, single-slot file queue. Only accepted requests own file-lane memory;
@@ -930,6 +969,7 @@ fn open(entry: &sm_isolation::DatabaseEntry, fail: bool) -> Result<Connection, S
     migration::pragmas(&db)?;
     migration::initialize(&mut db, fresh, fail)?;
     import_db::reconcile_startup(&mut db)?;
+    knowledge::backfill(&mut db).map_err(|_| StorageError::IntegrityFailed)?;
     Ok(db)
 }
 fn run(

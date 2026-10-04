@@ -61,7 +61,7 @@ export default function KnowledgePanel({ recordId }: { recordId: string | null }
     try {
       const reply = await call(pending.current);
       if (token !== generation.current) return;
-      if (reply.kind === 'edited') { setCard(reply.value.card); resetDraft(reply.value.card); setNotice('Сохранено. Индекс: обработчик ещё недоступен.'); }
+      if (reply.kind === 'edited') { setCard(reply.value.card); resetDraft(reply.value.card); setNotice(reply.value.card.projection_state === 'current' ? 'Сохранено. FTS5 актуален; обновите поиск.' : 'Сохранено. Проекция недоступна.'); }
     } catch (error) {
       if (token !== generation.current) return;
       if (String(error) === 'REVISION_CONFLICT') {
@@ -102,12 +102,12 @@ export default function KnowledgePanel({ recordId }: { recordId: string | null }
   }
   return <section className="knowledge-panel" aria-label="Карточка и категории">
     <h2>Карточка и категории</h2>
-    <p>Ручные поля работают при AI Off. OCR/анализ и поиск ещё не подключены.</p>
+    <p>Ручные поля и FTS5 работают при AI Off. OCR/анализ ещё не подключены.</p>
     {card ? <>
       <h3>{card.effective.title}</h3>
       <p className="card-description">{card.effective.description || 'Описание не задано'}</p>
       <p>Категория: {card.effective.category_label ?? 'без категории'} · Источники: название — {sourceLabels[card.effective.title_source]}, описание — {sourceLabels[card.effective.description_source]}, категория — {sourceLabels[card.effective.category_source]}</p>
-      <p>Версия записи {card.record_revision} · Источник поиска {card.content_revision} · Индекс: обработчик недоступен</p>
+      <p>Версия записи {card.record_revision} · Источник поиска {card.content_revision} · Индекс: {card.projection_state === 'current' ? 'FTS5 актуален' : 'обработчик недоступен'}</p>
       <fieldset disabled={busy}>
         <legend>Независимые ручные поля</legend>
         <label>Название<input aria-label="Название карточки" value={title} onChange={e => { changed(); setTitleMode('set'); setTitle(e.target.value); }} /></label>

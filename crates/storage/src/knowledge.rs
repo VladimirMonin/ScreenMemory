@@ -117,6 +117,13 @@ fn source(id: KnowledgeId, asset: KnowledgeId, effective: &EffectiveCard) -> Kno
     }
 }
 pub(crate) fn read(db: &Connection, id: KnowledgeId) -> Result<CardView, KnowledgeError> {
+    read_inner(db, id, true)
+}
+fn read_inner(
+    db: &Connection,
+    id: KnowledgeId,
+    check_projection: bool,
+) -> Result<CardView, KnowledgeError> {
     let asset: Option<String> = db.query_row("SELECT a.id FROM records r JOIN assets a ON a.record_id=r.id AND a.asset_type='original' WHERE r.id=?1", [id.0.to_string()], |r| r.get(0)).optional().map_err(sql)?;
     let asset: KnowledgeId = decode(&encode(&asset.ok_or(KnowledgeError::NotFound)?)?)?;
     let row: Option<(u64,u64,String,String,String)> = db.query_row("SELECT record_revision,content_revision,overrides_json,effective_json,source_asset_id FROM knowledge_cards WHERE record_id=?1", [id.0.to_string()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).optional().map_err(sql)?;
@@ -153,6 +160,7 @@ pub(crate) fn read(db: &Connection, id: KnowledgeId) -> Result<CardView, Knowled
     if persisted != stored.is_some() {
         return Err(KnowledgeError::Integrity);
     }
+    let mut projection_state = ProjectionState::HandlerUnavailable;
     if let Some((c, s, h)) = stored {
         let prior: KnowledgeSource = decode(&s)?;
         if !prior.required_read_scopes.contains(&"read_metadata".into())
@@ -169,9 +177,23 @@ pub(crate) fn read(db: &Connection, id: KnowledgeId) -> Result<CardView, Knowled
         if c != content_revision.0 || s != encode(&source)? || h != hash(&s) {
             return Err(KnowledgeError::Integrity);
         }
-        let debt: Option<(u64,String)> = db.query_row("SELECT target_content_revision,source_sha256 FROM knowledge_projection_debts WHERE record_id=?1", [id.0.to_string()], |r| Ok((r.get(0)?,r.get(1)?))).optional().map_err(sql)?;
-        if debt != Some((c, h)) {
-            return Err(KnowledgeError::Integrity);
+        if check_projection {
+            let debt: Option<(u64,String)> = db.query_row("SELECT target_content_revision,source_sha256 FROM knowledge_projection_debts WHERE record_id=?1", [id.0.to_string()], |r| Ok((r.get(0)?,r.get(1)?))).optional().map_err(sql)?;
+            let projected: Option<(u64,String,String,String,u8)> = db.query_row("SELECT content_revision,source_sha256,title,description,required_scope_mask FROM search_documents WHERE record_id=?1 AND source_asset_id=?2", params![id.0.to_string(),asset.0.to_string()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).optional().map_err(sql)?;
+            if debt.is_none()
+                && projected
+                    == Some((
+                        c,
+                        h.clone(),
+                        source.title.0.clone(),
+                        source.description.0.clone(),
+                        crate::search_projection::scope_mask(&source.required_read_scopes)?,
+                    ))
+            {
+                projection_state = ProjectionState::Current;
+            } else if debt != Some((c, h)) {
+                return Err(KnowledgeError::Integrity);
+            }
         }
     }
     let digest = hash(&encode(&source)?);
@@ -184,7 +206,7 @@ pub(crate) fn read(db: &Connection, id: KnowledgeId) -> Result<CardView, Knowled
         effective,
         source,
         source_sha256: digest,
-        projection_state: ProjectionState::HandlerUnavailable,
+        projection_state,
     })
 }
 /// Worker-only S06 adapter seam; it MUST run synchronously in the existing transaction.
@@ -196,18 +218,6 @@ pub trait SearchProjectionTx {
         previous: Option<SqlRevision>,
         current: &CardView,
     ) -> Result<(), KnowledgeError>;
-}
-struct PendingProjection;
-impl SearchProjectionTx for PendingProjection {
-    fn on_source_changed(
-        &self,
-        tx: &Transaction<'_>,
-        _: Option<SqlRevision>,
-        current: &CardView,
-    ) -> Result<(), KnowledgeError> {
-        tx.execute("INSERT INTO knowledge_projection_debts VALUES(?1,?2,?3,'handler_unavailable') ON CONFLICT(record_id) DO UPDATE SET target_content_revision=excluded.target_content_revision,source_sha256=excluded.source_sha256", params![current.record_id.0.to_string(),current.content_revision.0,current.source_sha256]).map_err(sql)?;
-        Ok(())
-    }
 }
 fn persist(
     tx: &Transaction<'_>,
@@ -237,7 +247,57 @@ fn persist(
         tx.execute("INSERT INTO knowledge_source_documents VALUES(?1,?2,'manual_effective_v1',?3,?4,strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(record_id) DO UPDATE SET content_revision=excluded.content_revision,source_json=excluded.source_json,source_sha256=excluded.source_sha256,updated_at_utc=excluded.updated_at_utc", params![card.record_id.0.to_string(),card.content_revision.0,encode(&card.source)?,card.source_sha256]).map_err(sql)?;
         hook.on_source_changed(tx, existed.then_some(previous.content_revision), &card)?;
     }
+    card.projection_state = ProjectionState::Current;
     Ok(card)
+}
+/// Materialize new Saved fallback source and projection inside the caller's transaction.
+pub(crate) fn initial(tx: &Transaction<'_>, id: KnowledgeId) -> Result<(), KnowledgeError> {
+    let card = read_inner(tx, id, false)?;
+    persist(
+        tx,
+        &card,
+        card.clone(),
+        &crate::search_projection::Projection,
+    )?;
+    Ok(())
+}
+/// Bounded per-transaction backfill/repair before reader/listener publication, no model/file IO.
+pub(crate) fn backfill(db: &mut Connection) -> Result<(), KnowledgeError> {
+    let mut after = 0i64;
+    loop {
+        let ids: Vec<(i64, String)> = {
+            let mut s=db.prepare("SELECT r.rowid,r.id FROM records r JOIN assets a ON a.record_id=r.id AND a.asset_type='original' WHERE r.rowid>?1 ORDER BY r.rowid LIMIT 128").map_err(sql)?;
+            let rows = s
+                .query_map([after], |r| Ok((r.get(0)?, r.get(1)?)))
+                .map_err(sql)?;
+            rows.collect::<Result<_, _>>().map_err(sql)?
+        };
+        if ids.is_empty() {
+            break;
+        }
+        let tx = db
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(sql)?;
+        for (pk, id) in &ids {
+            let id: KnowledgeId = decode(&encode(id)?)?;
+            let c = read_inner(&tx, id, false)?;
+            let existed: bool = tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM knowledge_cards WHERE record_id=?1)",
+                    [id.0.to_string()],
+                    |r| r.get(0),
+                )
+                .map_err(sql)?;
+            if !existed {
+                initial(&tx, id)?;
+            } else {
+                crate::search_projection::Projection.on_source_changed(&tx, None, &c)?;
+            }
+            after = *pk;
+        }
+        tx.commit().map_err(sql)?;
+    }
+    Ok(())
 }
 fn apply<T: Clone>(current: &mut FieldPatch<T>, patch: &FieldPatch<T>) {
     if !matches!(patch, FieldPatch::Keep) {
@@ -488,7 +548,7 @@ fn mutate_category(
         category: cat,
         catalog_revision,
         affected_records: affected,
-        projection_state: ProjectionState::HandlerUnavailable,
+        projection_state: ProjectionState::Current,
     }))
 }
 pub(crate) fn handle_authorized(
@@ -520,7 +580,12 @@ pub(crate) fn handle_authorized(
             }
         }
     }
-    handle_with_hook(db, ctx.principal_id(), req, &PendingProjection)
+    handle_with_hook(
+        db,
+        ctx.principal_id(),
+        req,
+        &crate::search_projection::Projection,
+    )
 }
 #[cfg(test)]
 pub(crate) fn handle(
@@ -528,7 +593,7 @@ pub(crate) fn handle(
     principal: PrincipalId,
     req: KnowledgeRequest,
 ) -> Result<KnowledgeReply, KnowledgeError> {
-    handle_with_hook(db, principal, req, &PendingProjection)
+    handle_with_hook(db, principal, req, &crate::search_projection::Projection)
 }
 fn handle_with_hook(
     db: &mut Connection,

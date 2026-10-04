@@ -1,6 +1,6 @@
 # ScreenMemory — доска работ до локального релиза
 
-Обновлено: 2026-10-03. Цель: `muqhdldy-5nzeny`.
+Обновлено: 2026-10-04. Цель: `muqhdldy-5nzeny`.
 Исходная кодовая база: `18a2608cad800d1b3cb783d586964784e267351d` (`main`).
 Scope: [ADR-011 / CN-20261002-01](adr/011-private-release-scope.md).
 Исполнение: [WORKFLOW.release](../instructions/WORKFLOW.release.instructions.md).
@@ -19,7 +19,7 @@ Scope: [ADR-011 / CN-20261002-01](adr/011-private-release-scope.md).
 | S03 — импорт/изображения/экспорт | ACCEPT_CODE_SCOPED; этап IN_PROGRESS | Own files/tree→verified WebP/AVIF→actual Tauri preview→export: [приёмка/evidence](progress/S03/result.md), fresh review+P2 closure PASS. Whole S03, genuine input, production upgrade и package/performance не приняты. |
 | S04 — SDK/очередь/LM Studio | ACCEPT_CODE_SCOPED; этап IN_PROGRESS | Code `0f32ad56`; [Parent приёмка/evidence](progress/S04/result.md): SDK/private runtime, durable scheduler/ModelManager/SQLite intents и реальные shared GUI/JSON CLI приняты scoped после fresh review9cc6+targeted3e43 pass/findings[]. Published-SDK synthetic execution4/4, actual shotd/CLI regression1/1, native enrollment negatives4 и исправленный schema6 smoke56/56 raw0; own rendered settings/close-reopen proofs разделены. Live LM Studio/genuine input NOT_RUN, physical unload/unsafe retention/reasoning Unsupported, TTL requested/not_verified; весь S04/поставка не приняты. |
 | S05 — OCR/карточки/правки | ACCEPT_CODE_SCOPED manual-core; этап IN_PROGRESS | [Parent приёмка/evidence](progress/S05/manual-core.md): additive0007, Saved→typed карточка/категории/Keep-Inherit-Set через native GUI/JSON CLI, replay/conflicts/reopen/export при Off и effective source/debt. Fresh review + targeted P2 closure/managed settlement pass/findings[]; independent native1/1/storage7/7/Rust3/Ajv1/Python raw0. OCR/vision/preferences/quality не реализованы; genuine input NOT_PROVEN, historical native fail-fast cause UNKNOWN; этап не DONE. |
-| S06 — FTS5 и качество поиска | PENDING | Sol6.1 + оценка parent: lexical/exact/filters, обновление после правок/удалений, размеченный RU/EN corpus, ranking и latency. |
+| S06 — FTS5 и качество поиска | CODE_CHECKPOINT_SCOPED; этап IN_PROGRESS, не принят | [Код/evidence/остаток](progress/S06/manual-search.md): atomic manual3-field FTS5/exact→shared CLI/GUI, cancel/latest P2 закрыты fresh review7e9+independent native1/1/lane2/2; bounded helper review90a7+pure7/7 pass; final CLI dispatch P2 закрыт native284e review+independent5+1, unfiltered CLI16/16/schema8 raw0 (старый schema7 FAIL сохранён).120 literal +10 заранее graded cases, final frontend29 и release10k подтверждены. Два отдельно разрешённых window passes FAIL/no listener, pass2 eight observations/deadline до CDP; source/cleanup освобождены, третьего запуска нет. Required nonblank/preview BLOCKED, four source fields NotProvided/Unsupported, genuine input BLOCKED; managed criterion1 not-satisfied/исходные timeouts сохранены. Code checkpoint не accepted S06/release. |
 | S07 — GUI/CLI/MCP | PENDING | Sol6.1: полный агентский сценарий, удобный GUI, общий host, scopes, JSON/exit parity и image resources. |
 | S08 — сохранность/релиз | PENDING | Sol6.1 → reviewer → parent: финальная регрессия, isolated backup/restore/purge/upgrade, Windows installer/staging, SHA и отчёт. |
 
@@ -79,9 +79,14 @@ S05 manual-core принят scoped: карточка, категории и man
 GUI/CLI при AI Off, versioned effective source и revision guards;
 [evidence/границы](progress/S05/manual-core.md). Два P2 (Unicode parity и crash-report
 classification) закрыты; report-delivery FAIL сохранён, same-native settlement PASS.
-Все writers/reviewers завершены, parent фиксирует принятый логический срез.
-OCR/vision integration и supported identity остаются отдельным следующим owner;
-полный S05 не закрывается manual-only срезом. Затем production FTS5.
+S05 code checkpoint `948a1f1a` создан. OCR/vision integration и supported identity
+остаются отдельным owner; полный S05 не закрывается manual-only срезом.
+Manual FTS5 code проверен scoped: source3/7, shared CLI/GUI, fresh P2/helper reviews,
+current native build и literals/graded/perf evidence. Required nonblank window gate
+после двух явно разрешённых passes остаётся FAIL/no listener до CDP, deeper cause UNKNOWN.
+Parent фиксирует только code checkpoint с локальным blocker, не приёмку S06.
+Следующий полезный milestone — S07 агентские общие CLI/MCP, не listener retry loop;
+новый runtime путь требует отдельного обоснованного stand/authority решения.
 Capture/input/live-model/unload/TTL blockers остаются локальными, не паузой всей цели.
 Historical unknown fixture/PID cleanup BLOCKED/NOT_RUN; не повторять принятый SDK
 bootstrap и не выдавать bounded checks за whole S04.
@@ -96,6 +101,7 @@ bootstrap и не выдавать bounded checks за whole S04.
 | S03 interface integration | ACCEPT_CODE_SCOPED: common RPC/client/JSON CLI + typed/native-path GUI, source-aware pagination, bounded AVIF derivative | Source released; [факты/остатки](progress/S03/interfaces.md) | Actual own Tauri DPI144 RGB preview/source deletion/export/reopen/cleanup1168; final Rust/frontend raw0, comments-only schema drift исправлен, contracts raw0 |
 | S03 reviewer → parent | DONE scoped: fresh review и retained P2 follow-up PASS/findings0 | Все writers завершены; parent принимает/коммитит | Оба report defects исправлены, public-progress invariant/empty CLI raw7 независимо проверены; whole stage не объявлен DONE |
 | S04 writers/reviewers → parent | ACCEPT_CODE_SCOPED: real installation authority, SDK/durable execution, common typed GUI/JSON CLI | Native SDK/execution/interfaces CHECKED, fresh9cc6/targeted3e43 pass; source released | [Final evidence/остатки](progress/S04/result.md); independent actual native case1/1+4 enrollment refusals; schema-smoke RED1 сохранён/GREEN56 raw0. Whole S04/LM live/unload/TTL/genuine input не приняты |
+| S06 writers/reviewers → parent | CODE_CHECKPOINT_SCOPED only: manual FTS5/exact/shared search/P2+helper corrections | Все native owners завершены; source released, actual API reviews7e9/90a7/284e pass, final397 source hashes сохранены | [Evidence/пределы](progress/S06/manual-search.md); current build0/frontend29/independent native1+2/pure7, CLI16 unfiltered и independent5+1; старые schema/window FAIL сохранены, заранее замороженный graded10. Два window FAIL, criterion1 not-satisfied, no3rd; полный S06 не принят |
 
 Завершённый foundation был single-seam. S03 image, ingest и interface integration
 имеют последовательных owners и durable handoff, без пересекающихся source writes.
@@ -121,6 +127,8 @@ Pi: `openai-codex/gpt-6.1-sol` для реализации/review;
 | LM Studio/models и clean Windows test environment | Проверить доступность read-only, не скачивать тайно. SDK/runtime bundling и независимую работу продолжать; реальный proof без доступа не выдумывать. |
 | Исторические synthetic credentials | Malformed reviewer canary и pre-P2 absent fixture без сохранённого ID — UNKNOWN/NOT_RECONCILED; новые exact1168 proofs не доказывают старую absence. Enumeration/sweep без нового решения запрещены. |
 | Clipboard isolation | Desktops WinSta0 делят clipboard: никаких Copy/EmptyClipboard в этой capture-wave. Нужна собственная station/session/VM и host/consumer той же station. |
+| S06 nonblank rendered search→selection→stored preview | BLOCKED: required passes e2b7edfc/9aaf4059 raw101, второй — eight same-port no-match/deadline до CDP; deeper cause UNKNOWN, genuine input не доказан. Code/helper reviews PASS не меняют gate. Третий blind runtime pass не разрешён; продолжать S07, новый runtime путь только после отдельного stand/authority решения. |
+| S06 source4 gaps | Manual title/description/category предоставлены; app/window/primary filename/OCR и taken/captured/applied-AI publishers NotProvided. Реализовать через соответствующих source owners, не угадывать из context/history/absolute paths. |
 
 ## Обязательная финальная оценка
 

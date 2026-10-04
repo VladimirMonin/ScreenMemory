@@ -16,6 +16,56 @@
       ],
       "type": "object"
     },
+    "ApplicationFilter": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "any",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "unattributed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "ids": {
+              "items": {
+                "$ref": "#/$defs/KnowledgeId"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "const": "any_of",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "ids"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "AssetId": {
       "maxLength": 36,
       "minLength": 36,
@@ -222,6 +272,56 @@
       "pattern": "^[^\\u0000]*$",
       "type": "string"
     },
+    "CategoryFilter": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "any",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "uncategorized",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "ids": {
+              "items": {
+                "$ref": "#/$defs/KnowledgeId"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "const": "any_of",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "ids"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "CategoryName": {
       "maxLength": 80,
       "pattern": "^[^\\u0000]*[^\\u0000\\u0009-\\u000D\\u0020\\u0085\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000][^\\u0000]*$",
@@ -245,6 +345,82 @@
       "maximum": 300,
       "minimum": 1,
       "type": "integer"
+    },
+    "DateAxis": {
+      "enum": [
+        "ingested",
+        "captured",
+        "taken"
+      ],
+      "type": "string"
+    },
+    "DateFilter": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "any",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "axis": {
+              "$ref": "#/$defs/DateAxis"
+            },
+            "from_inclusive": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "utc_range",
+              "type": "string"
+            },
+            "to_exclusive": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "axis",
+            "from_inclusive",
+            "to_exclusive"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "taken_offset_unknown",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "taken_absent",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "DoctorRequest": {
       "additionalProperties": false,
@@ -1283,6 +1459,150 @@
       ],
       "type": "object"
     },
+    "SearchFilters": {
+      "additionalProperties": false,
+      "properties": {
+        "application": {
+          "$ref": "#/$defs/ApplicationFilter",
+          "default": {
+            "kind": "any"
+          }
+        },
+        "category": {
+          "$ref": "#/$defs/CategoryFilter",
+          "default": {
+            "kind": "any"
+          }
+        },
+        "date": {
+          "$ref": "#/$defs/DateFilter",
+          "default": {
+            "kind": "any"
+          }
+        },
+        "has_applied_ai": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "has_ocr": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "source_kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "SearchRequest": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "start",
+              "type": "string"
+            },
+            "candidate_depth": {
+              "default": 100,
+              "format": "uint16",
+              "maximum": 2000,
+              "minimum": 100,
+              "type": "integer"
+            },
+            "filters": {
+              "$ref": "#/$defs/SearchFilters",
+              "default": {
+                "application": {
+                  "kind": "any"
+                },
+                "category": {
+                  "kind": "any"
+                },
+                "date": {
+                  "kind": "any"
+                },
+                "has_applied_ai": null,
+                "has_ocr": null,
+                "source_kind": null
+              }
+            },
+            "limit": {
+              "default": 30,
+              "format": "uint16",
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "search_id": {
+              "$ref": "#/$defs/KnowledgeId"
+            },
+            "text": {
+              "maxLength": 1024,
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "search_id",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "page",
+              "type": "string"
+            },
+            "cursor": {
+              "$ref": "#/$defs/KnowledgeId"
+            }
+          },
+          "required": [
+            "action",
+            "cursor"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "cancel",
+              "type": "string"
+            },
+            "search_id": {
+              "$ref": "#/$defs/KnowledgeId"
+            }
+          },
+          "required": [
+            "action",
+            "search_id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SourceKind": {
+      "enum": [
+        "capture",
+        "imported_image"
+      ],
+      "type": "string"
+    },
     "SqlRevision": {
       "maxLength": 19,
       "minLength": 1,
@@ -1598,6 +1918,23 @@
         },
         "params": {
           "$ref": "#/$defs/KnowledgeRequest"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "const": "search.request",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/SearchRequest"
         }
       },
       "required": [

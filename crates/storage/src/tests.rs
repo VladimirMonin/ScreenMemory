@@ -64,7 +64,7 @@ fn s01_db_01_fresh_reopen_uuid_seeds_pragmas_and_bundled_sqlite() {
     let f = Fixture::new();
     let worker = StorageWorker::start(f.lease()).unwrap();
     let first = f.rt(worker.schema_snapshot()).unwrap();
-    assert_eq!(first.schema_version, 7);
+    assert_eq!(first.schema_version, 8);
     assert_eq!(first.images.migration_version, 2);
     assert_eq!(
         first.images.canonical_format,
@@ -208,7 +208,7 @@ fn s01_db_02_fault_rollback_and_interrupted_empty_table() {
     let worker = StorageWorker::start(f.lease()).unwrap();
     // All shipped migrations are applied by one transaction on a fresh file; the
     // interrupted attempt left an owned, schema-empty database with durable intent.
-    assert_eq!(f.rt(worker.schema_snapshot()).unwrap().schema_version, 7);
+    assert_eq!(f.rt(worker.schema_snapshot()).unwrap().schema_version, 8);
     f.close(&worker);
     let retry = Fixture::new();
     assert!(matches!(
@@ -219,7 +219,7 @@ fn s01_db_02_fault_rollback_and_interrupted_empty_table() {
     let worker = StorageWorker::start(retry.lease()).unwrap();
     assert_eq!(
         retry.rt(worker.schema_snapshot()).unwrap().schema_version,
-        7
+        8
     );
     retry.close(&worker);
 }

@@ -7,6 +7,48 @@ fn argv(args: &[&str]) -> Vec<String> {
         .collect()
 }
 #[test]
+fn reserved_verbs_in_manual_text_do_not_select_a_command() {
+    let id = "00000000-0000-4000-8000-000000000001";
+    for literal in [
+        "search",
+        "knowledge",
+        "processing",
+        "import",
+        "export",
+        "metadata",
+        "status",
+        "doctor",
+        "capture",
+        "host",
+    ] {
+        for field in ["--title", "--description"] {
+            let input = argv(&[
+                "knowledge",
+                "edit",
+                "--record-id",
+                id,
+                "--operation-id",
+                id,
+                "--expected-revision",
+                "1",
+                "--catalog-revision",
+                "1",
+                field,
+                literal,
+            ]);
+            let parsed =
+                parse_args(&input).unwrap_or_else(|error| panic!("{field} {literal}: {error:?}"));
+            assert!(parsed.json);
+            let Command::Knowledge(command) = parsed.command else {
+                panic!("manual text selected another command: {field} {literal}")
+            };
+            let value: serde_json::Value = serde_json::from_str(&command.0).unwrap();
+            assert_eq!(value["patch"][&field[2..]]["value"], literal);
+        }
+    }
+}
+
+#[test]
 fn manual_cli_closed_patch_vocabulary_revisions_unicode_and_no_authority() {
     let id = "00000000-0000-4000-8000-000000000001";
     let good = argv(&[

@@ -17,6 +17,8 @@ const applicationImports = new Set([
   './ExportPanel',
   './ProcessingPanel',
   './KnowledgePanel',
+  './SearchPanel',
+  './searchLane',
   '../../../packages/protocol/src/generated/application-methods-v1',
   './App',
   './model',
@@ -53,7 +55,7 @@ for (const name of readdirSync(new URL('../src/', import.meta.url))) {
   if (text.includes("'gui_asset_preview'")) {
     assert.equal(text.split("'gui_asset_preview'").length, 2, 'one fixed preview handler call');
     assert(text.includes(previewCall), 'preview may send only the typed assetId');
-    assert(text.includes('canonicalAssetId(item.preview_asset_id)'), 'validate asset identity before invocation');
+    assert(text.includes(name === 'SearchPanel.tsx' ? 'canonicalAssetId(hit.asset_id)' : 'canonicalAssetId(item.preview_asset_id)'), 'validate asset identity before invocation');
     invoked.add('gui_asset_preview');
   }
   const withoutPreview = text.replace(previewCall, '');
@@ -61,7 +63,7 @@ for (const name of readdirSync(new URL('../src/', import.meta.url))) {
   for (const command of calls) invoked.add(command);
   for (const call of withoutPreview.matchAll(/invoke(?:<[^>]*>)?\(([^)]*)\)/g)) {
     const argument = call[1].trim();
-    const typed = /^'(gui_library_page|gui_import|gui_import_report|gui_import_control|gui_export|gui_metadata|gui_processing|gui_knowledge)',\s*\{\s*(cursor|request)\b/.exec(argument);
+    const typed = /^'(gui_library_page|gui_import|gui_import_report|gui_import_control|gui_export|gui_metadata|gui_processing|gui_knowledge|gui_search)',\s*\{\s*(cursor|request)\b/.exec(argument);
     if (typed) {
       assert.equal(typed[2], typed[1] === 'gui_library_page' ? 'cursor' : 'request', 'closed typed argument role');
       invoked.add(typed[1]);

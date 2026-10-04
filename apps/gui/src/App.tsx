@@ -29,6 +29,7 @@ import ImportPanel from './ImportPanel';
 import ExportPanel from './ExportPanel';
 import ProcessingPanel from './ProcessingPanel';
 import KnowledgePanel from './KnowledgePanel';
+import SearchPanel from './SearchPanel';
 import './style.css';
 
 /** The only commands this window may call; they are the same handlers `crates/gui` registers. */
@@ -248,6 +249,7 @@ export default function App() {
     <main>
       <h1>ScreenMemory</h1>
       <p>Локальная библиотека · сборка {guiBuild.version}</p>
+      <SearchPanel ready={state === 'ready' || state === 'runtime_unavailable'} />
       {state === 'ready' && <KnowledgePanel recordId={selected?.id ?? null} />}
       <section aria-label="Недавние снимки">
         <h2>Недавние снимки</h2>

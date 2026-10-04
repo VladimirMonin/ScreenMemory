@@ -1,0 +1,2922 @@
+{
+  "version": "production_anyterms_exact_gold_v2",
+  "status": "controlled source-fact correction after first v1 run; parent adjudicated",
+  "configuration": "seven_fields_6_3_1_2_2_2_1_win_nfc_unicase2.9_v1",
+  "semantics": "quoted OR <=64 atoms; no stemming, translation or semantic inference",
+  "cards": [
+    {
+      "record_id": "00000000-0000-4000-8000-000000000064",
+      "title": "Миграция: 0xc0000005",
+      "description": "Синтетический пример миграция. Точный идентификатор 0xc0000005.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000065",
+      "title": "Migration guide",
+      "description": "Synthetic migration workflow and SQLite documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003e8",
+      "category_label": "SQLite",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000066",
+      "title": "Миграция — проверка",
+      "description": "Ручная карточка: миграция. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000067",
+      "title": "Migration reference",
+      "description": "Literal migration checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000068",
+      "title": "Квитанция: ZXQ472",
+      "description": "Синтетический пример квитанция. Точный идентификатор ZXQ472.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000069",
+      "title": "Receipt guide",
+      "description": "Synthetic receipt workflow and Invoice documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003e9",
+      "category_label": "Invoice",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000006a",
+      "title": "Квитанция — проверка",
+      "description": "Ручная карточка: квитанция. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000006b",
+      "title": "Receipt reference",
+      "description": "Literal receipt checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000006c",
+      "title": "Контекст: Q8_0",
+      "description": "Синтетический пример контекст. Точный идентификатор Q8_0.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000006d",
+      "title": "Context guide",
+      "description": "Synthetic context workflow and Runtime documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003ea",
+      "category_label": "Runtime",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000006e",
+      "title": "Контекст — проверка",
+      "description": "Ручная карточка: контекст. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000006f",
+      "title": "Context reference",
+      "description": "Literal context checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000070",
+      "title": "Настройки: settings.json",
+      "description": "Синтетический пример настройки. Точный идентификатор settings.json.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000071",
+      "title": "Settings guide",
+      "description": "Synthetic settings workflow and Editor documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003eb",
+      "category_label": "Editor",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000072",
+      "title": "Настройки — проверка",
+      "description": "Ручная карточка: настройки. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000073",
+      "title": "Settings reference",
+      "description": "Literal settings checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000074",
+      "title": "Версия: v1.2.3",
+      "description": "Синтетический пример версия. Точный идентификатор v1.2.3.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000075",
+      "title": "Version guide",
+      "description": "Synthetic version workflow and Release documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003ec",
+      "category_label": "Release",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000076",
+      "title": "Версия — проверка",
+      "description": "Ручная карточка: версия. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000077",
+      "title": "Version reference",
+      "description": "Literal version checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000078",
+      "title": "Ошибка: ERROR_ACCESS_DENIED",
+      "description": "Синтетический пример ошибка. Точный идентификатор ERROR_ACCESS_DENIED.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000079",
+      "title": "Failure guide",
+      "description": "Synthetic failure workflow and Terminal documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003ed",
+      "category_label": "Terminal",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000007a",
+      "title": "Ошибка — проверка",
+      "description": "Ручная карточка: ошибка. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000007b",
+      "title": "Failure reference",
+      "description": "Literal failure checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000007c",
+      "title": "Маршрут: django.db",
+      "description": "Синтетический пример маршрут. Точный идентификатор django.db.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000007d",
+      "title": "Route guide",
+      "description": "Synthetic route workflow and Framework documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003ee",
+      "category_label": "Framework",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000007e",
+      "title": "Маршрут — проверка",
+      "description": "Ручная карточка: маршрут. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000007f",
+      "title": "Route reference",
+      "description": "Literal route checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000080",
+      "title": "Компилятор: C++",
+      "description": "Синтетический пример компилятор. Точный идентификатор C++.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000081",
+      "title": "Compiler guide",
+      "description": "Synthetic compiler workflow and Build documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003ef",
+      "category_label": "Build",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000082",
+      "title": "Компилятор — проверка",
+      "description": "Ручная карточка: компилятор. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000083",
+      "title": "Compiler reference",
+      "description": "Literal compiler checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000084",
+      "title": "Язык: C#",
+      "description": "Синтетический пример язык. Точный идентификатор C#.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000085",
+      "title": "Language guide",
+      "description": "Synthetic language workflow and Project documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003f0",
+      "category_label": "Project",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000086",
+      "title": "Язык — проверка",
+      "description": "Ручная карточка: язык. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000087",
+      "title": "Language reference",
+      "description": "Literal language checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000088",
+      "title": "Память: 128K",
+      "description": "Синтетический пример память. Точный идентификатор 128K.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000089",
+      "title": "Memory guide",
+      "description": "Synthetic memory workflow and Capacity documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003f1",
+      "category_label": "Capacity",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000008a",
+      "title": "Память — проверка",
+      "description": "Ручная карточка: память. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000008b",
+      "title": "Memory reference",
+      "description": "Literal memory checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000008c",
+      "title": "Индекс: FTS5",
+      "description": "Синтетический пример индекс. Точный идентификатор FTS5.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000008d",
+      "title": "Index guide",
+      "description": "Synthetic index workflow and Search documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003f2",
+      "category_label": "Search",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000008e",
+      "title": "Индекс — проверка",
+      "description": "Ручная карточка: индекс. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000008f",
+      "title": "Index reference",
+      "description": "Literal index checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000090",
+      "title": "Цвет: sRGB",
+      "description": "Синтетический пример цвет. Точный идентификатор sRGB.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000091",
+      "title": "Color guide",
+      "description": "Synthetic color workflow and Image documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003f3",
+      "category_label": "Image",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000092",
+      "title": "Цвет — проверка",
+      "description": "Ручная карточка: цвет. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000093",
+      "title": "Color reference",
+      "description": "Literal color checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000094",
+      "title": "Экспорт: AVIF90",
+      "description": "Синтетический пример экспорт. Точный идентификатор AVIF90.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000095",
+      "title": "Export guide",
+      "description": "Synthetic export workflow and Codec documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003f4",
+      "category_label": "Codec",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000096",
+      "title": "Экспорт — проверка",
+      "description": "Ручная карточка: экспорт. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000097",
+      "title": "Export reference",
+      "description": "Literal export checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000098",
+      "title": "Сервер: localhost:1234",
+      "description": "Синтетический пример сервер. Точный идентификатор localhost:1234.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000099",
+      "title": "Server guide",
+      "description": "Synthetic server workflow and Network documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003f5",
+      "category_label": "Network",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000009a",
+      "title": "Сервер — проверка",
+      "description": "Ручная карточка: сервер. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000009b",
+      "title": "Server reference",
+      "description": "Literal server checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000009c",
+      "title": "Очередь: job-184",
+      "description": "Синтетический пример очередь. Точный идентификатор job-184.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000009d",
+      "title": "Queue guide",
+      "description": "Synthetic queue workflow and Jobs documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003f6",
+      "category_label": "Jobs",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000009e",
+      "title": "Очередь — проверка",
+      "description": "Ручная карточка: очередь. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-00000000009f",
+      "title": "Queue reference",
+      "description": "Literal queue checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000a0",
+      "title": "Категория: catalog_42",
+      "description": "Синтетический пример категория. Точный идентификатор catalog_42.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000a1",
+      "title": "Category guide",
+      "description": "Synthetic category workflow and Library documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003f7",
+      "category_label": "Library",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000a2",
+      "title": "Категория — проверка",
+      "description": "Ручная карточка: категория. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000a3",
+      "title": "Category reference",
+      "description": "Literal category checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000a4",
+      "title": "Профиль: profile-7",
+      "description": "Синтетический пример профиль. Точный идентификатор profile-7.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000a5",
+      "title": "Profile guide",
+      "description": "Synthetic profile workflow and Model documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003f8",
+      "category_label": "Model",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000a6",
+      "title": "Профиль — проверка",
+      "description": "Ручная карточка: профиль. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000a7",
+      "title": "Profile reference",
+      "description": "Literal profile checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000a8",
+      "title": "Снимок: frame_81",
+      "description": "Синтетический пример снимок. Точный идентификатор frame_81.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000a9",
+      "title": "Snapshot guide",
+      "description": "Synthetic snapshot workflow and Capture documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003f9",
+      "category_label": "Capture",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000aa",
+      "title": "Снимок — проверка",
+      "description": "Ручная карточка: снимок. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000ab",
+      "title": "Snapshot reference",
+      "description": "Literal snapshot checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000ac",
+      "title": "Восстановление: backup.tar",
+      "description": "Синтетический пример восстановление. Точный идентификатор backup.tar.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000ad",
+      "title": "Recovery guide",
+      "description": "Synthetic recovery workflow and Backup documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003fa",
+      "category_label": "Backup",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000ae",
+      "title": "Восстановление — проверка",
+      "description": "Ручная карточка: восстановление. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000af",
+      "title": "Recovery reference",
+      "description": "Literal recovery checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000b0",
+      "title": "Разрешение: scope:read",
+      "description": "Синтетический пример разрешение. Точный идентификатор scope:read.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "exact-title"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000b1",
+      "title": "Permission guide",
+      "description": "Synthetic permission workflow and Security documentation.",
+      "category_id": "00000000-0000-4000-8000-0000000003fb",
+      "category_label": "Security",
+      "source_kind": "imported_image",
+      "role": "category-guide"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000b2",
+      "title": "Разрешение — проверка",
+      "description": "Ручная карточка: разрешение. Канон остаётся сохранным.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "ru-check"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000000b3",
+      "title": "Permission reference",
+      "description": "Literal permission checklist, distinct from the guide.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "en-reference"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000001f4",
+      "title": "Synthetic unrelated photograph 0",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000001f5",
+      "title": "Synthetic unrelated photograph 1",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000001f6",
+      "title": "Synthetic unrelated photograph 2",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000001f7",
+      "title": "Synthetic unrelated photograph 3",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000001f8",
+      "title": "Synthetic unrelated photograph 4",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000001f9",
+      "title": "Synthetic unrelated photograph 5",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000001fa",
+      "title": "Synthetic unrelated photograph 6",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000001fb",
+      "title": "Synthetic unrelated photograph 7",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000001fc",
+      "title": "Synthetic unrelated photograph 8",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000001fd",
+      "title": "Synthetic unrelated photograph 9",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000001fe",
+      "title": "Synthetic unrelated photograph 10",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-0000000001ff",
+      "title": "Synthetic unrelated photograph 11",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000200",
+      "title": "Synthetic unrelated photograph 12",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000201",
+      "title": "Synthetic unrelated photograph 13",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000202",
+      "title": "Synthetic unrelated photograph 14",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000203",
+      "title": "Synthetic unrelated photograph 15",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000204",
+      "title": "Synthetic unrelated photograph 16",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000205",
+      "title": "Synthetic unrelated photograph 17",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000206",
+      "title": "Synthetic unrelated photograph 18",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    },
+    {
+      "record_id": "00000000-0000-4000-8000-000000000207",
+      "title": "Synthetic unrelated photograph 19",
+      "description": "Seaside trees and clouds. Синтетический пейзаж у моря.",
+      "category_id": null,
+      "category_label": null,
+      "source_kind": "imported_image",
+      "role": "distractor"
+    }
+  ],
+  "queries": [
+    {
+      "id": "positive-00-0",
+      "text": "миграция",
+      "split": "tuning",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000064": 3,
+        "00000000-0000-4000-8000-000000000066": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000065",
+        "00000000-0000-4000-8000-000000000067"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-00-1",
+      "text": "migration",
+      "split": "tuning",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000065": 3,
+        "00000000-0000-4000-8000-000000000067": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000064",
+        "00000000-0000-4000-8000-000000000066"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-00-2",
+      "text": "0xc0000005",
+      "split": "tuning",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000064": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000065",
+        "00000000-0000-4000-8000-000000000066",
+        "00000000-0000-4000-8000-000000000067"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-000000000064"
+    },
+    {
+      "id": "positive-00-3",
+      "text": "миграция migration",
+      "split": "tuning",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000064": 3,
+        "00000000-0000-4000-8000-000000000065": 3,
+        "00000000-0000-4000-8000-000000000066": 3,
+        "00000000-0000-4000-8000-000000000067": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-00-4",
+      "text": "migration",
+      "split": "tuning",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003e8",
+      "relevance": {
+        "00000000-0000-4000-8000-000000000065": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000064",
+        "00000000-0000-4000-8000-000000000066",
+        "00000000-0000-4000-8000-000000000067"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-00",
+      "text": "AbsentMarker00Z",
+      "split": "tuning",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000064",
+        "00000000-0000-4000-8000-000000000065",
+        "00000000-0000-4000-8000-000000000066",
+        "00000000-0000-4000-8000-000000000067"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-01-0",
+      "text": "квитанция",
+      "split": "tuning",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000068": 3,
+        "00000000-0000-4000-8000-00000000006a": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000069",
+        "00000000-0000-4000-8000-00000000006b"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-01-1",
+      "text": "receipt",
+      "split": "tuning",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000069": 3,
+        "00000000-0000-4000-8000-00000000006b": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000068",
+        "00000000-0000-4000-8000-00000000006a"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-01-2",
+      "text": "ZXQ472",
+      "split": "tuning",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000068": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000069",
+        "00000000-0000-4000-8000-00000000006a",
+        "00000000-0000-4000-8000-00000000006b"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-000000000068"
+    },
+    {
+      "id": "positive-01-3",
+      "text": "квитанция receipt",
+      "split": "tuning",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000068": 3,
+        "00000000-0000-4000-8000-000000000069": 3,
+        "00000000-0000-4000-8000-00000000006a": 3,
+        "00000000-0000-4000-8000-00000000006b": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-01-4",
+      "text": "receipt",
+      "split": "tuning",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003e9",
+      "relevance": {
+        "00000000-0000-4000-8000-000000000069": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000068",
+        "00000000-0000-4000-8000-00000000006a",
+        "00000000-0000-4000-8000-00000000006b"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-01",
+      "text": "AbsentMarker01Z",
+      "split": "tuning",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000068",
+        "00000000-0000-4000-8000-000000000069",
+        "00000000-0000-4000-8000-00000000006a",
+        "00000000-0000-4000-8000-00000000006b"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-02-0",
+      "text": "контекст",
+      "split": "tuning",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-00000000006c": 3,
+        "00000000-0000-4000-8000-00000000006e": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000006d",
+        "00000000-0000-4000-8000-00000000006f"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-02-1",
+      "text": "context",
+      "split": "tuning",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-00000000006d": 3,
+        "00000000-0000-4000-8000-00000000006f": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000006c",
+        "00000000-0000-4000-8000-00000000006e"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-02-2",
+      "text": "Q8_0",
+      "split": "tuning",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-00000000006c": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000006d",
+        "00000000-0000-4000-8000-00000000006e",
+        "00000000-0000-4000-8000-00000000006f"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-00000000006c"
+    },
+    {
+      "id": "positive-02-3",
+      "text": "контекст context",
+      "split": "tuning",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-00000000006c": 3,
+        "00000000-0000-4000-8000-00000000006d": 3,
+        "00000000-0000-4000-8000-00000000006e": 3,
+        "00000000-0000-4000-8000-00000000006f": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-02-4",
+      "text": "context",
+      "split": "tuning",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003ea",
+      "relevance": {
+        "00000000-0000-4000-8000-00000000006d": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000006c",
+        "00000000-0000-4000-8000-00000000006e",
+        "00000000-0000-4000-8000-00000000006f"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-02",
+      "text": "AbsentMarker02Z",
+      "split": "tuning",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000006c",
+        "00000000-0000-4000-8000-00000000006d",
+        "00000000-0000-4000-8000-00000000006e",
+        "00000000-0000-4000-8000-00000000006f"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-03-0",
+      "text": "настройки",
+      "split": "tuning",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000070": 3,
+        "00000000-0000-4000-8000-000000000072": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000071",
+        "00000000-0000-4000-8000-000000000073"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-03-1",
+      "text": "settings",
+      "split": "tuning",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000071": 3,
+        "00000000-0000-4000-8000-000000000073": 3,
+        "00000000-0000-4000-8000-000000000070": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000072"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-03-2",
+      "text": "settings.json",
+      "split": "tuning",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000070": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000071",
+        "00000000-0000-4000-8000-000000000072",
+        "00000000-0000-4000-8000-000000000073"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-000000000070"
+    },
+    {
+      "id": "positive-03-3",
+      "text": "настройки settings",
+      "split": "tuning",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000070": 3,
+        "00000000-0000-4000-8000-000000000071": 3,
+        "00000000-0000-4000-8000-000000000072": 3,
+        "00000000-0000-4000-8000-000000000073": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-03-4",
+      "text": "settings",
+      "split": "tuning",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003eb",
+      "relevance": {
+        "00000000-0000-4000-8000-000000000071": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000070",
+        "00000000-0000-4000-8000-000000000072",
+        "00000000-0000-4000-8000-000000000073"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-03",
+      "text": "AbsentMarker03Z",
+      "split": "tuning",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000070",
+        "00000000-0000-4000-8000-000000000071",
+        "00000000-0000-4000-8000-000000000072",
+        "00000000-0000-4000-8000-000000000073"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-04-0",
+      "text": "версия",
+      "split": "tuning",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000074": 3,
+        "00000000-0000-4000-8000-000000000076": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000075",
+        "00000000-0000-4000-8000-000000000077"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-04-1",
+      "text": "version",
+      "split": "tuning",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000075": 3,
+        "00000000-0000-4000-8000-000000000077": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000074",
+        "00000000-0000-4000-8000-000000000076"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-04-2",
+      "text": "v1.2.3",
+      "split": "tuning",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000074": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000075",
+        "00000000-0000-4000-8000-000000000076",
+        "00000000-0000-4000-8000-000000000077"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-000000000074"
+    },
+    {
+      "id": "positive-04-3",
+      "text": "версия version",
+      "split": "tuning",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000074": 3,
+        "00000000-0000-4000-8000-000000000075": 3,
+        "00000000-0000-4000-8000-000000000076": 3,
+        "00000000-0000-4000-8000-000000000077": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-04-4",
+      "text": "version",
+      "split": "tuning",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003ec",
+      "relevance": {
+        "00000000-0000-4000-8000-000000000075": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000074",
+        "00000000-0000-4000-8000-000000000076",
+        "00000000-0000-4000-8000-000000000077"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-04",
+      "text": "AbsentMarker04Z",
+      "split": "tuning",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000074",
+        "00000000-0000-4000-8000-000000000075",
+        "00000000-0000-4000-8000-000000000076",
+        "00000000-0000-4000-8000-000000000077"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-05-0",
+      "text": "ошибка",
+      "split": "tuning",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000078": 3,
+        "00000000-0000-4000-8000-00000000007a": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000079",
+        "00000000-0000-4000-8000-00000000007b"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-05-1",
+      "text": "failure",
+      "split": "tuning",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000079": 3,
+        "00000000-0000-4000-8000-00000000007b": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000078",
+        "00000000-0000-4000-8000-00000000007a"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-05-2",
+      "text": "ERROR_ACCESS_DENIED",
+      "split": "tuning",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000078": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000079",
+        "00000000-0000-4000-8000-00000000007a",
+        "00000000-0000-4000-8000-00000000007b"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-000000000078"
+    },
+    {
+      "id": "positive-05-3",
+      "text": "ошибка failure",
+      "split": "tuning",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000078": 3,
+        "00000000-0000-4000-8000-000000000079": 3,
+        "00000000-0000-4000-8000-00000000007a": 3,
+        "00000000-0000-4000-8000-00000000007b": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-05-4",
+      "text": "failure",
+      "split": "tuning",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003ed",
+      "relevance": {
+        "00000000-0000-4000-8000-000000000079": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000078",
+        "00000000-0000-4000-8000-00000000007a",
+        "00000000-0000-4000-8000-00000000007b"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-05",
+      "text": "AbsentMarker05Z",
+      "split": "tuning",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000078",
+        "00000000-0000-4000-8000-000000000079",
+        "00000000-0000-4000-8000-00000000007a",
+        "00000000-0000-4000-8000-00000000007b"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-06-0",
+      "text": "маршрут",
+      "split": "heldout",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-00000000007c": 3,
+        "00000000-0000-4000-8000-00000000007e": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000007d",
+        "00000000-0000-4000-8000-00000000007f"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-06-1",
+      "text": "route",
+      "split": "heldout",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-00000000007d": 3,
+        "00000000-0000-4000-8000-00000000007f": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000007c",
+        "00000000-0000-4000-8000-00000000007e"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-06-2",
+      "text": "django.db",
+      "split": "heldout",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-00000000007c": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000007d",
+        "00000000-0000-4000-8000-00000000007e",
+        "00000000-0000-4000-8000-00000000007f"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-00000000007c"
+    },
+    {
+      "id": "positive-06-3",
+      "text": "маршрут route",
+      "split": "heldout",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-00000000007c": 3,
+        "00000000-0000-4000-8000-00000000007d": 3,
+        "00000000-0000-4000-8000-00000000007e": 3,
+        "00000000-0000-4000-8000-00000000007f": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-06-4",
+      "text": "route",
+      "split": "heldout",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003ee",
+      "relevance": {
+        "00000000-0000-4000-8000-00000000007d": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000007c",
+        "00000000-0000-4000-8000-00000000007e",
+        "00000000-0000-4000-8000-00000000007f"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-06",
+      "text": "AbsentMarker06Z",
+      "split": "heldout",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000007c",
+        "00000000-0000-4000-8000-00000000007d",
+        "00000000-0000-4000-8000-00000000007e",
+        "00000000-0000-4000-8000-00000000007f"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-07-0",
+      "text": "компилятор",
+      "split": "heldout",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000080": 3,
+        "00000000-0000-4000-8000-000000000082": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000081",
+        "00000000-0000-4000-8000-000000000083"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-07-1",
+      "text": "compiler",
+      "split": "heldout",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000081": 3,
+        "00000000-0000-4000-8000-000000000083": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000080",
+        "00000000-0000-4000-8000-000000000082"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-07-2",
+      "text": "C++",
+      "split": "heldout",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000080": 3,
+        "00000000-0000-4000-8000-000000000084": 1
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000081",
+        "00000000-0000-4000-8000-000000000082",
+        "00000000-0000-4000-8000-000000000083"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-000000000080"
+    },
+    {
+      "id": "positive-07-3",
+      "text": "компилятор compiler",
+      "split": "heldout",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000080": 3,
+        "00000000-0000-4000-8000-000000000081": 3,
+        "00000000-0000-4000-8000-000000000082": 3,
+        "00000000-0000-4000-8000-000000000083": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-07-4",
+      "text": "compiler",
+      "split": "heldout",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003ef",
+      "relevance": {
+        "00000000-0000-4000-8000-000000000081": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000080",
+        "00000000-0000-4000-8000-000000000082",
+        "00000000-0000-4000-8000-000000000083"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-07",
+      "text": "AbsentMarker07Z",
+      "split": "heldout",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000080",
+        "00000000-0000-4000-8000-000000000081",
+        "00000000-0000-4000-8000-000000000082",
+        "00000000-0000-4000-8000-000000000083"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-08-0",
+      "text": "язык",
+      "split": "heldout",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000084": 3,
+        "00000000-0000-4000-8000-000000000086": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000085",
+        "00000000-0000-4000-8000-000000000087"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-08-1",
+      "text": "language",
+      "split": "heldout",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000085": 3,
+        "00000000-0000-4000-8000-000000000087": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000084",
+        "00000000-0000-4000-8000-000000000086"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-08-2",
+      "text": "C#",
+      "split": "heldout",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000084": 3,
+        "00000000-0000-4000-8000-000000000080": 1
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000085",
+        "00000000-0000-4000-8000-000000000086",
+        "00000000-0000-4000-8000-000000000087"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-000000000084"
+    },
+    {
+      "id": "positive-08-3",
+      "text": "язык language",
+      "split": "heldout",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000084": 3,
+        "00000000-0000-4000-8000-000000000085": 3,
+        "00000000-0000-4000-8000-000000000086": 3,
+        "00000000-0000-4000-8000-000000000087": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-08-4",
+      "text": "language",
+      "split": "heldout",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003f0",
+      "relevance": {
+        "00000000-0000-4000-8000-000000000085": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000084",
+        "00000000-0000-4000-8000-000000000086",
+        "00000000-0000-4000-8000-000000000087"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-08",
+      "text": "AbsentMarker08Z",
+      "split": "heldout",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000084",
+        "00000000-0000-4000-8000-000000000085",
+        "00000000-0000-4000-8000-000000000086",
+        "00000000-0000-4000-8000-000000000087"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-09-0",
+      "text": "память",
+      "split": "heldout",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000088": 3,
+        "00000000-0000-4000-8000-00000000008a": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000089",
+        "00000000-0000-4000-8000-00000000008b"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-09-1",
+      "text": "memory",
+      "split": "heldout",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000089": 3,
+        "00000000-0000-4000-8000-00000000008b": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000088",
+        "00000000-0000-4000-8000-00000000008a"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-09-2",
+      "text": "128K",
+      "split": "heldout",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000088": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000089",
+        "00000000-0000-4000-8000-00000000008a",
+        "00000000-0000-4000-8000-00000000008b"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-000000000088"
+    },
+    {
+      "id": "positive-09-3",
+      "text": "память memory",
+      "split": "heldout",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000088": 3,
+        "00000000-0000-4000-8000-000000000089": 3,
+        "00000000-0000-4000-8000-00000000008a": 3,
+        "00000000-0000-4000-8000-00000000008b": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-09-4",
+      "text": "memory",
+      "split": "heldout",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003f1",
+      "relevance": {
+        "00000000-0000-4000-8000-000000000089": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000088",
+        "00000000-0000-4000-8000-00000000008a",
+        "00000000-0000-4000-8000-00000000008b"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-09",
+      "text": "AbsentMarker09Z",
+      "split": "heldout",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000088",
+        "00000000-0000-4000-8000-000000000089",
+        "00000000-0000-4000-8000-00000000008a",
+        "00000000-0000-4000-8000-00000000008b"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-10-0",
+      "text": "индекс",
+      "split": "heldout",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-00000000008c": 3,
+        "00000000-0000-4000-8000-00000000008e": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000008d",
+        "00000000-0000-4000-8000-00000000008f"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-10-1",
+      "text": "index",
+      "split": "heldout",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-00000000008d": 3,
+        "00000000-0000-4000-8000-00000000008f": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000008c",
+        "00000000-0000-4000-8000-00000000008e"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-10-2",
+      "text": "FTS5",
+      "split": "heldout",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-00000000008c": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000008d",
+        "00000000-0000-4000-8000-00000000008e",
+        "00000000-0000-4000-8000-00000000008f"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-00000000008c"
+    },
+    {
+      "id": "positive-10-3",
+      "text": "индекс index",
+      "split": "heldout",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-00000000008c": 3,
+        "00000000-0000-4000-8000-00000000008d": 3,
+        "00000000-0000-4000-8000-00000000008e": 3,
+        "00000000-0000-4000-8000-00000000008f": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-10-4",
+      "text": "index",
+      "split": "heldout",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003f2",
+      "relevance": {
+        "00000000-0000-4000-8000-00000000008d": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000008c",
+        "00000000-0000-4000-8000-00000000008e",
+        "00000000-0000-4000-8000-00000000008f"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-10",
+      "text": "AbsentMarker10Z",
+      "split": "heldout",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000008c",
+        "00000000-0000-4000-8000-00000000008d",
+        "00000000-0000-4000-8000-00000000008e",
+        "00000000-0000-4000-8000-00000000008f"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-11-0",
+      "text": "цвет",
+      "split": "heldout",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000090": 3,
+        "00000000-0000-4000-8000-000000000092": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000091",
+        "00000000-0000-4000-8000-000000000093"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-11-1",
+      "text": "color",
+      "split": "heldout",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000091": 3,
+        "00000000-0000-4000-8000-000000000093": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000090",
+        "00000000-0000-4000-8000-000000000092"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-11-2",
+      "text": "sRGB",
+      "split": "heldout",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000090": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000091",
+        "00000000-0000-4000-8000-000000000092",
+        "00000000-0000-4000-8000-000000000093"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-000000000090"
+    },
+    {
+      "id": "positive-11-3",
+      "text": "цвет color",
+      "split": "heldout",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000090": 3,
+        "00000000-0000-4000-8000-000000000091": 3,
+        "00000000-0000-4000-8000-000000000092": 3,
+        "00000000-0000-4000-8000-000000000093": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-11-4",
+      "text": "color",
+      "split": "heldout",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003f3",
+      "relevance": {
+        "00000000-0000-4000-8000-000000000091": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000090",
+        "00000000-0000-4000-8000-000000000092",
+        "00000000-0000-4000-8000-000000000093"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-11",
+      "text": "AbsentMarker11Z",
+      "split": "heldout",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000090",
+        "00000000-0000-4000-8000-000000000091",
+        "00000000-0000-4000-8000-000000000092",
+        "00000000-0000-4000-8000-000000000093"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-12-0",
+      "text": "экспорт",
+      "split": "heldout",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000094": 3,
+        "00000000-0000-4000-8000-000000000096": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000095",
+        "00000000-0000-4000-8000-000000000097"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-12-1",
+      "text": "export",
+      "split": "heldout",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000095": 3,
+        "00000000-0000-4000-8000-000000000097": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000094",
+        "00000000-0000-4000-8000-000000000096"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-12-2",
+      "text": "AVIF90",
+      "split": "heldout",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000094": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000095",
+        "00000000-0000-4000-8000-000000000096",
+        "00000000-0000-4000-8000-000000000097"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-000000000094"
+    },
+    {
+      "id": "positive-12-3",
+      "text": "экспорт export",
+      "split": "heldout",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000094": 3,
+        "00000000-0000-4000-8000-000000000095": 3,
+        "00000000-0000-4000-8000-000000000096": 3,
+        "00000000-0000-4000-8000-000000000097": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-12-4",
+      "text": "export",
+      "split": "heldout",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003f4",
+      "relevance": {
+        "00000000-0000-4000-8000-000000000095": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000094",
+        "00000000-0000-4000-8000-000000000096",
+        "00000000-0000-4000-8000-000000000097"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-12",
+      "text": "AbsentMarker12Z",
+      "split": "heldout",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000094",
+        "00000000-0000-4000-8000-000000000095",
+        "00000000-0000-4000-8000-000000000096",
+        "00000000-0000-4000-8000-000000000097"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-13-0",
+      "text": "сервер",
+      "split": "heldout",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000098": 3,
+        "00000000-0000-4000-8000-00000000009a": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000099",
+        "00000000-0000-4000-8000-00000000009b"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-13-1",
+      "text": "server",
+      "split": "heldout",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000099": 3,
+        "00000000-0000-4000-8000-00000000009b": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000098",
+        "00000000-0000-4000-8000-00000000009a"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-13-2",
+      "text": "localhost:1234",
+      "split": "heldout",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000098": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000099",
+        "00000000-0000-4000-8000-00000000009a",
+        "00000000-0000-4000-8000-00000000009b"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-000000000098"
+    },
+    {
+      "id": "positive-13-3",
+      "text": "сервер server",
+      "split": "heldout",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-000000000098": 3,
+        "00000000-0000-4000-8000-000000000099": 3,
+        "00000000-0000-4000-8000-00000000009a": 3,
+        "00000000-0000-4000-8000-00000000009b": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-13-4",
+      "text": "server",
+      "split": "heldout",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003f5",
+      "relevance": {
+        "00000000-0000-4000-8000-000000000099": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000098",
+        "00000000-0000-4000-8000-00000000009a",
+        "00000000-0000-4000-8000-00000000009b"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-13",
+      "text": "AbsentMarker13Z",
+      "split": "heldout",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-000000000098",
+        "00000000-0000-4000-8000-000000000099",
+        "00000000-0000-4000-8000-00000000009a",
+        "00000000-0000-4000-8000-00000000009b"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-14-0",
+      "text": "очередь",
+      "split": "heldout",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-00000000009c": 3,
+        "00000000-0000-4000-8000-00000000009e": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000009d",
+        "00000000-0000-4000-8000-00000000009f"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-14-1",
+      "text": "queue",
+      "split": "heldout",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-00000000009d": 3,
+        "00000000-0000-4000-8000-00000000009f": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000009c",
+        "00000000-0000-4000-8000-00000000009e"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-14-2",
+      "text": "job-184",
+      "split": "heldout",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-00000000009c": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000009d",
+        "00000000-0000-4000-8000-00000000009e",
+        "00000000-0000-4000-8000-00000000009f"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-00000000009c"
+    },
+    {
+      "id": "positive-14-3",
+      "text": "очередь queue",
+      "split": "heldout",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-00000000009c": 3,
+        "00000000-0000-4000-8000-00000000009d": 3,
+        "00000000-0000-4000-8000-00000000009e": 3,
+        "00000000-0000-4000-8000-00000000009f": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-14-4",
+      "text": "queue",
+      "split": "heldout",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003f6",
+      "relevance": {
+        "00000000-0000-4000-8000-00000000009d": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000009c",
+        "00000000-0000-4000-8000-00000000009e",
+        "00000000-0000-4000-8000-00000000009f"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-14",
+      "text": "AbsentMarker14Z",
+      "split": "heldout",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-00000000009c",
+        "00000000-0000-4000-8000-00000000009d",
+        "00000000-0000-4000-8000-00000000009e",
+        "00000000-0000-4000-8000-00000000009f"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-15-0",
+      "text": "категория",
+      "split": "heldout",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000a0": 3,
+        "00000000-0000-4000-8000-0000000000a2": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000a1",
+        "00000000-0000-4000-8000-0000000000a3"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-15-1",
+      "text": "category",
+      "split": "heldout",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000a1": 3,
+        "00000000-0000-4000-8000-0000000000a3": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000a0",
+        "00000000-0000-4000-8000-0000000000a2"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-15-2",
+      "text": "catalog_42",
+      "split": "heldout",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000a0": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000a1",
+        "00000000-0000-4000-8000-0000000000a2",
+        "00000000-0000-4000-8000-0000000000a3"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-0000000000a0"
+    },
+    {
+      "id": "positive-15-3",
+      "text": "категория category",
+      "split": "heldout",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000a0": 3,
+        "00000000-0000-4000-8000-0000000000a1": 3,
+        "00000000-0000-4000-8000-0000000000a2": 3,
+        "00000000-0000-4000-8000-0000000000a3": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-15-4",
+      "text": "category",
+      "split": "heldout",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003f7",
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000a1": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000a0",
+        "00000000-0000-4000-8000-0000000000a2",
+        "00000000-0000-4000-8000-0000000000a3"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-15",
+      "text": "AbsentMarker15Z",
+      "split": "heldout",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000a0",
+        "00000000-0000-4000-8000-0000000000a1",
+        "00000000-0000-4000-8000-0000000000a2",
+        "00000000-0000-4000-8000-0000000000a3"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-16-0",
+      "text": "профиль",
+      "split": "heldout",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000a4": 3,
+        "00000000-0000-4000-8000-0000000000a6": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000a5",
+        "00000000-0000-4000-8000-0000000000a7"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-16-1",
+      "text": "profile",
+      "split": "heldout",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000a5": 3,
+        "00000000-0000-4000-8000-0000000000a7": 3,
+        "00000000-0000-4000-8000-0000000000a4": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000a6"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-16-2",
+      "text": "profile-7",
+      "split": "heldout",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000a4": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000a5",
+        "00000000-0000-4000-8000-0000000000a6",
+        "00000000-0000-4000-8000-0000000000a7"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-0000000000a4"
+    },
+    {
+      "id": "positive-16-3",
+      "text": "профиль profile",
+      "split": "heldout",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000a4": 3,
+        "00000000-0000-4000-8000-0000000000a5": 3,
+        "00000000-0000-4000-8000-0000000000a6": 3,
+        "00000000-0000-4000-8000-0000000000a7": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-16-4",
+      "text": "profile",
+      "split": "heldout",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003f8",
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000a5": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000a4",
+        "00000000-0000-4000-8000-0000000000a6",
+        "00000000-0000-4000-8000-0000000000a7"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-16",
+      "text": "AbsentMarker16Z",
+      "split": "heldout",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000a4",
+        "00000000-0000-4000-8000-0000000000a5",
+        "00000000-0000-4000-8000-0000000000a6",
+        "00000000-0000-4000-8000-0000000000a7"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-17-0",
+      "text": "снимок",
+      "split": "heldout",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000a8": 3,
+        "00000000-0000-4000-8000-0000000000aa": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000a9",
+        "00000000-0000-4000-8000-0000000000ab"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-17-1",
+      "text": "snapshot",
+      "split": "heldout",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000a9": 3,
+        "00000000-0000-4000-8000-0000000000ab": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000a8",
+        "00000000-0000-4000-8000-0000000000aa"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-17-2",
+      "text": "frame_81",
+      "split": "heldout",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000a8": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000a9",
+        "00000000-0000-4000-8000-0000000000aa",
+        "00000000-0000-4000-8000-0000000000ab"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-0000000000a8"
+    },
+    {
+      "id": "positive-17-3",
+      "text": "снимок snapshot",
+      "split": "heldout",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000a8": 3,
+        "00000000-0000-4000-8000-0000000000a9": 3,
+        "00000000-0000-4000-8000-0000000000aa": 3,
+        "00000000-0000-4000-8000-0000000000ab": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-17-4",
+      "text": "snapshot",
+      "split": "heldout",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003f9",
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000a9": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000a8",
+        "00000000-0000-4000-8000-0000000000aa",
+        "00000000-0000-4000-8000-0000000000ab"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-17",
+      "text": "AbsentMarker17Z",
+      "split": "heldout",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000a8",
+        "00000000-0000-4000-8000-0000000000a9",
+        "00000000-0000-4000-8000-0000000000aa",
+        "00000000-0000-4000-8000-0000000000ab"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-18-0",
+      "text": "восстановление",
+      "split": "heldout",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000ac": 3,
+        "00000000-0000-4000-8000-0000000000ae": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000ad",
+        "00000000-0000-4000-8000-0000000000af"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-18-1",
+      "text": "recovery",
+      "split": "heldout",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000ad": 3,
+        "00000000-0000-4000-8000-0000000000af": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000ac",
+        "00000000-0000-4000-8000-0000000000ae"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-18-2",
+      "text": "backup.tar",
+      "split": "heldout",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000ac": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000ad",
+        "00000000-0000-4000-8000-0000000000ae",
+        "00000000-0000-4000-8000-0000000000af"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-0000000000ac"
+    },
+    {
+      "id": "positive-18-3",
+      "text": "восстановление recovery",
+      "split": "heldout",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000ac": 3,
+        "00000000-0000-4000-8000-0000000000ad": 3,
+        "00000000-0000-4000-8000-0000000000ae": 3,
+        "00000000-0000-4000-8000-0000000000af": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-18-4",
+      "text": "recovery",
+      "split": "heldout",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003fa",
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000ad": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000ac",
+        "00000000-0000-4000-8000-0000000000ae",
+        "00000000-0000-4000-8000-0000000000af"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-18",
+      "text": "AbsentMarker18Z",
+      "split": "heldout",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000ac",
+        "00000000-0000-4000-8000-0000000000ad",
+        "00000000-0000-4000-8000-0000000000ae",
+        "00000000-0000-4000-8000-0000000000af"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-19-0",
+      "text": "разрешение",
+      "split": "heldout",
+      "group": "literal-ru",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000b0": 3,
+        "00000000-0000-4000-8000-0000000000b2": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000b1",
+        "00000000-0000-4000-8000-0000000000b3"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-19-1",
+      "text": "permission",
+      "split": "heldout",
+      "group": "literal-en",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000b1": 3,
+        "00000000-0000-4000-8000-0000000000b3": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000b0",
+        "00000000-0000-4000-8000-0000000000b2"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-19-2",
+      "text": "scope:read",
+      "split": "heldout",
+      "group": "technical-exact",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000b0": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000b1",
+        "00000000-0000-4000-8000-0000000000b2",
+        "00000000-0000-4000-8000-0000000000b3"
+      ],
+      "filter_role": "any",
+      "expected_top1": "00000000-0000-4000-8000-0000000000b0"
+    },
+    {
+      "id": "positive-19-3",
+      "text": "разрешение permission",
+      "split": "heldout",
+      "group": "any-terms-or",
+      "category_id": null,
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000b0": 3,
+        "00000000-0000-4000-8000-0000000000b1": 3,
+        "00000000-0000-4000-8000-0000000000b2": 3,
+        "00000000-0000-4000-8000-0000000000b3": 3
+      },
+      "forbidden_ids": [],
+      "filter_role": "any",
+      "expected_top1": null
+    },
+    {
+      "id": "positive-19-4",
+      "text": "permission",
+      "split": "heldout",
+      "group": "rare-category-before-topk",
+      "category_id": "00000000-0000-4000-8000-0000000003fb",
+      "relevance": {
+        "00000000-0000-4000-8000-0000000000b1": 3
+      },
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000b0",
+        "00000000-0000-4000-8000-0000000000b2",
+        "00000000-0000-4000-8000-0000000000b3"
+      ],
+      "filter_role": "stable-category-id",
+      "expected_top1": null
+    },
+    {
+      "id": "negative-19",
+      "text": "AbsentMarker19Z",
+      "split": "heldout",
+      "group": "negative",
+      "category_id": null,
+      "relevance": {},
+      "forbidden_ids": [
+        "00000000-0000-4000-8000-0000000000b0",
+        "00000000-0000-4000-8000-0000000000b1",
+        "00000000-0000-4000-8000-0000000000b2",
+        "00000000-0000-4000-8000-0000000000b3"
+      ],
+      "filter_role": "any",
+      "expected_top1": null
+    }
+  ],
+  "quality_target": {
+    "macro_recall_at_5": 0.85,
+    "scope_filter_violations": 0,
+    "negative_false_positives": 0
+  },
+  "annotation_deltas": [
+    "settings token in settings.json: add card112; parent independently source-fact adjudicated",
+    "profile token in profile-7: add card164; parent independently source-fact adjudicated",
+    "C++/C# lexical C token shared: opposite code grade1, requested exact code grade3 and top1 unchanged"
+  ]
+}

@@ -252,7 +252,13 @@ pub fn state_for_failure(failure: &ClientFailure) -> GuiState {
         }
         // The S02 capture and asset vocabulary is reported by the capture answer itself;
         // it never means that the host, its root or its credential became unusable.
-        ErrorCode::RevisionConflict
+        ErrorCode::NoLexicalTerms
+        | ErrorCode::SearchFilterUnsupported
+        | ErrorCode::SearchBusy
+        | ErrorCode::SearchExpired
+        | ErrorCode::SearchSnapshotChanged
+        | ErrorCode::SearchCancelled
+        | ErrorCode::RevisionConflict
         | ErrorCode::IdempotencyConflict
         | ErrorCode::CategoryNotAvailable
         | ErrorCode::CategoryNameConflict

@@ -72,6 +72,10 @@ export type KnownParams =
   | {
       method: 'knowledge.request';
       params: KnowledgeRequest;
+    }
+  | {
+      method: 'search.request';
+      params: SearchRequest;
     };
 export type ConsentId = string;
 export type ProbeFixture = 'synthetic_menu_v1' | 'embedding_text_v1';
@@ -228,6 +232,25 @@ export type CategoryChange =
 export type CategoryDescription = string;
 export type CategoryName = string;
 export type CategoryState = 'active' | 'archived' | 'deleted';
+export type SearchRequest =
+  | {
+      action: 'start';
+      candidate_depth?: number;
+      filters?: SearchFilters;
+      limit?: number;
+      search_id: KnowledgeId;
+      text: string;
+    }
+  | {
+      action: 'page';
+      cursor: KnowledgeId;
+    }
+  | {
+      action: 'cancel';
+      search_id: KnowledgeId;
+    };
+export type DateAxis = 'ingested' | 'captured' | 'taken';
+export type SourceKind = 'capture' | 'imported_image';
 
 export interface EmptyParams {}
 export interface DoctorRequest {
@@ -368,4 +391,47 @@ export interface CardPatch {
         op: 'set';
         value: CardTitle;
       };
+}
+export interface SearchFilters {
+  application?:
+    | {
+        kind: 'any';
+      }
+    | {
+        kind: 'unattributed';
+      }
+    | {
+        ids: KnowledgeId[];
+        kind: 'any_of';
+      };
+  category?:
+    | {
+        kind: 'any';
+      }
+    | {
+        kind: 'uncategorized';
+      }
+    | {
+        ids: KnowledgeId[];
+        kind: 'any_of';
+      };
+  date?:
+    | {
+        kind: 'any';
+      }
+    | {
+        axis: DateAxis;
+        from_inclusive: string;
+        kind: 'utc_range';
+        to_exclusive: string;
+      }
+    | {
+        kind: 'taken_offset_unknown';
+      }
+    | {
+        kind: 'taken_absent';
+      };
+  has_applied_ai?: boolean | null;
+  has_ocr?: boolean | null;
+  source_kind?: SourceKind | null;
 }

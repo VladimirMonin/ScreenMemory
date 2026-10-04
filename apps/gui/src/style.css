@@ -35,5 +35,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflo
 .gallery button { width: 100%; text-align: left; background: #29394d; color: #e5eaf2; }
 .gallery button[aria-pressed="true"] { border: 2px solid #9dd4ff; }
 .gallery small { display: block; margin-top: 6px; overflow-wrap: anywhere; }
+.search-results strong, .search-results span { display: block; overflow-wrap: anywhere; }
+.search-results span { margin-top: 4px; }
 .preview h3 { margin: 12px 0 8px; }
 .preview img { display: block; max-width: 100%; max-height: 65vh; object-fit: contain; margin: 6px 0; }

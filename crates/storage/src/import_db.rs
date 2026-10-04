@@ -363,6 +363,10 @@ pub(crate) fn execute(db: &mut Connection, command: Command) -> Result<Reply, St
                 [batch.as_uuid().to_string()],
             )
             .map_err(err)?;
+            if !linked {
+                crate::knowledge::initial(&tx, sm_protocol::knowledge::KnowledgeId(target.record))
+                    .map_err(|_| StorageError::IntegrityFailed)?;
+            }
             tx.commit().map_err(err)?;
             drop(_seal);
             Ok(Reply::Unit)

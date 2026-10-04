@@ -10,11 +10,12 @@ description: "Читай при изменении manual карточки, Keep
 не меняет SQL/checksums0001–0006, records/assets/origins/source snapshots или канон.
 Перед open/migration прежний root/DB preflight; живые библиотеки и destructive upgrade
 без принятого backup authority запрещены. Проверки — собственные synthetic UUID roots.
-Это manual-only S05, не OCR, AiRun/history/publisher, preferences/privacy enrollment или FTS5.
+Это manual-only S05, не OCR, AiRun/history/publisher или preferences/privacy enrollment.
+FTS5 integration — [DATA.search](DATA.search.instructions.md).
 
 ## Порт и полномочия
 
-Application1.0 добавляет только `knowledge.request` (native negotiation14 capabilities);
+Application1.0 включает `knowledge.request` и S06 `search.request` (native negotiation15 capabilities);
 SDK sm-sdk1.1 и legacy probe bridge1.0 независимы и не меняются. Закрытые typed actions:
 `read`, `edit`, `categories`, `category`. `KnowledgeApi` получает настоящий RequestContext;
 ReadMetadata/WriteMetadata/ManageCategories проверяются session и SQLite worker.
@@ -48,7 +49,8 @@ Category history и receipts имеют immutable UPDATE/DELETE triggers.
 
 `manual_effective_v1` snapshot содержит effective text, category ID/label, asset identity
 и known required read scopes; не context paths/GPS/serial/window title. Read без knowledge
-row даёт side-effect-free technical fallback. Первая ручная запись материализует source/debt.
+row даёт side-effect-free technical fallback. S06 initial Saved/backfill материализует
+source/projection атомарно; read сообщает Current только при согласованных source/hash/projection.
 Content revision/hash меняются только при изменении source, не provenance/receipt bookkeeping.
 Known sensitive scopes сохраняются при ручной правке/Inherit/category maintenance, не
 понижаются. Worker проверяет их и при replay; ListRecords вместо restricted derived title
@@ -56,9 +58,9 @@ Known sensitive scopes сохраняются при ручной правке/I
 
 SearchProjectionTx — только синхронный storage-owned hook той же transaction, без SQL
 escape в application, IO/model/async wait или второй connection. Ошибка hook откатывает
-всю mutation, включая receipt и все category projections. Сейчас adapter пишет desired
-revision/debt, возвращает только handler_unavailable, никогда Current/Indexed. Нет
-embeddings/vector/sqlite-vec, поиска или model call от edit/read/категорий.
+всю mutation, включая receipt и все category projections. S06 adapter синхронно обновляет FTS5/exact/epoch и снимает debt; read/state/DTO
+различают Current и historical HandlerUnavailable. Ошибка проекции — rollback всей mutation.
+Нет embeddings/vector/sqlite-vec или model call от edit/read/категорий.
 
 ## Каталог и границы
 
@@ -86,7 +88,7 @@ CLI: `knowledge read --record-id`; `knowledge categories`; `knowledge category
 `--category-id --category-revision`, `--clear-category true`, `--inherit-title true`,
 `--inherit-description true`, `--inherit-category true`. Конфликтующие patches отказываются
 до IPC. Всегда один JSON; revision/replay/name conflict exit5, остальные bounded refusals
-по shared CLI registry. Config schema1 unchanged, storage schema7 exact.
+по shared CLI registry. Config schema1 unchanged, storage schema8 exact после additive0008.
 
 Focused tests — `sm-storage knowledge`, `sm-protocol --test knowledge`, `sm-cli --test
 knowledge_args`, `sm-session s05_native_knowledge`, frontend KnowledgePanel tests.

@@ -7,3 +7,5 @@ node_modules/
 **/.env
 **/.env.*
 *.local
+# Generated only by the tracked synthetic GUI prerequisite tests
+/tests/gui/__pycache__/

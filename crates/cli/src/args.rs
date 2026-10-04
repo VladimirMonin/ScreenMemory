@@ -8,6 +8,7 @@ pub enum Command {
     Image(crate::image_args::ImageCommand),
     Processing(crate::processing::ProcessingCommand),
     Knowledge(crate::knowledge::KnowledgeCommand),
+    Search(crate::search::SearchCommand),
     Status {
         no_start: bool,
     },
@@ -58,17 +59,22 @@ pub fn parse_capture_mode(raw: &str) -> Result<CaptureMode, ArgError> {
 /// `host stop [--json]`; `capture --mode region|window|monitor|all [--operation-id <uuid>]
 /// [--output <absolute local path>] [--json]`; optional `--config <absolute local path>`.
 pub fn parse_args(argv: &[String]) -> Result<CliArgs, ArgError> {
-    if argv.iter().any(|v| v == "knowledge") {
-        return crate::knowledge::parse(argv);
-    }
-    if argv.iter().any(|v| v == "processing") {
-        return crate::processing::parse(argv);
-    }
-    if argv
-        .iter()
-        .any(|v| matches!(v.as_str(), "import" | "export" | "metadata"))
-    {
-        return crate::image_args::parse(argv);
+    // Select the first command token, never an option's value. The selected
+    // parser still owns validation of flags, duplicates and missing values.
+    let mut tokens = argv.iter();
+    while let Some(token) = tokens.next() {
+        match token.as_str() {
+            "--json" | "--no-start" => continue,
+            flag if flag.starts_with("--") && flag != "--version" => {
+                tokens.next();
+                continue;
+            }
+            "search" => return crate::search::parse(argv),
+            "knowledge" => return crate::knowledge::parse(argv),
+            "processing" => return crate::processing::parse(argv),
+            "import" | "export" | "metadata" => return crate::image_args::parse(argv),
+            _ => break,
+        }
     }
     let mut config: Option<PathBuf> = None;
     let mut json = false;
@@ -171,7 +177,7 @@ pub fn parse_args(argv: &[String]) -> Result<CliArgs, ArgError> {
             }
             Command::Status { no_start }
         }
-        Command::Knowledge(_) | Command::Processing(_) | Command::Image(_) => {
+        Command::Search(_) | Command::Knowledge(_) | Command::Processing(_) | Command::Image(_) => {
             unreachable!("image parser owns these forms")
         }
         Command::Version => {

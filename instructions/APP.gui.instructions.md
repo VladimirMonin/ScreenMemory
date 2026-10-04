@@ -1,5 +1,5 @@
 ---
-applyTo: "crates/gui/**,apps/gui/**,scripts/preview-gui.ps1,scripts/capture-preview-window.ps1,scripts/test-foundation-smoke.ps1,scripts/test-preview-rejection.ps1,scripts/preview-common.ps1,scripts/verify.ps1,scripts/test-verify.ps1,docs/progress/S01/t06d-gui.*"
+applyTo: "crates/gui/**,apps/gui/**,tests/gui/**,scripts/preview-gui.ps1,scripts/capture-preview-window.ps1,scripts/test-foundation-smoke.ps1,scripts/test-preview-rejection.ps1,scripts/preview-common.ps1,scripts/verify.ps1,scripts/test-verify.ps1,docs/progress/S01/t06d-gui.*"
 name: "APP.Gui"
 description: "Читай при работе с Tauri+React, диагностикой/галереей, S04 settings/queue/profile, typed командами, --self-check и owned developer preview."
 ---
@@ -73,16 +73,38 @@ Profile/model key выбирается явно, inventory отдельной к
 Physical unload/HostIdle/AfterBatch/KeepLoaded и reasoning Off/Budget100 — Unsupported;
 BackendDefault явный, native TTL requested/not_verified. Execution ledger показывает
 safe typed requested/reported-applied, не raw runtime JSON. Analyze S05 blocked, не
-AI-карточка. Search/vision_ocr_pipeline остаются NOT_IMPLEMENTED; whole S04/S07 отдельно.
+AI-карточка. Vision_ocr_pipeline остаётся NOT_IMPLEMENTED; whole S04/S07 отдельно.
+S06 SearchPanel/gui_search использует shared SearchApi, OR/exact/typed filters,
+180ms debounce/latest-generation guard и bounded one-active/one-latest-pending lane.
+Own cancel token доступен вне session mutex; queued cancellation до IO, отправленный RPC
+дренирует terminal response. Plain snippets и прежний preview;
+source gaps/Unsupported видимы. Контракт — [DATA.search](DATA.search.instructions.md).
 
 S05 KnowledgePanel даёт реальную manual карточку перед processing settings, независимые
 Keep/Inherit/Set controls и категории через `gui_knowledge`/тот же GuiSession. Чтение
 на mount не вызывает модель; текст черновика только в памяти, не localStorage. На конфликте
 поля не затираются: current snapshot рядом, явные reload/discard и retry с новой revision.
 Stable exact lost-response operation сохраняется до изменения draft. Source/projection
-не вычисляются в React; handler_unavailable показывается буквально. Контракт и bounds —
-[DATA.knowledge](DATA.knowledge.instructions.md). Actual GuiSession parity — native test
-`manual_knowledge`; rendered own-HWND proof отдельно от genuine input.
+не вычисляются в React; Current показывает «FTS5 актуален», historical handler_unavailable
+показывается буквально. Контракт и bounds —
+[DATA.knowledge](DATA.knowledge.instructions.md). Actual GuiSession parity — default headless native test `manual_knowledge` (window NOT_RUN).
+Required own-window/render gate — тот же target с nondefault `owned-window-tests` feature,
+tracked helpers `tests/gui/`, explicit pinned existing prerequisite preflight до fixtures.
+Rendered own-HWND/DOM proof отдельно от genuine input; missing prerequisite/no endpoint
+не PASS. Test-only readiness sensor проверяет один exact selected port в одном recorded
+owned GUI lifetime: общий monotonic budget15s включает identity/query subprocesses и
+паузы ≤500ms. Продолжение допускает только exact raw3 +
+`CmdletizationQuery_NotFound,Get-NetTCPConnection`; malformed/пустой/query error/foreign
+listener/PID reuse/provenance change — немедленный отказ. Initial и final pre-CDP guards
+сохраняют config/library/root/image/hash/creation/absolute argv/non-reparse binding;
+каждый query ограничен остатком budget, timeout убивает/ожидает только собственный
+helper child. Поздний owned result не допускается к CDP. Private attempt receipts
+сохраняют raw outputs/elapsed; refusal/recording overhead не hard-real-time гарантия.
+Listen сам по себе не доказывает render/preview; deadline/отказ не разрешает новый запуск
+или иной порт. Fresh runtime pass требует отдельной явной authority, assertions и
+exact graceful cleanup не ослабляются ради PASS.
+Mounted async tests используют exact dev-only Happy DOM16.8.1 с disabled scripts/
+resources/navigation и denied fetch/XHR; library не production import, не native proof.
 
 Frontend (`apps/gui`, Vite+React+TS) импортирует только React, `@tauri-apps/api/core`,
 локальные модули и **типы** сгенерированного контракта; SDK LM Studio, SQLite, native

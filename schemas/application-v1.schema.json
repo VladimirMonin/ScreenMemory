@@ -275,6 +275,23 @@
             "value"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "search",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/SearchReply"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -877,6 +894,12 @@
             "CATEGORY_NOT_AVAILABLE",
             "CATEGORY_NAME_CONFLICT",
             "CATEGORY_CATALOG_TOO_LARGE",
+            "NO_LEXICAL_TERMS",
+            "SEARCH_FILTER_UNSUPPORTED",
+            "SEARCH_BUSY",
+            "SEARCH_EXPIRED",
+            "SEARCH_SNAPSHOT_CHANGED",
+            "SEARCH_CANCELLED",
             "CAPTURE_BACKPRESSURE",
             "CAPTURE_TARGET_LOST",
             "CAPTURE_TOPOLOGY_CHANGED",
@@ -2597,7 +2620,8 @@
     },
     "ProjectionState": {
       "enum": [
-        "handler_unavailable"
+        "handler_unavailable",
+        "current"
       ],
       "type": "string"
     },
@@ -2917,6 +2941,159 @@
         "pattern": "[\\u0000-\\u001F\\u007F-\\u009F]"
       },
       "type": "string"
+    },
+    "SearchHit": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "$ref": "#/$defs/KnowledgeId"
+        },
+        "category_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KnowledgeId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "category_label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content_revision": {
+          "$ref": "#/$defs/SqlRevision"
+        },
+        "exact_match": {
+          "type": "boolean"
+        },
+        "exact_terms_truncated": {
+          "type": "boolean"
+        },
+        "excerpt": {
+          "type": "string"
+        },
+        "lexical_match": {
+          "type": "boolean"
+        },
+        "position": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "record_id": {
+          "$ref": "#/$defs/KnowledgeId"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "record_id",
+        "asset_id",
+        "content_revision",
+        "title",
+        "excerpt",
+        "exact_match",
+        "lexical_match",
+        "exact_terms_truncated",
+        "position"
+      ],
+      "type": "object"
+    },
+    "SearchPage": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_depth": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/SearchHit"
+          },
+          "type": "array"
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KnowledgeId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projection_epoch": {
+          "$ref": "#/$defs/SqlRevision"
+        },
+        "search_id": {
+          "$ref": "#/$defs/KnowledgeId"
+        },
+        "window_truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "search_id",
+        "projection_epoch",
+        "candidate_depth",
+        "window_truncated",
+        "items"
+      ],
+      "type": "object"
+    },
+    "SearchReply": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "page",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/SearchPage"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "cancelled",
+              "type": "string"
+            },
+            "value": {
+              "additionalProperties": false,
+              "properties": {
+                "search_id": {
+                  "$ref": "#/$defs/KnowledgeId"
+                }
+              },
+              "required": [
+                "search_id"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "ShutdownReceipt": {
       "additionalProperties": false,

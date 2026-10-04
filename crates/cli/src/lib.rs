@@ -7,6 +7,8 @@ mod args;
 mod image_args;
 mod images;
 mod knowledge;
+mod search;
+pub use search::SearchCommand;
 mod processing;
 pub use image_args::ImageCommand;
 pub use knowledge::KnowledgeCommand;

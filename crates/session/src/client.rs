@@ -308,6 +308,34 @@ impl ApplicationClient {
             _ => Err(SessionError::UnexpectedResponse.into()),
         }
     }
+    pub async fn search(
+        &self,
+        request: sm_protocol::search::SearchRequest,
+    ) -> Result<sm_protocol::search::SearchReply, ClientError> {
+        self.search_cancellable(request, CancellationToken::new())
+            .await
+    }
+
+    /// Cancel only this RPC waiter via the existing connection-local cancel frame.
+    /// The complete request/cancel writes and terminal read are not abandoned.
+    pub async fn search_cancellable(
+        &self,
+        request: sm_protocol::search::SearchRequest,
+        cancellation: CancellationToken,
+    ) -> Result<sm_protocol::search::SearchReply, ClientError> {
+        match self
+            .call(
+                "search.request",
+                serde_json::to_value(request).expect("typed request"),
+                5_000,
+                Some(cancellation),
+            )
+            .await?
+        {
+            ApplicationResult::Search(reply) => Ok(*reply),
+            _ => Err(SessionError::UnexpectedResponse.into()),
+        }
+    }
     pub async fn knowledge(
         &self,
         request: sm_protocol::knowledge::KnowledgeRequest,
