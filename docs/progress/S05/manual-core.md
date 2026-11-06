@@ -169,7 +169,7 @@ workflow `daba1f01` завершился **FAIL**: `Required file-only output wa
 Same-native report-only settlement `40e05c7b-923e-4b12-b246-d492ff59fa0f`/workflow
 `67726e54` восстановил исходный inline+reviewSchema contract; COMPLETE, bound verdict
 **pass/findings[]**, потреблён parent. Bound report:
-`C:/Users/User/.pi/agent/sessions/--C--PY-ScreenMemory--/subagent-artifacts/outputs/67726e54-7ce9-4b95-a3be-a3504d29ce04/s05-manual-p2-settlement/review.json`.
+`<agent-state>/.pi/agent/sessions/--C--PY-ScreenMemory--/subagent-artifacts/outputs/67726e54-7ce9-4b95-a3be-a3504d29ce04/s05-manual-p2-settlement/review.json` (локальный путь обезличен при публикации).
 Новых source edits/runtime tests в settlement нет. Оригинальный fresh review **fix**
 сохранён отдельно `.pi/recovery/s05-manual-core-a74f/original-review-a74f.json`.
 
