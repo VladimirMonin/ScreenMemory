@@ -1,5 +1,219 @@
 {
   "$defs": {
+    "AccessReply": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "profile",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/AgentProfileView"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "connection",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/AgentConnectionView"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "catalog",
+              "type": "string"
+            },
+            "value": {
+              "additionalProperties": false,
+              "properties": {
+                "connections": {
+                  "items": {
+                    "$ref": "#/$defs/AgentConnectionView"
+                  },
+                  "maxItems": 128,
+                  "type": "array"
+                },
+                "profiles": {
+                  "items": {
+                    "$ref": "#/$defs/AgentProfileView"
+                  },
+                  "maxItems": 64,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "profiles",
+                "connections"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "AgentConnectionState": {
+      "enum": [
+        "enrolling",
+        "active",
+        "revoked"
+      ],
+      "type": "string"
+    },
+    "AgentConnectionView": {
+      "additionalProperties": false,
+      "properties": {
+        "connection_id": {
+          "$ref": "#/$defs/KnowledgeId"
+        },
+        "credential_generation": {
+          "$ref": "#/$defs/SqlRevision"
+        },
+        "credential_ready": {
+          "type": "boolean"
+        },
+        "display_name": {
+          "$ref": "#/$defs/CategoryName"
+        },
+        "principal_id": {
+          "$ref": "#/$defs/KnowledgeId"
+        },
+        "profile_id": {
+          "$ref": "#/$defs/KnowledgeId"
+        },
+        "revision": {
+          "$ref": "#/$defs/SqlRevision"
+        },
+        "state": {
+          "$ref": "#/$defs/AgentConnectionState"
+        }
+      },
+      "required": [
+        "connection_id",
+        "profile_id",
+        "principal_id",
+        "revision",
+        "credential_generation",
+        "display_name",
+        "state",
+        "credential_ready"
+      ],
+      "type": "object"
+    },
+    "AgentPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "capture_modes": {
+          "items": {
+            "type": "null"
+          },
+          "maxItems": 0,
+          "type": "array"
+        },
+        "max_active_mutations": {
+          "format": "uint8",
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "roots": {
+          "items": {
+            "type": "null"
+          },
+          "maxItems": 0,
+          "type": "array"
+        },
+        "scopes": {
+          "items": {
+            "$ref": "#/$defs/AgentScope"
+          },
+          "maxItems": 1,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "scopes",
+        "roots",
+        "capture_modes",
+        "max_active_mutations"
+      ],
+      "type": "object"
+    },
+    "AgentProfileState": {
+      "enum": [
+        "active",
+        "disabled",
+        "revoked"
+      ],
+      "type": "string"
+    },
+    "AgentProfileView": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/CategoryName"
+        },
+        "policy": {
+          "$ref": "#/$defs/AgentPolicy"
+        },
+        "principal_id": {
+          "$ref": "#/$defs/KnowledgeId"
+        },
+        "profile_id": {
+          "$ref": "#/$defs/KnowledgeId"
+        },
+        "revision": {
+          "$ref": "#/$defs/SqlRevision"
+        },
+        "security_revision": {
+          "$ref": "#/$defs/SqlRevision"
+        },
+        "state": {
+          "$ref": "#/$defs/AgentProfileState"
+        }
+      },
+      "required": [
+        "profile_id",
+        "principal_id",
+        "revision",
+        "security_revision",
+        "name",
+        "state",
+        "policy"
+      ],
+      "type": "object"
+    },
+    "AgentScope": {
+      "enum": [
+        "read_metadata"
+      ],
+      "type": "string"
+    },
     "AiPolicyView": {
       "additionalProperties": false,
       "properties": {
@@ -285,6 +499,23 @@
             },
             "value": {
               "$ref": "#/$defs/SearchReply"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "access",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/AccessReply"
             }
           },
           "required": [

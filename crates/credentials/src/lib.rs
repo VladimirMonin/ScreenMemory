@@ -44,7 +44,8 @@ impl WindowsSecretStore {
             Environment::Test => CredentialEnvironment::Test,
         };
         let target = key.target();
-        if key.library().as_uuid().is_nil()
+        if matches!(key.profile(), Profile::Agent(id) if id.0.0.get_version_num() != 4 || id.0.0.as_bytes()[8] & 0xc0 != 0x80)
+            || key.library().as_uuid().is_nil()
             || key.environment() != expected
             || !target.starts_with(&format!("{}/library/", self.environment.secret_namespace()))
         {
@@ -136,6 +137,23 @@ impl Drop for OwnedCredential {
     }
 }
 impl SecretStore for WindowsSecretStore {
+    fn delete_agent(&self, key: &CredentialKey) -> Result<(), StoreError> {
+        use windows_sys::Win32::Security::Credentials::CredDeleteW;
+        if !matches!(key.profile(), Profile::Agent(_)) {
+            return Err(StoreError::Unavailable);
+        }
+        let target = self.target(key)?;
+        if unsafe { CredDeleteW(target.as_ptr(), CRED_TYPE_GENERIC, 0) } == 0 {
+            let code = unsafe { GetLastError() };
+            if code != ERROR_NOT_FOUND {
+                return Err(StoreError::Unavailable);
+            }
+        }
+        match self.read_native(key) {
+            Err(NativeReadFailure::Missing) => Ok(()),
+            _ => Err(StoreError::Unavailable),
+        }
+    }
     fn read(&self, key: &CredentialKey) -> Result<Secret, StoreError> {
         self.read_native(key).map_err(|error| match error {
             NativeReadFailure::Missing => StoreError::Missing,

@@ -8,7 +8,7 @@ description: "Читай при работе с authenticated native RPC session
 
 Источник: S01 §§5.1–5.5, 6.3, 10; [ADR-008](../docs/adr/008-session-client.md). `sm-session` принимает **уже OS-проверенный** `sm-pipe::Connection`: 16 pre-sealed native handles и trusted client-side server image из `SEC.pipe_endpoint`. Host composition после HostLease/DB/explicit SecretStore enrollment вызывает `SessionHost::new` с настоящими `FoundationApi`/`FoundationControlApi` services, shared `BufferBudget` на весь host и host/library IDs из validated root/metadata; затем `run` или `serve`. В тестах допустим injected delayed handler, не production fake report.
 
-Handshake — private Rust serde DTO, не bridge/application method schema: fixed application 1.0 и пятнадцать capabilities, 8 KiB, **единый абсолютный** 3s deadline на чтение/verifier/ответ. Client знает expected library из уже разрешённой конфигурации и вызывает `ApplicationClient::connect(endpoint, trusted_image, library, expected_host, credential_source, budget)`; сначала OS image check, затем explicit scoped `CredentialSource`. Нет enrollment в session, host library не переназначается по wire. Owner/read-only выбирается только точным verifier host policy, `client_kind`/params не разрешают права. В обычных ошибках нет raw frame/secret/path.
+Handshake — private Rust serde DTO, не bridge/application method schema: fixed application 1.0 и шестнадцать capabilities, 8 KiB, **единый абсолютный** 3s deadline на чтение/verifier/ответ. Client знает expected library из уже разрешённой конфигурации и вызывает `ApplicationClient::connect(endpoint, trusted_image, library, expected_host, credential_source, budget)`; сначала OS image check, затем explicit scoped `CredentialSource`. Нет enrollment в session, host library не переназначается по wire. Owner/read-only выбирается только точным verifier host policy, `client_kind`/params не разрешают права. В обычных ошибках нет raw frame/secret/path.
 
 После handshake — DTO только из `sm-protocol`, строгие envelope/known params; scopes до handler. Только status, обычный doctor и request_shutdown направляются typed ports; runtime inventory и остальные известные методы получают METHOD_NOT_SUPPORTED после scope check. Reader держит отдельный bounded pump (cancel поллингуемого `Reader` poison); max 8 active IDs/connection до фактической отправки terminal response, девятый request при полном admission **закрывает соединение** без вызова handler. Одновременные writer sends ограничены `sm-framing` восемью. Unknown/duplicate IDs не запускают handler. Cancel ищет только ID текущего connection; disconnect signals+aborts waiting tasks, не backend stop и не host shutdown. Нет автоматического retry mutating operation. S03 import/export идут в optional
 ImageLibraryApi, Owner ImportFiles/ExportImages scopes проверяются до dispatch;
@@ -32,6 +32,8 @@ edit — WriteMetadata, category mutations — ManageCategories. Worker допо
 S06 `search.request` — optional SearchApi, ReadMetadata до dispatch и source scopes
 в storage до top-k/каждой страницы; scoped cancellation не останавливает writer/модель.
 Контракт — [DATA.search](DATA.search.instructions.md).
+S07 `access.request` — Owner-only ManageAccess; typed agent handshake, durable current
+authority и guarded late delivery — [SEC.agent_access](SEC.agent_access.instructions.md).
 Listing вызывается через foundation source-aware view. Legacy asset.read остаётся
 canonical, preview имеет отдельный MIME/digest derivative contract.
 

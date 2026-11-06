@@ -365,6 +365,12 @@ async fn bootstrap_inner(
             return Err(error);
         }
     };
+    let access = Arc::new(crate::access::AccessServices::new(
+        prepared.storage.clone(),
+        store.clone(),
+        CredentialEnvironment::Test,
+        library,
+    ));
     let services = Arc::new(FoundationServices::new(
         prepared.storage.clone(),
         library,
@@ -412,7 +418,8 @@ async fn bootstrap_inner(
     session = session
         .with_processing(processing.clone())
         .with_knowledge(Arc::new(prepared.storage.clone()))
-        .with_search(Arc::new(prepared.storage.clone()));
+        .with_search(Arc::new(prepared.storage.clone()))
+        .with_access(access, Arc::new(prepared.storage.clone()));
     let session = Arc::new(session);
     // Step 6: the sealed listener exists before any readiness claim; connections are
     // only accepted once `serve` runs the bounded loop.

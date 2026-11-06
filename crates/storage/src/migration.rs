@@ -11,7 +11,7 @@ use uuid::Uuid;
 /// capture-operation journal (`ingest_operations`); `0004` adds pending capture
 /// intents without changing the images contract. All are applied in a single
 /// transaction on a fresh file; interrupted upgrades roll back their migration rows.
-const SHIPPED: [(&str, &str); 8] = [
+const SHIPPED: [(&str, &str); 9] = [
     (
         "0001_foundation",
         include_str!("../migrations/0001_foundation.sql"),
@@ -38,11 +38,17 @@ const SHIPPED: [(&str, &str); 8] = [
         include_str!("../migrations/0007_knowledge.sql"),
     ),
     ("0008_search", include_str!("../migrations/0008_search.sql")),
+    (
+        "0009_agent_access",
+        include_str!("../migrations/0009_agent_access.sql"),
+    ),
 ];
 /// Applied images schema version, reported by `SchemaSnapshot::images`. The
 /// `0003_operations` and `0004_capture_intents` are global journal migrations;
 /// the images contract stays at `0002` while the global version advances.
 const IMAGES_VERSION: u32 = 2;
+#[cfg(test)]
+mod access_migration_tests;
 pub(super) const BOOTSTRAP: &str = "CREATE TABLE schema_migrations (\n    version       INTEGER PRIMARY KEY CHECK (version > 0),\n    name          TEXT NOT NULL,\n    checksum      TEXT NOT NULL,\n    applied_at    TEXT NOT NULL\n)";
 // Candidate-only foundation format. Written on a newly created file, before WAL
 // and before the atomic schema migration; never stamped onto an existing DB.

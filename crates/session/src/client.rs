@@ -26,6 +26,7 @@ impl CredentialSource {
                     Profile::Owner => WireProfile::Owner,
                     Profile::TestReadOnly => WireProfile::TestReadOnly,
                     Profile::RuntimeBackend => return Err(SessionError::PermissionDenied),
+                    Profile::Agent(id) => WireProfile::Agent(id),
                 };
                 store
                     .read(key)
@@ -87,6 +88,23 @@ pub struct ApplicationClient {
     host: HostInstanceId,
 }
 impl ApplicationClient {
+    pub async fn access(
+        &self,
+        request: sm_protocol::access::AccessRequest,
+    ) -> Result<sm_protocol::access::AccessReply, ClientError> {
+        let result = self
+            .call(
+                "access.request",
+                serde_json::to_value(request).map_err(|_| SessionError::InvalidRequest)?,
+                30_000,
+                None,
+            )
+            .await?;
+        match result {
+            ApplicationResult::Access(r) => Ok(*r),
+            _ => Err(SessionError::UnexpectedResponse.into()),
+        }
+    }
     pub async fn connect(
         endpoint: &Endpoint,
         image: &TrustedServerImage,

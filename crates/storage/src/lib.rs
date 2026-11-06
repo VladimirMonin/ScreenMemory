@@ -1,6 +1,7 @@
 //! SQLite worker holds one OS lease and a single connection; no SQL escape hatch.
 #[cfg(not(all(windows, target_pointer_width = "64")))]
 compile_error!("sm-storage requires the audited Windows x64 root adapter");
+pub mod access;
 #[cfg(test)]
 mod file_lane_tests;
 pub mod image_services;
@@ -312,6 +313,12 @@ enum Fault {
 }
 
 enum Request {
+    Access(
+        oneshot::Sender<Result<access::Reply, sm_protocol::errors::AppError>>,
+        sm_application::RequestContext,
+        access::Command,
+        Option<tokio::sync::OwnedRwLockWriteGuard<()>>,
+    ),
     Knowledge(
         oneshot::Sender<Result<sm_protocol::knowledge::KnowledgeReply, knowledge::KnowledgeError>>,
         sm_application::RequestContext,
@@ -371,6 +378,7 @@ pub struct StorageWorker {
     image_active: Arc<Mutex<std::collections::HashMap<Uuid, Arc<image_services::JobControl>>>>,
     execution_wake: Arc<tokio::sync::Notify>,
     search_endpoint: search::Endpoint,
+    access_publication: Arc<tokio::sync::RwLock<()>>,
 }
 impl StorageWorker {
     #[cfg(test)]
@@ -636,6 +644,7 @@ impl StorageWorker {
             image_active: Arc::new(Mutex::new(std::collections::HashMap::new())),
             execution_wake: Arc::new(tokio::sync::Notify::new()),
             search_endpoint,
+            access_publication: Arc::new(tokio::sync::RwLock::new(())),
         })
     }
     /// Separate, single-slot file queue. Only accepted requests own file-lane memory;
@@ -982,6 +991,9 @@ fn run(
     let mut db = db;
     for request in receiver {
         match request {
+            Request::Access(tx, ctx, command, _publication) => {
+                let _ = tx.send(access::handle(&mut db, ctx, command));
+            }
             Request::Knowledge(tx, ctx, request) => {
                 let _ = tx.send(knowledge::handle_authorized(&mut db, ctx, request));
             }

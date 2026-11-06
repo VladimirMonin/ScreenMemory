@@ -1,5 +1,192 @@
 {
   "$defs": {
+    "AccessRequest": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "list",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "create_profile",
+              "type": "string"
+            },
+            "name": {
+              "$ref": "#/$defs/CategoryName"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/KnowledgeId"
+            },
+            "policy": {
+              "$ref": "#/$defs/AgentPolicy"
+            }
+          },
+          "required": [
+            "action",
+            "operation_id",
+            "name",
+            "policy"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "update_profile",
+              "type": "string"
+            },
+            "expected_revision": {
+              "$ref": "#/$defs/SqlRevision"
+            },
+            "name": {
+              "$ref": "#/$defs/CategoryName"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/KnowledgeId"
+            },
+            "policy": {
+              "$ref": "#/$defs/AgentPolicy"
+            },
+            "profile_id": {
+              "$ref": "#/$defs/KnowledgeId"
+            },
+            "state": {
+              "$ref": "#/$defs/AgentProfileState"
+            }
+          },
+          "required": [
+            "action",
+            "operation_id",
+            "profile_id",
+            "expected_revision",
+            "name",
+            "policy",
+            "state"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "issue_connection",
+              "type": "string"
+            },
+            "display_name": {
+              "$ref": "#/$defs/CategoryName"
+            },
+            "expected_profile_revision": {
+              "$ref": "#/$defs/SqlRevision"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/KnowledgeId"
+            },
+            "profile_id": {
+              "$ref": "#/$defs/KnowledgeId"
+            }
+          },
+          "required": [
+            "action",
+            "operation_id",
+            "profile_id",
+            "expected_profile_revision",
+            "display_name"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "revoke_connection",
+              "type": "string"
+            },
+            "connection_id": {
+              "$ref": "#/$defs/KnowledgeId"
+            },
+            "expected_revision": {
+              "$ref": "#/$defs/SqlRevision"
+            },
+            "operation_id": {
+              "$ref": "#/$defs/KnowledgeId"
+            }
+          },
+          "required": [
+            "action",
+            "operation_id",
+            "connection_id",
+            "expected_revision"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "AgentPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "capture_modes": {
+          "items": {
+            "type": "null"
+          },
+          "maxItems": 0,
+          "type": "array"
+        },
+        "max_active_mutations": {
+          "format": "uint8",
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "roots": {
+          "items": {
+            "type": "null"
+          },
+          "maxItems": 0,
+          "type": "array"
+        },
+        "scopes": {
+          "items": {
+            "$ref": "#/$defs/AgentScope"
+          },
+          "maxItems": 1,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "scopes",
+        "roots",
+        "capture_modes",
+        "max_active_mutations"
+      ],
+      "type": "object"
+    },
+    "AgentProfileState": {
+      "enum": [
+        "active",
+        "disabled",
+        "revoked"
+      ],
+      "type": "string"
+    },
+    "AgentScope": {
+      "enum": [
+        "read_metadata"
+      ],
+      "type": "string"
+    },
     "AiPolicyPatch": {
       "additionalProperties": false,
       "properties": {
@@ -1935,6 +2122,23 @@
         },
         "params": {
           "$ref": "#/$defs/SearchRequest"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "const": "access.request",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/AccessRequest"
         }
       },
       "required": [

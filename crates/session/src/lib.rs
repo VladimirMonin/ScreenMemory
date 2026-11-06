@@ -38,7 +38,7 @@ use uuid::Uuid;
 /// Capability list negotiated by exactly one build of this workspace. S02 adds the two
 /// capture handlers; a peer that does not speak the same list is refused instead of being
 /// served a method it cannot decode.
-pub const CAPABILITIES: [&str; 15] = [
+pub const CAPABILITIES: [&str; 16] = [
     "system.status",
     "system.doctor",
     "system.request_shutdown",
@@ -54,6 +54,7 @@ pub const CAPABILITIES: [&str; 15] = [
     "processing.request",
     "knowledge.request",
     "search.request",
+    "access.request",
 ];
 const HANDSHAKE_TIME: Duration = Duration::from_secs(3);
 const MAX_ACTIVE: usize = 8;
@@ -107,6 +108,7 @@ impl Drop for Hello {
 enum WireProfile {
     Owner,
     TestReadOnly,
+    Agent(sm_protocol::access::AgentConnectionId),
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -134,6 +136,8 @@ pub struct SessionHost {
     processing: Option<Arc<dyn sm_application::processing::ProcessingApi>>,
     knowledge: Option<Arc<dyn sm_application::knowledge::KnowledgeApi>>,
     search: Option<Arc<dyn sm_application::search::SearchApi>>,
+    access: Option<Arc<dyn sm_application::access::AgentAccessApi>>,
+    authority: Option<Arc<dyn sm_application::access::AgentAuthority>>,
     budget: BufferBudget,
 }
 impl SessionHost {
@@ -160,8 +164,19 @@ impl SessionHost {
             processing: None,
             knowledge: None,
             search: None,
+            access: None,
+            authority: None,
             budget,
         }
+    }
+    pub fn with_access(
+        mut self,
+        access: Arc<dyn sm_application::access::AgentAccessApi>,
+        authority: Arc<dyn sm_application::access::AgentAuthority>,
+    ) -> Self {
+        self.access = Some(access);
+        self.authority = Some(authority);
+        self
     }
     pub fn with_search(mut self, search: Arc<dyn sm_application::search::SearchApi>) -> Self {
         self.search = Some(search);
@@ -210,23 +225,41 @@ impl SessionHost {
             if !capability_set(&hello.capabilities) {
                 return Err(SessionError::CapabilityMismatch);
             }
-            let authenticator = match hello.profile {
-                WireProfile::Owner => &self.owner,
+            let supplied = Secret::from_bytes(hello.credential.to_vec());
+            let request = RequestId::new(Uuid::new_v4());
+            let correlation = CorrelationId::new(Uuid::new_v4());
+            let context = match hello.profile {
+                WireProfile::Agent(id) => self
+                    .authority
+                    .as_ref()
+                    .ok_or(SessionError::PermissionDenied)?
+                    .authenticate_agent(self.library, id, &supplied, request, correlation)
+                    .await
+                    .map_err(|_| SessionError::PermissionDenied)?,
+                WireProfile::Owner => self
+                    .owner
+                    .authenticate(self.library, &supplied, request, correlation)
+                    .map_err(|_| SessionError::PermissionDenied)?,
                 WireProfile::TestReadOnly => self
                     .read_only
                     .as_ref()
-                    .ok_or(SessionError::PermissionDenied)?,
-            };
-            let supplied = Secret::from_bytes(hello.credential.to_vec());
-            let context = authenticator
-                .authenticate(
-                    self.library,
-                    &supplied,
-                    RequestId::new(Uuid::new_v4()),
-                    CorrelationId::new(Uuid::new_v4()),
+                    .ok_or(SessionError::PermissionDenied)?
+                    .authenticate(self.library, &supplied, request, correlation)
+                    .map_err(|_| SessionError::PermissionDenied)?,
+            }
+            .bind_connection(Uuid::new_v4());
+            let _handshake_delivery = if context.agent_binding().is_some() {
+                Some(
+                    self.authority
+                        .as_ref()
+                        .ok_or(SessionError::PermissionDenied)?
+                        .delivery_permit(&context)
+                        .await
+                        .map_err(|_| SessionError::PermissionDenied)?,
                 )
-                .map_err(|_| SessionError::PermissionDenied)?
-                .bind_connection(Uuid::new_v4());
+            } else {
+                None
+            };
             drop(supplied);
             drop(hello);
             writer
@@ -318,14 +351,30 @@ impl SessionHost {
                             let processing = self.processing.clone();
                             let knowledge = self.knowledge.clone();
                             let search=self.search.clone();
+                            let access=self.access.clone();
+                            let authority=self.authority.clone();
                             let context = context.for_request(id, CorrelationId::new(Uuid::new_v4()));
                             let library = self.library;
                             tasks.spawn(async move {
-                                let response = tokio::select! {
+                                let current = if context.agent_binding().is_some() {
+                                    match &authority { Some(a) => a.validate_agent(&context).await.is_ok(), None => false }
+                                } else { true };
+                                let mut response = if !current { response_error(id, ErrorCode::PermissionDenied) } else { tokio::select! {
                                     biased;
                                     _ = token.cancelled() => response_error(id, ErrorCode::WaitTimeout),
-                                    result = dispatch(request, library, context, foundation, control, capture.clone(), images, processing, knowledge, search, token.clone()) => result,
-                                };
+                                    result = dispatch(request, library, context.clone(), foundation, control, capture.clone(), images, processing, knowledge, search, access, token.clone()) => result,
+                                }};
+                                // Revalidate after delayed handlers; hold the shared read permit through
+                                // the actual framed write. Revocation commits under the exclusive permit.
+                                let _delivery = if context.agent_binding().is_some() {
+                                    match &authority {
+                                        Some(a) => match a.delivery_permit(&context).await {
+                                            Ok(p) => Some(p),
+                                            Err(_) => { response = response_error(id, ErrorCode::PermissionDenied); None }
+                                        },
+                                        None => { response = response_error(id, ErrorCode::PermissionDenied); None }
+                                    }
+                                } else { None };
                                 // Keep the active ID/slot until a terminal response is actually sent.
                                 writer.send(Phase::Application, &response).await.map_err(|_| ())?;
                                 Ok::<_, ()>(id)
@@ -425,6 +474,7 @@ async fn dispatch(
     processing: Option<Arc<dyn sm_application::processing::ProcessingApi>>,
     knowledge: Option<Arc<dyn sm_application::knowledge::KnowledgeApi>>,
     search: Option<Arc<dyn sm_application::search::SearchApi>>,
+    access: Option<Arc<dyn sm_application::access::AgentAccessApi>>,
     cancel: CancellationToken,
 ) -> Response {
     let id = request.request_id;
@@ -457,6 +507,7 @@ async fn dispatch(
             | "processing.request"
             | "knowledge.request"
             | "search.request"
+            | "access.request"
     ) {
         return Response::Error {
             request_id: id,
@@ -507,6 +558,7 @@ async fn dispatch(
         }
         KnownParams::Knowledge(_) => Scope::ManageCategories,
         KnownParams::Search(_) => Scope::ReadMetadata,
+        KnownParams::Access(_) => Scope::ManageAccess,
     };
     if !ctx.allows(scope) {
         return fail(ErrorCode::PermissionDenied);
@@ -516,6 +568,13 @@ async fn dispatch(
     }
     let operation = async {
         match params {
+            KnownParams::Access(request) => match access {
+                Some(api) => api
+                    .access(ctx, request)
+                    .await
+                    .map(|r| ApplicationResult::Access(Box::new(r))),
+                None => Err(AppError::method_not_supported()),
+            },
             KnownParams::Search(request) => match search {
                 Some(api) => api
                     .search(ctx, request, cancel.clone())

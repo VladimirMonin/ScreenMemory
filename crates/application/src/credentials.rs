@@ -1,6 +1,7 @@
 //! Host-owned credential policy. No wire value may construct a RequestContext here.
 use crate::{RequestContext, Scope};
 use sm_domain::{CorrelationId, LibraryId, PrincipalId, RequestId};
+pub use sm_protocol::access::AgentConnectionId;
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 use zeroize::Zeroize;
@@ -30,6 +31,7 @@ pub enum Profile {
     TestReadOnly,
     /// Backend secret only; never an application-session principal.
     RuntimeBackend,
+    Agent(sm_protocol::access::AgentConnectionId),
 }
 impl Profile {
     fn label(self) -> &'static str {
@@ -37,6 +39,7 @@ impl Profile {
             Self::Owner => "owner",
             Self::TestReadOnly => "test-readonly",
             Self::RuntimeBackend => "lm-studio",
+            Self::Agent(_) => "agent",
         }
     }
     fn scopes(self) -> Vec<Scope> {
@@ -63,9 +66,10 @@ impl Profile {
                 Scope::ReadPaths,
                 Scope::WriteMetadata,
                 Scope::ManageCategories,
+                Scope::ManageAccess,
             ],
             Self::TestReadOnly => vec![Scope::ReadStatus, Scope::RunDoctor],
-            Self::RuntimeBackend => vec![],
+            Self::RuntimeBackend | Self::Agent(_) => vec![],
         }
     }
 }
@@ -100,7 +104,26 @@ impl CredentialKey {
             profile: Profile::RuntimeBackend,
         }
     }
+    pub fn agent(
+        environment: CredentialEnvironment,
+        library: LibraryId,
+        connection: sm_protocol::access::AgentConnectionId,
+    ) -> Self {
+        Self {
+            environment,
+            library,
+            profile: Profile::Agent(connection),
+        }
+    }
     pub fn target(&self) -> String {
+        if let Profile::Agent(id) = self.profile {
+            return format!(
+                "{}/library/{}/agent/{}",
+                self.environment.namespace(),
+                self.library.as_uuid(),
+                id.0 .0
+            );
+        }
         format!(
             "{}/library/{}/{}",
             self.environment.namespace(),
@@ -139,6 +162,32 @@ impl Secret {
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
+    pub fn generate_session() -> Result<Self, StoreError> {
+        let mut bytes = vec![0; SIZE];
+        bytes[0] = VERSION;
+        if getrandom::fill(&mut bytes[1..]).is_err() {
+            bytes.zeroize();
+            return Err(StoreError::Unavailable);
+        }
+        Ok(Self(bytes))
+    }
+    pub fn matches_session_digest(&self, expected: &[u8; 32]) -> bool {
+        match self.session_digest() {
+            Ok(mut digest) => {
+                let ok = digest.ct_eq(expected).unwrap_u8() == 1;
+                digest.zeroize();
+                ok
+            }
+            Err(_) => false,
+        }
+    }
+    pub fn session_digest(&self) -> Result<[u8; 32], StoreError> {
+        if self.0.len() != SIZE || self.0[0] != VERSION {
+            return Err(StoreError::Unavailable);
+        }
+        use sha2::{Digest, Sha256};
+        Ok(Sha256::digest(&self.0).into())
+    }
 }
 impl Drop for Secret {
     fn drop(&mut self) {
@@ -163,6 +212,10 @@ pub enum CredentialError {
 pub trait SecretStore {
     fn read(&self, key: &CredentialKey) -> Result<Secret, StoreError>;
     fn create_new(&self, key: &CredentialKey, value: &Secret) -> Result<(), StoreError>;
+    /// Exact agent slot only; default refusal preserves existing injected stores.
+    fn delete_agent(&self, _key: &CredentialKey) -> Result<(), StoreError> {
+        Err(StoreError::Unavailable)
+    }
 }
 
 pub struct Authenticator {
@@ -225,6 +278,9 @@ impl Authenticator {
         Self::from_secret(key, &stored)
     }
     fn from_secret(key: CredentialKey, secret: &Secret) -> Result<Self, CredentialError> {
+        if matches!(key.profile, Profile::Agent(_) | Profile::RuntimeBackend) {
+            return Err(CredentialError::PermissionDenied);
+        }
         if secret.as_bytes().len() != SIZE || secret.as_bytes()[0] != VERSION {
             return Err(CredentialError::CredentialStoreUnavailable);
         }

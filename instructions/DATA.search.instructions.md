@@ -7,8 +7,9 @@ description: "Читай при изменении effective-source FTS5/exact p
 # DATA — FTS5 / exact поиск
 
 `sm-storage` владеет единственным writer, двумя readonly connections и bounded
-reader queue32 под исходным HostLease. Additive0008, schema8/config1/application1.0,
-negotiated15 capabilities; SDK-протокол не меняется. 0001–0007 immutable. Preflight
+reader queue32 под исходным HostLease. Search additive0008; текущие schema9/config1/application1.0,
+negotiated16 capabilities после [S07 authority](SEC.agent_access.instructions.md);
+SDK-протокол не меняется. 0001–0008 immutable. Preflight
 root/DB остаётся прежним, upgrade/cleanup только на разрешённой синтетике, не живых
 данных. Канон и источник не disposable cache; failed projection откатывает mutation.
 
@@ -64,7 +65,10 @@ scope fingerprint и source epoch на каждой странице. Source cha
 SEARCH_SNAPSHOT_CHANGED; после restart/TTL/eviction — SEARCH_EXPIRED. New depth = new
 search ID. Bounded hostlife8192 fingerprint ledger сохраняет changed-params conflict
 даже после eviction; admission после ceiling — SEARCH_BUSY, не unlimited memory.
-Credential/scopes создаёт session, не wire client kind. Foreign cancel отказывается.
+Credential/scopes создаёт session, не wire client kind. S07 agent binding включает
+connection/security revision/generation; stale binding и foreign connection cancel
+отказываются даже при общем principal. Current authority и delivery publication —
+[SEC.agent_access](SEC.agent_access.instructions.md).
 
 ## Клиенты и доказательства
 

@@ -3,6 +3,7 @@
 //! This crate owns the S01 §6.3 bootstrap order and the §6.5 shutdown order. It never
 //! creates roots, never adopts a foreign tree and never resolves a path from CWD, PATH
 //! or an environment variable: the only accepted root is the explicit `--root` argument.
+pub mod access;
 mod args;
 mod bootstrap;
 mod capture;

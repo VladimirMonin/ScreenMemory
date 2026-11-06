@@ -37,12 +37,15 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 /// The four foundation handlers always implemented by this host.
-pub const AVAILABLE_METHODS: [&str; 5] = [
+pub const AVAILABLE_METHODS: [&str; 8] = [
     "system.status",
     "system.doctor",
     "system.request_shutdown",
     "library.list_records",
     "processing.request",
+    "knowledge.request",
+    "search.request",
+    "access.request",
 ];
 /// S02 handlers, advertised only when this composition really owns a capture adapter.
 pub const CAPTURE_METHODS: [&str; 2] = ["capture.command", "library.asset.read"];

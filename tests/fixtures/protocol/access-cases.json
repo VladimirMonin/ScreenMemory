@@ -1,0 +1,19 @@
+[
+  {"id":"list","valid":true,"value":{"method":"access.request","params":{"action":"list"}}},
+  {"id":"create","valid":true,"value":{"method":"access.request","params":{"action":"create_profile","operation_id":"10000000-0000-4000-8000-000000000001","name":"Агент","policy":{"scopes":["read_metadata"],"roots":[],"capture_modes":[],"max_active_mutations":1}}}},
+  {"id":"extra-principal","valid":false,"value":{"method":"access.request","params":{"action":"list","principal_id":"10000000-0000-4000-8000-000000000001"}}},
+  {"id":"extra-token","valid":false,"value":{"method":"access.request","params":{"action":"list","token":"synthetic-canary"}}},
+  {"id":"extra-scopes","valid":false,"value":{"method":"access.request","params":{"action":"list","scopes":["manage_host"]}}},
+  {"id":"extra-field","valid":false,"value":{"method":"access.request","params":{"action":"list","settings":{}}}},
+  {"id":"blank-name","valid":false,"value":{"method":"access.request","params":{"action":"create_profile","operation_id":"10000000-0000-4000-8000-000000000001","name":"　","policy":{"scopes":["read_metadata"],"roots":[],"capture_modes":[],"max_active_mutations":1}}}},
+  {"id":"bad-uuid","valid":false,"value":{"method":"access.request","params":{"action":"revoke_connection","operation_id":"10000000-0000-1000-8000-000000000001","connection_id":"10000000-0000-4000-8000-000000000002","expected_revision":"1"}}},
+  {"id":"numeric-revision","valid":false,"value":{"method":"access.request","params":{"action":"revoke_connection","operation_id":"10000000-0000-4000-8000-000000000001","connection_id":"10000000-0000-4000-8000-000000000002","expected_revision":1}}},
+  {"id":"overflow-revision","valid":false,"value":{"method":"access.request","params":{"action":"revoke_connection","operation_id":"10000000-0000-4000-8000-000000000001","connection_id":"10000000-0000-4000-8000-000000000002","expected_revision":"9223372036854775808"}}},
+  {"id":"unsupported-scope","valid":false,"value":{"method":"access.request","params":{"action":"create_profile","operation_id":"10000000-0000-4000-8000-000000000001","name":"Agent","policy":{"scopes":["read_images"],"roots":[],"capture_modes":[],"max_active_mutations":1}}}},
+  {"id":"duplicate-scope","valid":false,"value":{"method":"access.request","params":{"action":"create_profile","operation_id":"10000000-0000-4000-8000-000000000001","name":"Agent","policy":{"scopes":["read_metadata","read_metadata"],"roots":[],"capture_modes":[],"max_active_mutations":1}}}},
+  {"id":"missing-grant","valid":false,"value":{"method":"access.request","params":{"action":"create_profile","operation_id":"10000000-0000-4000-8000-000000000001","name":"Agent","policy":{"scopes":[],"roots":[],"capture_modes":[],"max_active_mutations":1}}}},
+  {"id":"unsupported-roots","valid":false,"value":{"method":"access.request","params":{"action":"create_profile","operation_id":"10000000-0000-4000-8000-000000000001","name":"Agent","policy":{"scopes":["read_metadata"],"roots":[null],"capture_modes":[],"max_active_mutations":1}}}},
+  {"id":"unsupported-capture","valid":false,"value":{"method":"access.request","params":{"action":"create_profile","operation_id":"10000000-0000-4000-8000-000000000001","name":"Agent","policy":{"scopes":["read_metadata"],"roots":[],"capture_modes":[null],"max_active_mutations":1}}}},
+  {"id":"unsupported-concurrency","valid":false,"value":{"method":"access.request","params":{"action":"create_profile","operation_id":"10000000-0000-4000-8000-000000000001","name":"Agent","policy":{"scopes":["read_metadata"],"roots":[],"capture_modes":[],"max_active_mutations":2}}}},
+  {"id":"extra-policy-authority","valid":false,"value":{"method":"access.request","params":{"action":"create_profile","operation_id":"10000000-0000-4000-8000-000000000001","name":"Agent","policy":{"scopes":["read_metadata"],"roots":[],"capture_modes":[],"max_active_mutations":1,"principal":"forged"}}}}
+]

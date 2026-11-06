@@ -76,6 +76,10 @@ export type KnownParams =
   | {
       method: 'search.request';
       params: SearchRequest;
+    }
+  | {
+      method: 'access.request';
+      params: AccessRequest;
     };
 export type ConsentId = string;
 export type ProbeFixture = 'synthetic_menu_v1' | 'embedding_text_v1';
@@ -251,6 +255,40 @@ export type SearchRequest =
     };
 export type DateAxis = 'ingested' | 'captured' | 'taken';
 export type SourceKind = 'capture' | 'imported_image';
+export type AccessRequest =
+  | {
+      action: 'list';
+    }
+  | {
+      action: 'create_profile';
+      name: CategoryName;
+      operation_id: KnowledgeId;
+      policy: AgentPolicy;
+    }
+  | {
+      action: 'update_profile';
+      expected_revision: SqlRevision;
+      name: CategoryName;
+      operation_id: KnowledgeId;
+      policy: AgentPolicy;
+      profile_id: KnowledgeId;
+      state: AgentProfileState;
+    }
+  | {
+      action: 'issue_connection';
+      display_name: CategoryName;
+      expected_profile_revision: SqlRevision;
+      operation_id: KnowledgeId;
+      profile_id: KnowledgeId;
+    }
+  | {
+      action: 'revoke_connection';
+      connection_id: KnowledgeId;
+      expected_revision: SqlRevision;
+      operation_id: KnowledgeId;
+    };
+export type AgentScope = 'read_metadata';
+export type AgentProfileState = 'active' | 'disabled' | 'revoked';
 
 export interface EmptyParams {}
 export interface DoctorRequest {
@@ -434,4 +472,20 @@ export interface SearchFilters {
   has_applied_ai?: boolean | null;
   has_ocr?: boolean | null;
   source_kind?: SourceKind | null;
+}
+export interface AgentPolicy {
+  /**
+   * @maxItems 0
+   */
+  capture_modes: [];
+  max_active_mutations: number;
+  /**
+   * @maxItems 0
+   */
+  roots: [];
+  /**
+   * @minItems 1
+   * @maxItems 1
+   */
+  scopes: [AgentScope];
 }

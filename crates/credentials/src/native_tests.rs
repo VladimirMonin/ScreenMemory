@@ -139,6 +139,53 @@ fn s01_cred_11_injected_cleanup_branches_safe_and_no_native_keys() {
         .contains(canary));
 }
 
+#[test]
+fn s07_agent_exact_native_roundtrip_collision_environment_and_absence() {
+    use sm_application::credentials::AgentConnectionId;
+    let store = WindowsSecretStore::new(Environment::Test);
+    let library = LibraryId::new(Uuid::new_v4());
+    let connection = AgentConnectionId::new(Uuid::new_v4()).unwrap();
+    let key = CredentialKey::agent(CredentialEnvironment::Test, library, connection);
+    assert_eq!(
+        key.target(),
+        format!(
+            "ScreenMemory.Test.V1/library/{}/agent/{}",
+            library.as_uuid(),
+            connection.0 .0
+        )
+    );
+    let guard = OwnedTestKey::new(&store, key.clone(), false);
+    assert!(matches!(store.read(&key), Err(StoreError::Missing)));
+    let secret = Secret::generate_session().unwrap();
+    guard.create_new(&key, &secret).unwrap();
+    assert!(store
+        .read(&key)
+        .unwrap()
+        .matches_session_digest(&secret.session_digest().unwrap()));
+    assert!(store
+        .create_new(&key, &Secret::generate_session().unwrap())
+        .is_err());
+    assert!(store
+        .read(&key)
+        .unwrap()
+        .matches_session_digest(&secret.session_digest().unwrap()));
+    assert!(WindowsSecretStore::new(Environment::Dev)
+        .read(&key)
+        .is_err());
+    assert!(store
+        .delete_agent(&CredentialKey::owner(CredentialEnvironment::Test, library))
+        .is_err());
+    store.delete_agent(&key).unwrap();
+    // Native delete_agent confirmed absence itself; disarm only after that succeeds.
+    guard.owned.set(false);
+    assert!(matches!(store.read(&key), Err(StoreError::Missing)));
+    println!(
+        "NATIVE_AGENT_SLOT_ABSENT library={} connection={}",
+        library.as_uuid(),
+        connection.0 .0
+    );
+}
+
 fn new_key() -> CredentialKey {
     CredentialKey::owner(CredentialEnvironment::Test, LibraryId::new(Uuid::new_v4()))
 }

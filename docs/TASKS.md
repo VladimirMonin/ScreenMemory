@@ -20,7 +20,7 @@ Scope: [ADR-011 / CN-20261002-01](adr/011-private-release-scope.md).
 | S04 — SDK/очередь/LM Studio | ACCEPT_CODE_SCOPED; этап IN_PROGRESS | Code `0f32ad56`; [Parent приёмка/evidence](progress/S04/result.md): SDK/private runtime, durable scheduler/ModelManager/SQLite intents и реальные shared GUI/JSON CLI приняты scoped после fresh review9cc6+targeted3e43 pass/findings[]. Published-SDK synthetic execution4/4, actual shotd/CLI regression1/1, native enrollment negatives4 и исправленный schema6 smoke56/56 raw0; own rendered settings/close-reopen proofs разделены. Live LM Studio/genuine input NOT_RUN, physical unload/unsafe retention/reasoning Unsupported, TTL requested/not_verified; весь S04/поставка не приняты. |
 | S05 — OCR/карточки/правки | ACCEPT_CODE_SCOPED manual-core; этап IN_PROGRESS | [Parent приёмка/evidence](progress/S05/manual-core.md): additive0007, Saved→typed карточка/категории/Keep-Inherit-Set через native GUI/JSON CLI, replay/conflicts/reopen/export при Off и effective source/debt. Fresh review + targeted P2 closure/managed settlement pass/findings[]; independent native1/1/storage7/7/Rust3/Ajv1/Python raw0. OCR/vision/preferences/quality не реализованы; genuine input NOT_PROVEN, historical native fail-fast cause UNKNOWN; этап не DONE. |
 | S06 — FTS5 и качество поиска | CODE_CHECKPOINT_SCOPED; этап IN_PROGRESS, не принят | Code `0a5c9f9e`; [код/evidence/остаток](progress/S06/manual-search.md): atomic manual3-field FTS5/exact→shared CLI/GUI, cancel/latest P2 закрыты fresh review7e9+independent native1/1/lane2/2; bounded helper review90a7+pure7/7 pass; final CLI dispatch P2 закрыт native284e review+independent5+1, unfiltered CLI16/16/schema8 raw0 (старый schema7 FAIL сохранён).120 literal +10 заранее graded cases, final frontend29 и release10k подтверждены. Два отдельно разрешённых window passes FAIL/no listener, pass2 eight observations/deadline до CDP; source/cleanup освобождены, третьего запуска нет. Required nonblank/preview BLOCKED, four source fields NotProvided/Unsupported, genuine input BLOCKED; managed criterion1 not-satisfied/исходные timeouts сохранены. Code checkpoint не accepted S06/release. |
-| S07 — GUI/CLI/MCP | PENDING | Sol6.1: полный агентский сценарий, удобный GUI, общий host, scopes, JSON/exit parity и image resources. |
+| S07 — GUI/CLI/MCP | IN_PROGRESS, не принят | Назначен полезный access→scoped CLI срез: [ADR-012](adr/012-agent-access-core.md), persistent metadata-only agent/credential, search/card и revoke без Owner fallback. Последовательно native Sol6.1 authority/core → CLI integration → fresh read-only review. Реализация/gates ещё не доказаны; полный MCP/pixels/GUI/поставка остаются открыты. |
 | S08 — сохранность/релиз | PENDING | Sol6.1 → reviewer → parent: финальная регрессия, isolated backup/restore/purge/upgrade, Windows installer/staging, SHA и отчёт. |
 
 Задача закрывается только вместе с требуемыми проверками и evidence. PASS отдельного
@@ -86,8 +86,13 @@ current native build и literals/graded/perf evidence. Required nonblank window 
 после двух явно разрешённых passes остаётся FAIL/no listener до CDP, deeper cause UNKNOWN.
 Parent создал code checkpoint `0a5c9f9e` с локальным blocker, не приёмку S06;
 88 intentional paths, post-commit worktree чистый, push не выполнялся.
-Следующий полезный milestone — S07 агентские общие CLI/MCP, не listener retry loop;
-новый runtime путь требует отдельного обоснованного stand/authority решения.
+Следующий полезный milestone назначен: [S07 access core/CLI](adr/012-agent-access-core.md),
+не listener retry loop. Два последовательных owners: persistent authority/shared
+session → ограниченный CLI на реальных собственных shotd/shot subprocess; затем
+fresh read-only review. Metadata-only grant, additive0009 после фактической0008,
+SecretStore enrollment/revoke и old-session/cursor fences — обязательные gates,
+пока NOT_RUN. MCP/image delivery — следующий scope, не объявленная готовность.
+Новый window/input/live-model путь требует отдельного stand/authority решения.
 Capture/input/live-model/unload/TTL blockers остаются локальными, не паузой всей цели.
 Historical unknown fixture/PID cleanup BLOCKED/NOT_RUN; не повторять принятый SDK
 bootstrap и не выдавать bounded checks за whole S04.

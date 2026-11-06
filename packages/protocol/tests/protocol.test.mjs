@@ -27,6 +27,19 @@ function assertBad(run, value, reason) {
   assert.deepEqual(value, before); // never coerce, remove or mutate caller input
 }
 
+test('S07 access shared negative authority/policy/revision fixtures', async () => {
+  for (const item of await fixture('access-cases')) {
+    const request = { ...status, ...item.value };
+    assert.equal(validateApplicationRequest(request).ok, item.valid, item.id);
+  }
+  const base = (await fixture('access-cases')).find(c => c.id === 'create').value;
+  for (const [length, valid] of [[0, false], [1, true], [80, true], [81, false]]) {
+    const request = { ...status, ...clone(base) };
+    request.params.name = '😀'.repeat(length);
+    assert.equal(validateApplicationRequest(request).ok, valid);
+  }
+});
+
 test('S05 manual knowledge shared positive-negative fixtures and scalar bounds', async () => {
   for (const item of await fixture('knowledge-cases')) {
     const request = { ...status, ...item.value };

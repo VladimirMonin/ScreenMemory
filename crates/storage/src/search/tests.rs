@@ -405,6 +405,42 @@ fn s06_all_scope_masks_ttl_eviction_and_reopen_repair() {
     });
 }
 #[test]
+fn s07_agent_source_any_scope_before_topk_card_catalog_and_old_cursor() {
+    use crate::access::{Command, Reply};
+    use sm_application::{access::AgentAuthority, storage::FoundationRepository};
+    use sm_protocol::access::*;
+    rt().block_on(async {
+        let f=Fixture::new();let w=f.start();w.shutdown(Duration::from_secs(5)).await.unwrap();
+        let mut db=f.db();let cat=category(&mut db,"Private category canary");
+        let visible=KnowledgeId(Uuid::new_v4());let visible2=KnowledgeId(Uuid::new_v4());
+        seed(&mut db,visible,"public needle","ordinary",None,1);seed(&mut db,visible2,"public needle","ordinary",None,1);
+        let mut hidden=Vec::new();for mask in [3,5,7] {let id=KnowledgeId(Uuid::new_v4());seed(&mut db,id,"needle needle needle","Private content canary",Some(cat),mask);hidden.push(id);}
+        let owner=RequestContext::from_authenticated_peer(RequestId::new(Uuid::new_v4()),CorrelationId::new(Uuid::new_v4()),PrincipalId::new(Uuid::new_v4()),vec![Scope::ManageAccess]);
+        let create=AccessRequest::CreateProfile{operation_id:KnowledgeId(Uuid::new_v4()),name:CategoryName("Reader".into()),policy:AgentPolicy::default()};
+        let p=match crate::access::handle(&mut db,owner.clone(),Command::Manage(create)).unwrap(){Reply::Public(AccessReply::Profile(p))=>p,_=>panic!("profile")};
+        let req=AccessRequest::IssueConnection{operation_id:KnowledgeId(Uuid::new_v4()),profile_id:p.profile_id,expected_profile_revision:p.revision,display_name:CategoryName("A".into())};
+        let secret=sm_application::credentials::Secret::generate_session().unwrap();let d=secret.session_digest().unwrap();
+        let plan=match crate::access::handle(&mut db,owner.clone(),Command::Plan(req.clone(),d)).unwrap(){Reply::Plan(Some(p))=>p,_=>panic!("plan")};
+        crate::access::handle(&mut db,owner.clone(),Command::Activate(req,d)).unwrap();drop(db);
+        let w=f.start();let library=sm_domain::LibraryId::new(w.schema_snapshot().await.unwrap().library_id);
+        let agent=w.authenticate_agent(library,plan.connection.connection_id,&secret,RequestId::new(Uuid::new_v4()),CorrelationId::new(Uuid::new_v4())).await.unwrap();
+        let mut r=request("needle");r.limit=1;let first=page(&w,agent.clone(),r).await;
+        assert_eq!(first.items.len(),1);assert!(!hidden.contains(&first.items[0].record_id));assert!(!serde_json::to_string(&first).unwrap().contains("Private"));
+        let cursor=first.next_cursor.unwrap();let second=match w.search(agent.clone(),SearchRequest::Page{cursor},CancellationToken::new()).await.unwrap(){SearchReply::Page(p)=>p,_=>panic!("page")};assert_eq!(second.items.len(),1);assert!(second.next_cursor.is_none());
+        for id in hidden {assert!(matches!(w.knowledge(agent.clone(),KnowledgeRequest::Read{record_id:id}).await,Err(e) if e.code==ErrorCode::PermissionDenied));}
+        assert!(matches!(w.knowledge(agent.clone(),KnowledgeRequest::Categories{}).await,Err(e) if e.code==ErrorCode::PermissionDenied));
+        let disable=AccessRequest::UpdateProfile{operation_id:KnowledgeId(Uuid::new_v4()),profile_id:p.profile_id,expected_revision:p.revision,name:p.name.clone(),policy:AgentPolicy::default(),state:AgentProfileState::Disabled};
+        let disabled=match w.agent_command(owner.clone(),Command::Manage(disable)).await.unwrap(){Reply::Public(AccessReply::Profile(p))=>p,_=>panic!("disabled")};
+        assert!(w.search(agent.clone(),SearchRequest::Page{cursor},CancellationToken::new()).await.is_err());
+        let enable=AccessRequest::UpdateProfile{operation_id:KnowledgeId(Uuid::new_v4()),profile_id:p.profile_id,expected_revision:disabled.revision,name:p.name.clone(),policy:AgentPolicy::default(),state:AgentProfileState::Active};w.agent_command(owner,Command::Manage(enable)).await.unwrap();
+        assert!(w.validate_agent(&agent).await.is_err());
+        let new_agent=w.authenticate_agent(library,plan.connection.connection_id,&secret,RequestId::new(Uuid::new_v4()),CorrelationId::new(Uuid::new_v4())).await.unwrap();
+        assert!(w.search(new_agent.clone(),SearchRequest::Page{cursor},CancellationToken::new()).await.is_err());
+        w.shutdown(Duration::from_secs(5)).await.unwrap();let w=f.start();assert!(w.validate_agent(&agent).await.is_err());w.shutdown(Duration::from_secs(5)).await.unwrap();
+    });
+}
+
+#[test]
 fn s06_queued_timeout_keeps_writer_and_next_reader_alive() {
     rt().block_on(async {
         let (f, w) = fresh().await;

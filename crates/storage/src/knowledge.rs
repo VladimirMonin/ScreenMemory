@@ -559,6 +559,11 @@ pub(crate) fn handle_authorized(
     if !ctx.allows(required_scope(&req)) {
         return Err(KnowledgeError::Permission);
     }
+    crate::access::validate(db, &ctx).map_err(|_| KnowledgeError::Permission)?;
+    // Global maintenance catalog is explicitly owner-only, not an eligible projection.
+    if ctx.agent_binding().is_some() && matches!(req, KnowledgeRequest::Categories {}) {
+        return Err(KnowledgeError::Permission);
+    }
     // Serialized on the writer, including replay, so a late sensitive publisher cannot
     // race a read/mutation-scope check. Never issue restricted receipt payload to caller.
     let record = match &req {
@@ -676,7 +681,13 @@ impl KnowledgeApi for crate::StorageWorker {
                 retryable: false,
             });
         }
-        self.knowledge_authorized(ctx, req).await.map_err(app_error)
+        let reply = self
+            .knowledge_authorized(ctx.clone(), req)
+            .await
+            .map_err(app_error)?;
+        use sm_application::access::AgentAuthority;
+        let _delivery = self.delivery_permit(&ctx).await?;
+        Ok(reply)
     }
 }
 #[cfg(test)]

@@ -10,6 +10,10 @@ S01 §5.4 и [ADR-005](../docs/adr/005-local-credentials.md) задают гра
 
 Host сначала удерживает библиотечный `HostLease` и выполняет **явный** enrollment; обычная аутентификация только проверяет уже загруженный verifier. Любой missing/invalid/Win32 failure даёт отказ, не privileged context. `CredWriteW` не поддерживает atomic create-if-absent: pre-read предотвращает обычное случайное overwrite, exclusive library lease обязателен для своего host, злонамеренный same-user process не изолирован. Не логировать secret bytes, не передавать их в argv/URL/params/исключения; read-only kind=gui не получает owner scopes. Native peer ACL/framing и session handler gate реализованы отдельными S01-T06b/T06c subset; host bootstrap/actual services, полный IPC/other-logon acceptance всё ещё НЕ реализованы.
 
+S07 typed exact `CredentialKey::agent` и agent-only confirmed-absence delete описаны
+в [SEC.agent_access](SEC.agent_access.instructions.md). Owner target bytes неизменны;
+Authenticator не открывает agent как fixed profile: durable principal задаёт authority.
+
 S04 fixed `CredentialKey::runtime_backend(environment, library)` хранит только backend
 UTF-8 token1…2048 bytes в `<namespace>/library/<id>/lm-studio`, не session credential.
 Profile имеет пустые scopes; ApplicationClient отказывает этому profile до vault read.

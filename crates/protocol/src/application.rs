@@ -359,6 +359,8 @@ pub enum KnownParams {
     Knowledge(crate::knowledge::KnowledgeRequest),
     #[serde(rename = "search.request")]
     Search(crate::search::SearchRequest),
+    #[serde(rename = "access.request")]
+    Access(crate::access::AccessRequest),
 }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -387,6 +389,7 @@ pub enum ApplicationResult {
     Processing(Box<crate::processing::ProcessingReply>),
     Knowledge(Box<crate::knowledge::KnowledgeReply>),
     Search(Box<crate::search::SearchReply>),
+    Access(Box<crate::access::AccessReply>),
 }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -444,6 +447,7 @@ where
             | "processing.request"
             | "knowledge.request"
             | "search.request"
+            | "access.request"
     ) {
         return Response::Error {
             request_id: request.request_id,

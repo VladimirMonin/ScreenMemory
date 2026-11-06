@@ -75,6 +75,10 @@ export type ApplicationResult =
   | {
       type: 'search';
       value: SearchReply;
+    }
+  | {
+      type: 'access';
+      value: AccessReply;
     };
 export type BridgeState = 'stopped' | 'starting' | 'ready' | 'degraded' | 'unavailable';
 export type BuildId = string;
@@ -288,6 +292,31 @@ export type SearchReply =
         search_id: KnowledgeId;
       };
     };
+export type AccessReply =
+  | {
+      type: 'profile';
+      value: AgentProfileView;
+    }
+  | {
+      type: 'connection';
+      value: AgentConnectionView;
+    }
+  | {
+      type: 'catalog';
+      value: {
+        /**
+         * @maxItems 128
+         */
+        connections: AgentConnectionView[];
+        /**
+         * @maxItems 64
+         */
+        profiles: AgentProfileView[];
+      };
+    };
+export type AgentScope = 'read_metadata';
+export type AgentProfileState = 'active' | 'disabled' | 'revoked';
+export type AgentConnectionState = 'enrolling' | 'active' | 'revoked';
 export type SafeMessage = string;
 
 /**
@@ -750,6 +779,41 @@ export interface SearchHit {
   position: number;
   record_id: KnowledgeId;
   title: string;
+}
+export interface AgentProfileView {
+  name: CategoryName;
+  policy: AgentPolicy;
+  principal_id: KnowledgeId;
+  profile_id: KnowledgeId;
+  revision: SqlRevision;
+  security_revision: SqlRevision;
+  state: AgentProfileState;
+}
+export interface AgentPolicy {
+  /**
+   * @maxItems 0
+   */
+  capture_modes: [];
+  max_active_mutations: number;
+  /**
+   * @maxItems 0
+   */
+  roots: [];
+  /**
+   * @minItems 1
+   * @maxItems 1
+   */
+  scopes: [AgentScope];
+}
+export interface AgentConnectionView {
+  connection_id: KnowledgeId;
+  credential_generation: SqlRevision;
+  credential_ready: boolean;
+  display_name: CategoryName;
+  principal_id: KnowledgeId;
+  profile_id: KnowledgeId;
+  revision: SqlRevision;
+  state: AgentConnectionState;
 }
 export interface AppError {
   code: ErrorCode;

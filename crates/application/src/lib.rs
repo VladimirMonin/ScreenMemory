@@ -1,4 +1,5 @@
 //! Application seams only: host-created authority and ports; no concrete adapters.
+pub mod access;
 pub mod capture;
 pub mod credentials;
 pub mod images;
@@ -45,6 +46,7 @@ pub enum Scope {
     ReadPaths,
     WriteMetadata,
     ManageCategories,
+    ManageAccess,
 }
 /// Constructed only by the authenticated host boundary; never decoded from request.params.
 #[derive(Clone, Debug)]
@@ -54,6 +56,7 @@ pub struct RequestContext {
     principal_id: PrincipalId,
     granted_scopes: Vec<Scope>,
     connection_id: Option<uuid::Uuid>,
+    agent: Option<access::AgentBinding>,
 }
 impl RequestContext {
     /// Host-only call site must first establish peer identity and authenticated scopes.
@@ -69,12 +72,21 @@ impl RequestContext {
             principal_id,
             granted_scopes,
             connection_id: None,
+            agent: None,
         }
     }
     /// Bind an authenticated principal to the OS-verified transport session.
     pub fn bind_connection(mut self, connection_id: uuid::Uuid) -> Self {
         self.connection_id = Some(connection_id);
         self
+    }
+    /// Native authority only, never decoded from client metadata.
+    pub fn bind_agent(mut self, binding: access::AgentBinding) -> Self {
+        self.agent = Some(binding);
+        self
+    }
+    pub fn agent_binding(&self) -> Option<&access::AgentBinding> {
+        self.agent.as_ref()
     }
     pub fn connection_id(&self) -> Option<uuid::Uuid> {
         self.connection_id

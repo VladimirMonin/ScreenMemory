@@ -69,6 +69,14 @@ for group, expected in (('valid', True), ('invalid', False)):
     for case in responses[group]:
         assert app.is_valid(case['frame']) == expected, case['id']
 # S04 execution DTOs remain metadata, never deserializable instance/claim authority.
+access = json.loads((root / 'tests/fixtures/protocol/access-cases.json').read_text(encoding='utf-8'))
+for case in access:
+    assert methods.is_valid(case['value']) == case['valid'], case['id']
+base_access = next(c['value'] for c in access if c['id'] == 'create')
+for length, valid_name in [(0, False), (1, True), (80, True), (81, False)]:
+    value = copy.deepcopy(base_access)
+    value['params']['name'] = '😀' * length
+    assert methods.is_valid(value) == valid_name
 knowledge = json.loads((root / 'tests/fixtures/protocol/knowledge-cases.json').read_text(encoding='utf-8'))
 for case in knowledge:
     assert methods.is_valid(case['value']) == case['valid'], case['id']

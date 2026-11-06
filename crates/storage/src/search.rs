@@ -1,6 +1,10 @@
 //! Storage-owned bounded read workers and fixed-window SearchService. No SDK dependency.
 use rusqlite::{params, params_from_iter, Connection, OpenFlags, OptionalExtension};
-use sm_application::{search::SearchApi, RequestContext, Scope};
+use sm_application::{
+    access::{AgentAuthority, AgentBinding},
+    search::SearchApi,
+    RequestContext, Scope,
+};
 use sm_protocol::{
     errors::{AppError, ErrorCode},
     knowledge::{KnowledgeId, SqlRevision},
@@ -45,6 +49,7 @@ struct Candidate {
 }
 struct Window {
     principal: Uuid,
+    binding: Option<AgentBinding>,
     mask: u8,
     params: SearchStart,
     epoch: u64,
@@ -56,7 +61,7 @@ struct Window {
 #[derive(Default)]
 pub(crate) struct Cache {
     windows: HashMap<Uuid, Window>,
-    seen: HashMap<Uuid, (Uuid, [u8; 32])>,
+    seen: HashMap<Uuid, (Uuid, Option<AgentBinding>, [u8; 32])>,
 }
 pub(crate) enum ReadCommand {
     Query(
@@ -175,7 +180,7 @@ impl SearchApi for crate::StorageWorker {
             self.search_endpoint
                 .sender
                 .try_send(ReadCommand::Query(
-                    ctx,
+                    ctx.clone(),
                     Box::new(req),
                     child,
                     Instant::now() + Duration::from_secs(2),
@@ -183,11 +188,13 @@ impl SearchApi for crate::StorageWorker {
                 ))
                 .map_err(|_| error(ErrorCode::SearchBusy))?;
         }
-        tokio::select! {
+        let result = tokio::select! {
             biased;
             _=cancel.cancelled()=>Err(error(ErrorCode::SearchCancelled)),
             result=tokio::time::timeout(Duration::from_secs(3),rx)=>result.map_err(|_|error(ErrorCode::WaitTimeout))?.map_err(|_|error(ErrorCode::SearchBusy))?,
-        }
+        }?;
+        let _delivery = self.delivery_permit(&ctx).await?;
+        Ok(result)
     }
 }
 fn epoch(db: &Connection) -> Result<u64, AppError> {
@@ -202,7 +209,9 @@ fn handle(
     if !ctx.allows(Scope::ReadMetadata) {
         return Err(error(ErrorCode::PermissionDenied));
     }
+    crate::access::validate(db, &ctx)?;
     let principal = ctx.principal_id().as_uuid();
+    let binding = ctx.agent_binding().cloned();
     let mask = granted(&ctx);
     cache
         .windows
@@ -212,7 +221,7 @@ fn handle(
             if !cache
                 .windows
                 .get(&search_id.0)
-                .is_some_and(|w| w.principal == principal)
+                .is_some_and(|w| w.principal == principal && w.binding == binding)
             {
                 return Err(error(ErrorCode::SearchExpired));
             }
@@ -223,7 +232,11 @@ fn handle(
             let w = cache
                 .windows
                 .values_mut()
-                .find(|w| w.principal == principal && w.cursors.contains_key(&cursor.0))
+                .find(|w| {
+                    w.principal == principal
+                        && w.binding == binding
+                        && w.cursors.contains_key(&cursor.0)
+                })
                 .ok_or_else(|| error(ErrorCode::SearchExpired))?;
             let offset = w.cursors[&cursor.0];
             page(db, w, mask, offset).map(SearchReply::Page)
@@ -235,8 +248,8 @@ fn handle(
                 serde_json::to_vec(&r).map_err(|_| error(ErrorCode::InvalidRequest))?,
             )
             .into();
-            if let Some((owner, prior)) = cache.seen.get(&r.search_id.0) {
-                if *owner != principal {
+            if let Some((owner, prior_binding, prior)) = cache.seen.get(&r.search_id.0) {
+                if *owner != principal || *prior_binding != binding {
                     return Err(error(ErrorCode::SearchExpired));
                 }
                 if *prior != fingerprint {
@@ -249,7 +262,7 @@ fn handle(
                 return Err(error(ErrorCode::SearchBusy));
             }
             if let Some(w) = cache.windows.get_mut(&r.search_id.0) {
-                if w.principal != principal {
+                if w.principal != principal || w.binding != binding {
                     return Err(error(ErrorCode::SearchExpired));
                 }
                 if w.params != r {
@@ -288,6 +301,7 @@ fn handle(
             ids.truncate(r.candidate_depth as usize);
             let mut w = Window {
                 principal,
+                binding: binding.clone(),
                 mask,
                 params: r,
                 epoch: e,
@@ -300,7 +314,7 @@ fn handle(
             tx.commit().map_err(sql)?;
             cache
                 .seen
-                .insert(w.params.search_id.0, (principal, fingerprint));
+                .insert(w.params.search_id.0, (principal, binding, fingerprint));
             cache.windows.insert(w.params.search_id.0, w);
             Ok(SearchReply::Page(p))
         }

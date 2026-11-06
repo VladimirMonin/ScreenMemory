@@ -16,7 +16,10 @@ FTS5 integration — [DATA.search](DATA.search.instructions.md).
 ## Порт и полномочия
 
 Application1.0 включает `knowledge.request` и S06 `search.request` (native negotiation15 capabilities);
-SDK sm-sdk1.1 и legacy probe bridge1.0 независимы и не меняются. Закрытые typed actions:
+SDK sm-sdk1.1 и legacy probe bridge1.0 независимы и не меняются.
+После S07 authority negotiation16/schema9; metadata-only agent global maintenance
+Categories явно отказывает (Owner неизменен), current authority/delivery —
+[SEC.agent_access](SEC.agent_access.instructions.md). Закрытые typed actions:
 `read`, `edit`, `categories`, `category`. `KnowledgeApi` получает настоящий RequestContext;
 ReadMetadata/WriteMetadata/ManageCategories проверяются session и SQLite worker.
 TestReadOnly не получает их. Wire не принимает principal, scopes, путь, lease,

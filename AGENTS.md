@@ -47,6 +47,7 @@ preview); соизмеряй глубину инженерной проверк�
 | [DATA.knowledge](instructions/DATA.knowledge.instructions.md) | Manual карточка, Keep/Inherit/Set, категории, replay/revisions, sensitivity и effective source/hook S06 |
 | [DATA.search](instructions/DATA.search.instructions.md) | FTS5/exact source projection, shared поиск/filters/readers/sessions/cancel и production gold/10k |
 | [SEC.credentials](instructions/SEC.credentials.instructions.md) | Локальные/session/backend credentials, bounded stdin, exact Windows Credential Manager authority и host scopes |
+| [SEC.agent_access](instructions/SEC.agent_access.instructions.md) | Persistent metadata-only agent profiles/connections, exact enrollment/revoke, current authority и security-bound cursors |
 | [SEC.pipe_endpoint](instructions/SEC.pipe_endpoint.instructions.md) | Windows named-pipe ACL, sealed pool, peer identity и trusted server image |
 | [CAPTURE.native](instructions/CAPTURE.native.instructions.md) | Win32 capture, region picker, overlay, hotkey, GDI/DIB |
 | [CODEC.webp](instructions/CODEC.webp.instructions.md) | WebP codec (bundled libwebp), exact lossless, bounds/отказы |
